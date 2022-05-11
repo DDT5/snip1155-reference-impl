@@ -57,11 +57,11 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
 
 ## Abstract
 
-This SNIP1155 specification ("spec" or "specs") outlines the functionality and interface of a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can manage multiple token types. The specifications are loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155#non-fungible-tokens), with an additional privacy layer made possible as a Secret Network contract.
+This SNIP1155 specification ("spec" or "specs") outlines the functionality and interface of a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can manage multiple token types. The specifications are loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract.
 
-SNIP1155 allows a single contract to manage multiple tokens. This can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. Fungible and non-fungible tokens are mostly treated equally; the key difference is that NFTs have total_supply of 1 and can only be minted once. Unlike CW1155 where approvals must cover the entire set of tokens, users interacting with SNIP1155 contracts are able to control which tokens fall in scope for a given approval. This is a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761). 
+SNIP1155 allows a single contract to create and manage multiple tokens, which can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. Fungible and non-fungible tokens are mostly treated equally; the key difference is that NFTs have total_supply of 1 and can only be minted once. Unlike CW1155 where approvals must cover the entire set of tokens, users interacting with SNIP1155 contracts are able to control which tokens fall in scope for a given approval. This is a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761). 
 
-The ability to hold multiple token types provides new functionality (such as batch transferring multiple token types), as well as improved developer and user experience. For example, using a SNIP1155 contract instead of multiple SNIP20 and SNIP721 contracts can reduce the required number of approval transactions, inter-contract messages, and dedicated factory contracts. These translate to better user experiences, simpler application development, and lower gas fees.
+The ability to hold multiple token types provides new functionality (such as batch transferring multiple token types), as well as improved developer and user experience. For example, using a SNIP1155 contract instead of multiple SNIP20 and SNIP721 contracts can reduce the required number of approval transactions, inter-contract messages, and factory contracts. These translate to better user experiences, simpler application development, and lower gas fees.
 
 See [design decisions](#design-decisions) for more details.
 
@@ -92,7 +92,6 @@ A SNIP1155 contract SHOULD have the ability to hold multiple `tokens_id`s, each 
 * token_config
 * public metadata
 * private metadata
-* extension
 
 Each `token_id` can have 1 or more `tokens`, which are indistinguishable from one another (hence fungible).
 
@@ -103,13 +102,13 @@ Each `token_id` can have 1 or more `tokens`, which are indistinguishable from on
 | token_id         | String         | Unique identifier                                         | No       |
 | name             | String         | Name of fungible tokens or NFT                            | No       |
 | symbol           | String         | Symbol of fungible tokens or NFT                          | No       |
-| total_supply     | Uint128        | Total tokens of a given token_id. MUST be == 1 for NFTs   | No       |
+| (total_supply)   | Uint128        | Total tokens of a given token_id. MUST be == 1 for NFTs   | No       |
 | is_nft           | bool           | Determines if token_id is an NFT                          | No       |
 | token_config     | TokenConfig    | Includes enable burn, enable additional minting. etc      | No       |
 | public metadata  | Metadata       | Publicly viewable `uri` and `extension`                   | No       |
-| private metadata | Metadata       | Non-publicly viewable `uri` and `extension`                   | No       |
+| private metadata | Metadata       | Non-publicly viewable `uri` and `extension`               | No       |
 
-Application developers MAY change `extension` to any `struct` that fits their use case.
+Application developers MAY change `extension` within `public metadata` and `private metadata` to any `struct` that fits their use case.
 
 
 ## Instantiation

@@ -10,7 +10,7 @@ npm install
 
 After you have all of the dependencies install you can run the following command in order to build and run your code:
 ```sh
-npx ts-node [[ts_file_name.ts]]
+npx ts-node ./tests/integration.ts
 ```
 
 You can also choose to debug your code by using the following steps (Using vscode):
@@ -23,3 +23,8 @@ You can also choose to debug your code by using the following steps (Using vscod
 
 There are no strict conventions, the only recommandation is to write test functions with "snake_case" naming sense (Only for the function name)
 It is very important for the code to be clear and verbose in its outputs also as for the test functions to be self explanatory.
+
+## Add tsconfig.json file; not necessary to run tests, but removes the error message on VS Code 
+```sh
+npx tsc --init 
+```

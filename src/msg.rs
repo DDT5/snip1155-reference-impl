@@ -1,27 +1,72 @@
+use cosmwasm_std::{Uint128, HumanAddr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    state::{MintTokenId, MintToken}
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////
+// Init messages
+/////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InitMsg {
-    pub count: i32,
+    pub has_admin: bool,
+    pub admin: Option<HumanAddr>,
+    pub minters: Vec<HumanAddr>,
+    pub initial_tokens: Vec<MintTokenId>,
 }
+
+/////////////////////////////////////////////////////////////////////////////////
+// Handle Messages
+/////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleMsg {
-    Increment {},
-    Reset { count: i32 },
+    MintTokenIds(Vec<MintTokenId>),
+    MintTokens(Vec<MintToken>),
+    Transfer {
+        token_id: String,
+        sender: HumanAddr,
+        recipient: HumanAddr,
+        amount: Uint128
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum QueryMsg {
-    // GetCount returns the current count as a json-encoded number
-    GetCount {},
+pub enum HandleAnswer {
+    NewTokenIds { status: ResponseStatus },
+    Mint { status: ResponseStatus },
+    Transfer { status: ResponseStatus },
 }
 
-// We define a custom struct for each query response
+
+
+/////////////////////////////////////////////////////////////////////////////////
+// Query messages
+/////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct CountResponse {
-    pub count: i32,
+#[serde(rename_all = "snake_case")]
+pub enum QueryMsg {
+    ContractInfo { },
 }
+
+
+
+/////////////////////////////////////////////////////////////////////////////////
+// Structs and Enums
+/////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ResponseStatus {
+    Success,
+    Failure,
+}
+
+

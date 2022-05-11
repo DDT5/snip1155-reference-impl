@@ -1,151 +1,345 @@
 use cosmwasm_std::{
-    debug_print, to_binary, Api, Binary, Env, Extern, HandleResponse, InitResponse, Querier,
-    StdError, StdResult, Storage,
+    Env, Extern, Storage, Api, Querier, 
+    InitResponse, HandleResponse, Binary, to_binary,
+    StdResult, StdError,
+    HumanAddr, Uint128,
+    // debug_print, 
+};
+use secret_toolkit::utils::space_pad;
+
+use crate::{
+    msg::{
+        InitMsg, HandleMsg, HandleAnswer, QueryMsg,
+        ResponseStatus::{Success}, //Failure 
+    },
+    state::{
+        RESPONSE_BLOCK_SIZE, ContrConf,
+        contr_conf_w, tkn_info_r, TknInfo,
+        MintTokenId, MintToken, tkn_info_w, balances_w, balances_r, contr_conf_r,
+    }
 };
 
-use crate::msg::{CountResponse, HandleMsg, InitMsg, QueryMsg};
-use crate::state::{config, config_read, State};
+/////////////////////////////////////////////////////////////////////////////////
+// Init
+/////////////////////////////////////////////////////////////////////////////////
+
 
 pub fn init<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     msg: InitMsg,
 ) -> StdResult<InitResponse> {
-    let state = State {
-        count: msg.count,
-        owner: deps.api.canonical_address(&env.message.sender)?,
+    // set admin. If `has_admin` == None => no admin. 
+    // If `has_admin` == true && msg.admin == None => admin is the instantiator
+    let admin = match msg.has_admin {
+        false => None,
+        true => match msg.admin {
+            Some(i) => Some(i),
+            None => Some(env.message.sender),
+        },
     };
+    
+    // save contract config
+    let config = ContrConf { 
+        admin, 
+        minters: msg.minters
+    };
+    contr_conf_w(&mut deps.storage).save(&config)?;
 
-    config(&mut deps.storage).save(&state)?;
-
-    debug_print!("Contract was initialized by {}", env.message.sender);
-
+    // set initial balances
+    for initial_token in msg.initial_tokens {
+        exec_mint_token_id(
+            &mut deps.storage, 
+            initial_token
+        )?;
+    }
+    
     Ok(InitResponse::default())
 }
+
+/////////////////////////////////////////////////////////////////////////////////
+// Handles
+/////////////////////////////////////////////////////////////////////////////////
 
 pub fn handle<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     msg: HandleMsg,
 ) -> StdResult<HandleResponse> {
-    match msg {
-        HandleMsg::Increment {} => try_increment(deps, env),
-        HandleMsg::Reset { count } => try_reset(deps, env, count),
-    }
+    let response = match msg {
+        HandleMsg::MintTokenIds(
+            initial_tokens
+        ) => try_mint_token_ids(
+            deps,
+            env,
+            initial_tokens,
+        ),
+        HandleMsg::MintTokens(
+            mint_tokens
+        ) => try_mint(
+            deps, 
+            env,
+            mint_tokens,
+        ),
+        HandleMsg::Transfer { 
+            token_id,
+            sender,
+            recipient, 
+            amount 
+        } => try_transfer(
+            deps,
+            env,
+            token_id,
+            sender,
+            recipient,
+            amount
+        ),
+    };
+    pad_response(response)
 }
 
-pub fn try_increment<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
-    _env: Env,
-) -> StdResult<HandleResponse> {
-    config(&mut deps.storage).update(|mut state| {
-        state.count += 1;
-        debug_print!("count = {}", state.count);
-        Ok(state)
-    })?;
-
-    debug_print("count incremented successfully");
-    Ok(HandleResponse::default())
-}
-
-pub fn try_reset<S: Storage, A: Api, Q: Querier>(
+pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    count: i32,
+    initial_tokens: Vec<MintTokenId>
 ) -> StdResult<HandleResponse> {
-    let sender_address_raw = deps.api.canonical_address(&env.message.sender)?;
-    config(&mut deps.storage).update(|mut state| {
-        if sender_address_raw != state.owner {
-            return Err(StdError::Unauthorized { backtrace: None });
-        }
-        state.count = count;
-        Ok(state)
-    })?;
-    debug_print("count reset successfully");
-    Ok(HandleResponse::default())
+    // check if sender is a minter
+    verify_minter(&deps.storage, &env)?;
+
+    // mint new token_ids
+    for initial_token in initial_tokens {
+        exec_mint_token_id(
+            &mut deps.storage, 
+            initial_token
+        )?;
+    } 
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::NewTokenIds { status: Success })?)
+    })
 }
+
+
+pub fn try_mint<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    mint_tokens: Vec<MintToken>,
+) -> StdResult<HandleResponse> {
+    // check if sender is a minter
+    verify_minter(&deps.storage, &env)?;
+
+    // mint tokens
+    for mint_token in mint_tokens {
+        let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
+    
+        if token_info_op.is_none() {
+            return Err(StdError::generic_err(
+                "token_id does not exist. Cannot mint or transfer non-existent `token_ids`.
+                Use `mint_token_ids` to create tokens on new `token_ids`"
+            ))
+        }
+
+        // add balances
+        for add_balance in mint_token.add_balances {
+            exec_change_balance(
+                &mut deps.storage, 
+                mint_token.token_id.clone(), 
+                None, 
+                add_balance.address, 
+                add_balance.amount, 
+                token_info_op.clone().unwrap()
+            )?;
+        }
+    }
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::Mint { status: Success })?)
+    })
+}
+
+pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    token_id: String,
+    sender: HumanAddr,
+    recipient: HumanAddr,
+    amount: Uint128,
+) -> StdResult<HandleResponse> {
+    // check that token_id exists
+    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+
+    if token_info_op.is_none() {
+        return Err(StdError::generic_err(
+            "token_id does not exist. Cannot mint or transfer non-existent `token_ids`.
+            Use `mint_token_ids` to create tokens on new `token_ids`"
+        ))
+    }
+
+    // check if `sender` == message sender || has permission to send tokens
+    // permission logic todo!()
+    let permission = false;
+
+    // perform check
+    if sender != env.message.sender && !permission {
+        return Err(StdError::generic_err("you need to either be the owner of or have permission to transfer the tokens"))
+    }
+
+    // transfer tokens
+    exec_change_balance(
+        &mut deps.storage, 
+        token_id, 
+        Some(sender), 
+        recipient, 
+        amount, 
+        token_info_op.unwrap()
+    )?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::Transfer { status: Success })?)
+    })
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Private functions
+/////////////////////////////////////////////////////////////////////////////////
+
+fn pad_response(
+    response: StdResult<HandleResponse>
+) -> StdResult<HandleResponse> {
+    response.map(|mut response| {
+        response.data = response.data.map(|mut data| {
+            space_pad(&mut data.0, RESPONSE_BLOCK_SIZE);
+            data
+        });
+        response
+    })
+}
+
+/// verifies if sender is a minter
+fn verify_minter<S: Storage>(
+    storage: &S,
+    env: &Env
+) -> StdResult<()> {
+    // check if sender is a minter
+    let minters = contr_conf_r(storage).load()?.minters;
+    if !minters.contains(&env.message.sender) {
+        return Err(StdError::generic_err(
+            "Only minters are allowed to mint",
+        ));
+    }
+    Ok(())
+}
+
+/// checks if `token_id` is available (ie: not yet created), then creates new `token_id` and initial balances
+fn exec_mint_token_id<S: Storage>(
+    storage: &mut S,
+    initial_token: MintTokenId,
+) -> StdResult<()> {
+    // check: token_id has not been created yet
+    if tkn_info_r(storage).may_load(initial_token.token_info.token_id.as_bytes())?.is_some() {
+        return Err(StdError::generic_err("token_id already exists. Try a different id String"))
+    }
+
+    // check: token_id is an NFT => cannot create more than one
+    if initial_token.token_info.is_nft {
+        if initial_token.balances.len() > 1 {
+            return Err(StdError::generic_err(format!(
+                "token_id {} is an NFT; there can only be one NFT. Balances should only have one address",
+                initial_token.token_info.token_id
+            )))
+        } else if initial_token.balances[0].amount != Uint128(1) {
+            return Err(StdError::generic_err(format!(
+                "token_id {} is an NFT; there can only be one NFT. Balances.amount must == 1",
+                initial_token.token_info.token_id
+            )))
+        }
+    }
+
+    // crate and save new token info
+    tkn_info_w(storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
+
+    // set initial balances
+    for balance in initial_token.balances {
+        balances_w(storage, &initial_token.token_info.token_id)
+        .save(to_binary(&balance.address)?.as_slice(), &balance.amount)?;
+    }
+
+    Ok(())
+}
+
+/// change token balance of an existing `token_id`. If `remove_from`==None, new tokens will be minted.
+/// Check that `token_id` already exists before calling this function.
+/// If is_nft == true, then `remove_from` MUST be Some(_).
+fn exec_change_balance<S: Storage>(
+    storage: &mut S,
+    token_id: String,
+    remove_from: Option<HumanAddr>,
+    add_to: HumanAddr,
+    amount: Uint128,
+    token_info: TknInfo,
+) -> StdResult<()> {
+    // check whether token_id is an NFT => cannot mint
+    if token_info.is_nft && remove_from == None {
+        return Err(StdError::generic_err("NFTs can only be minted once using `mint_token_ids`"))
+    }
+
+    // check whether token_id is an NFT => assert!(amount == 1). 
+    if token_info.is_nft && amount != Uint128(1) {
+        return Err(StdError::generic_err("NFT amount must == 1"))
+    }
+
+    // remove balance
+    if let Some(ref from) = remove_from {
+        let from_existing_bal = balances_r(storage, &token_id).load(to_binary(&from)?.as_slice())?;
+        let from_new_amount_op = from_existing_bal.u128().checked_sub(amount.u128());
+        if from_new_amount_op.is_none() {
+            return Err(StdError::generic_err("sender has insufficient funds"))
+        }    
+        balances_w(storage, &token_id)
+        .save(to_binary(&from)?.as_slice(), &Uint128(from_new_amount_op.unwrap()))?;
+    }
+
+    // add balance
+    let to_existing_bal_op = balances_r(storage, &token_id).may_load(to_binary(&add_to)?.as_slice())?; 
+    let to_existing_bal = match to_existing_bal_op {
+        Some(i) => i,
+        None => Uint128(0),
+    };
+    let to_new_amount_op = to_existing_bal.u128().checked_add(amount.u128());
+    if to_new_amount_op.is_none() {
+        return Err(StdError::generic_err("recipient will become too rich. Total tokens exceeds 2^128"))
+    }
+
+    // save new balances
+    balances_w(storage, &token_id)
+    .save(to_binary(&add_to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
+
+    Ok(())
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Queries
+/////////////////////////////////////////////////////////////////////////////////
+
 
 pub fn query<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     msg: QueryMsg,
 ) -> StdResult<Binary> {
     match msg {
-        QueryMsg::GetCount {} => to_binary(&query_count(deps)?),
+        QueryMsg::ContractInfo {  } => query_contract_info(deps),
     }
 }
 
-fn query_count<S: Storage, A: Api, Q: Querier>(deps: &Extern<S, A, Q>) -> StdResult<CountResponse> {
-    let state = config_read(&deps.storage).load()?;
-    Ok(CountResponse { count: state.count })
+pub fn query_contract_info<S: Storage, A: Api, Q: Querier>(
+    _deps: &Extern<S, A, Q>,
+) -> StdResult<Binary> {
+    to_binary(&"data".to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use cosmwasm_std::testing::{mock_dependencies, mock_env};
-    use cosmwasm_std::{coins, from_binary, StdError};
-
-    #[test]
-    fn proper_initialization() {
-        let mut deps = mock_dependencies(20, &[]);
-
-        let msg = InitMsg { count: 17 };
-        let env = mock_env("creator", &coins(1000, "earth"));
-
-        // we can just call .unwrap() to assert this was a success
-        let res = init(&mut deps, env, msg).unwrap();
-        assert_eq!(0, res.messages.len());
-
-        // it worked, let's query the state
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(17, value.count);
-    }
-
-    #[test]
-    fn increment() {
-        let mut deps = mock_dependencies(20, &coins(2, "token"));
-
-        let msg = InitMsg { count: 17 };
-        let env = mock_env("creator", &coins(2, "token"));
-        let _res = init(&mut deps, env, msg).unwrap();
-
-        // anyone can increment
-        let env = mock_env("anyone", &coins(2, "token"));
-        let msg = HandleMsg::Increment {};
-        let _res = handle(&mut deps, env, msg).unwrap();
-
-        // should increase counter by 1
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(18, value.count);
-    }
-
-    #[test]
-    fn reset() {
-        let mut deps = mock_dependencies(20, &coins(2, "token"));
-
-        let msg = InitMsg { count: 17 };
-        let env = mock_env("creator", &coins(2, "token"));
-        let _res = init(&mut deps, env, msg).unwrap();
-
-        // not anyone can reset
-        let unauth_env = mock_env("anyone", &coins(2, "token"));
-        let msg = HandleMsg::Reset { count: 5 };
-        let res = handle(&mut deps, unauth_env, msg);
-        match res {
-            Err(StdError::Unauthorized { .. }) => {}
-            _ => panic!("Must return unauthorized error"),
-        }
-
-        // only the original creator can reset the counter
-        let auth_env = mock_env("creator", &coins(2, "token"));
-        let msg = HandleMsg::Reset { count: 5 };
-        let _res = handle(&mut deps, auth_env, msg).unwrap();
-
-        // should now be 5
-        let res = query(&deps, QueryMsg::GetCount {}).unwrap();
-        let value: CountResponse = from_binary(&res).unwrap();
-        assert_eq!(5, value.count);
-    }
-}
