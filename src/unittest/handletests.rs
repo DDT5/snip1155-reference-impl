@@ -52,7 +52,7 @@ fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     mint.token_info.symbol = "TKN1".to_string();
     mint.balances[0].address = addr1.clone();
     mint.balances[0].amount = Uint128(500);
-    let mut msg = HandleMsg::MintTokenIds(vec![mint]);
+    let mut msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     handle(deps, env.clone(), msg)?;
 
     // mint NFT
@@ -62,7 +62,7 @@ fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     mint.token_info.symbol = "TKN2".to_string();
     mint.token_info.is_nft = true;
     mint.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
-    msg = HandleMsg::MintTokenIds(vec![mint]);
+    msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     handle(deps, env.clone(), msg)?;
     
     Ok(())
@@ -112,11 +112,38 @@ fn init_sanity() -> StdResult<()> {
     let contr_conf = contr_conf_r(&deps.storage).load()?;
     assert_eq!(contr_conf.admin.unwrap(), addr0);
     assert_eq!(contr_conf.minters, vec![addr0.clone()]);
+    // 1 minting could have happened, so tx_cnt should == 1:
+    assert_eq!(contr_conf.tx_cnt, 1u64);
     let token_id = "0".to_string();
     
     // check initial balances
     let balance = balances_r(&deps.storage, &token_id).load(to_binary(&addr0)?.as_slice())?;
     assert_eq!(balance, Uint128(1000));
+    Ok(())
+}
+
+
+#[test]
+fn mint_token_id_sanity() -> StdResult<()> {
+    // init addresses
+    let addr0 = HumanAddr("addr0".to_string());
+    let addr1 = HumanAddr("addr1".to_string());
+    let addr2 = HumanAddr("addr2".to_string());
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // mint additional token_ids
+    let env = mock_env("addr0", &[]);
+    mint_addtl_default(&mut deps, &env)?;
+    
+    // check balances
+    assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
+    assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(500));
+    assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
+    // 1 initial balance, 2 mint_token_id 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 3u64);
+
     Ok(())
 }
 
@@ -142,7 +169,7 @@ fn test_mint_token_id() -> StdResult<()> {
         Balance { address: addr0.clone(), amount: Uint128(1) },
         Balance { address: addr1.clone(), amount: Uint128(1) },
         ];
-    let mut msg = HandleMsg::MintTokenIds(vec![mint]);
+    let mut msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     let mut result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("is an NFT; there can only be one NFT. Balances should only have one address"));
 
@@ -151,7 +178,7 @@ fn test_mint_token_id() -> StdResult<()> {
     mint.token_info.token_id = "4".to_string();
     mint.token_info.is_nft = true;
     mint.balances[0].amount = Uint128(2);
-    msg = HandleMsg::MintTokenIds(vec![mint]);
+    msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("is an NFT; there can only be one NFT. Balances.amount must == 1"));
 
@@ -159,7 +186,7 @@ fn test_mint_token_id() -> StdResult<()> {
     env.message.sender = addr1.clone();
     let mut mint = MintTokenId::default();
     mint.token_info.token_id = "5".to_string();
-    msg = HandleMsg::MintTokenIds(vec![mint]);
+    msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("Only minters are allowed to mint"));
 
@@ -170,6 +197,8 @@ fn test_mint_token_id() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "3", &addr0), None); assert_eq!(chk_bal(&deps.storage, "3", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "4", &addr0), None);
     assert_eq!(chk_bal(&deps.storage, "5", &addr0), None);
+    // 1 initial balance, 2 mint_token_id, 0 additional
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 3u64);
 
     Ok(())
 }
@@ -193,12 +222,15 @@ fn test_mint_tokens() -> StdResult<()> {
         add_balances: vec![
             Balance { address: addr0.clone(), amount: Uint128(10) },
             Balance { address: addr1.clone(), amount: Uint128(10) }
-        ]
+        ],
+        padding: None,
     };
-    let msg = HandleMsg::MintTokens(vec![mint]);
+    let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     handle(&mut deps, env.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(10));
+    // 1 initial balance, 2 mint_token_id, 2 mint_token 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     // non-minter cannot mint
     env.message.sender = addr1;
@@ -209,12 +241,15 @@ fn test_mint_tokens() -> StdResult<()> {
     env.message.sender = addr0.clone();
     let mint = MintToken { 
         token_id: "2".to_string(), 
-        add_balances: vec![Balance { address: addr0.clone(), amount: Uint128(1) }]
+        add_balances: vec![Balance { address: addr0.clone(), amount: Uint128(1) }],
+        padding: None,
     };
-    let msg = HandleMsg::MintTokens(vec![mint]);
+    let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     let result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("NFTs can only be minted once using `mint_token_ids`"));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
+    // 1 initial balance, 2 mint_token_id, 2 mint_token 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
     
     Ok(())
 }
@@ -242,9 +277,11 @@ fn test_transfer() -> StdResult<()> {
     // transfer fungible token "tkn0"
     let msg = HandleMsg::Transfer { 
         token_id: "0".to_string(), 
-        sender: addr0.clone(), 
+        from: addr0.clone(), 
         recipient: addr1.clone(), 
-        amount: Uint128(800) 
+        amount: Uint128(800),
+        memo: None,
+        padding: None, 
     };
     handle(&mut deps, env.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(200));
@@ -259,9 +296,11 @@ fn test_transfer() -> StdResult<()> {
     env.message.sender = addr2.clone();
     let msg = HandleMsg::Transfer { 
         token_id: "2".to_string(), 
-        sender: addr2.clone(), 
+        from: addr2.clone(), 
         recipient: addr1.clone(), 
-        amount: Uint128(0) 
+        amount: Uint128(0),
+        memo: None,
+        padding: None, 
     };
     let result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("NFT amount must == 1"));
@@ -269,9 +308,11 @@ fn test_transfer() -> StdResult<()> {
     // transfer NFT "tkn2"; should succeed
     let msg = HandleMsg::Transfer { 
         token_id: "2".to_string(), 
-        sender: addr2.clone(), 
+        from: addr2.clone(), 
         recipient: addr1.clone(), 
-        amount: Uint128(1) 
+        amount: Uint128(1),
+        memo: None,
+        padding: None, 
     };
     handle(&mut deps, env.clone(), msg)?;
 
@@ -280,6 +321,8 @@ fn test_transfer() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "2", &addr1).unwrap(), Uint128(1));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(200));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(800));
+    // 1 initial balance, 2 mint_token_id, 2 transfers 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     Ok(())
 }

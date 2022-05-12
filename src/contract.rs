@@ -15,7 +15,8 @@ use crate::{
     state::{
         RESPONSE_BLOCK_SIZE, ContrConf,
         contr_conf_w, tkn_info_r, TknInfo,
-        MintTokenId, MintToken, tkn_info_w, balances_w, balances_r, contr_conf_r,
+        MintTokenId, MintToken, tkn_info_w, balances_w, balances_r, contr_conf_r, 
+        store_transfer, store_mint,
     }
 };
 
@@ -35,24 +36,30 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         false => None,
         true => match msg.admin {
             Some(i) => Some(i),
-            None => Some(env.message.sender),
+            None => Some(env.message.sender.clone()),
         },
     };
     
-    // save contract config
-    let config = ContrConf { 
+    // create contract config -- save later
+    let mut config = ContrConf { 
         admin, 
-        minters: msg.minters
+        minters: msg.minters,
+        tx_cnt: 0u64,
     };
-    contr_conf_w(&mut deps.storage).save(&config)?;
 
     // set initial balances
     for initial_token in msg.initial_tokens {
         exec_mint_token_id(
-            &mut deps.storage, 
-            initial_token
+            deps, 
+            &env,
+            &mut config,
+            initial_token,
+            None,
         )?;
     }
+
+    // save contract config -- where tx_cnt would have increased post initial balances
+    contr_conf_w(&mut deps.storage).save(&config)?;
     
     Ok(InitResponse::default())
 }
@@ -67,33 +74,52 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
     msg: HandleMsg,
 ) -> StdResult<HandleResponse> {
     let response = match msg {
-        HandleMsg::MintTokenIds(
-            initial_tokens
-        ) => try_mint_token_ids(
+        HandleMsg::MintTokenIds {
+            initial_tokens,
+            memo,
+            padding: _,
+         } => try_mint_token_ids(
             deps,
             env,
             initial_tokens,
+            memo,
         ),
-        HandleMsg::MintTokens(
-            mint_tokens
-        ) => try_mint(
+        HandleMsg::MintTokens {
+            mint_tokens,
+            memo,
+            padding: _
+         } => try_mint_tokens(
             deps, 
             env,
             mint_tokens,
+            memo
         ),
         HandleMsg::Transfer { 
             token_id,
-            sender,
+            from,
             recipient, 
-            amount 
+            amount,
+            memo,
+            padding: _,
         } => try_transfer(
             deps,
             env,
             token_id,
-            sender,
+            from,
             recipient,
-            amount
+            amount,
+            memo,
         ),
+        HandleMsg::Send { 
+            token_id: _, 
+            from: _, 
+            recipient: _, 
+            recipient_code_hash: _, 
+            amount: _, 
+            msg: _, 
+            memo: _, 
+            padding: _, 
+        } => todo!(),
     };
     pad_response(response)
 }
@@ -101,18 +127,25 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
 pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    initial_tokens: Vec<MintTokenId>
+    initial_tokens: Vec<MintTokenId>,
+    memo: Option<String>,
 ) -> StdResult<HandleResponse> {
     // check if sender is a minter
     verify_minter(&deps.storage, &env)?;
 
     // mint new token_ids
+    let mut config = contr_conf_r(&mut deps.storage).load()?;
     for initial_token in initial_tokens {
         exec_mint_token_id(
-            &mut deps.storage, 
-            initial_token
+            deps, 
+            &env,
+            &mut config,
+            initial_token, 
+            memo.clone(),
         )?;
     } 
+
+    contr_conf_w(&mut deps.storage).save(&config)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -122,15 +155,17 @@ pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
 }
 
 
-pub fn try_mint<S: Storage, A: Api, Q: Querier>(
+pub fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     mint_tokens: Vec<MintToken>,
+    memo: Option<String>,
 ) -> StdResult<HandleResponse> {
     // check if sender is a minter
     verify_minter(&deps.storage, &env)?;
 
     // mint tokens
+    let mut config = contr_conf_r(&mut deps.storage).load()?;
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
     
@@ -145,14 +180,28 @@ pub fn try_mint<S: Storage, A: Api, Q: Querier>(
         for add_balance in mint_token.add_balances {
             exec_change_balance(
                 &mut deps.storage, 
-                mint_token.token_id.clone(), 
+                &mint_token.token_id, 
                 None, 
-                add_balance.address, 
+                &add_balance.address, 
+                &add_balance.amount, 
+                &token_info_op.clone().unwrap()
+            )?;
+
+            // store mint_token_id
+            store_mint(
+                &mut deps.storage, 
+                &mut config, 
+                &env.block,
+                &mint_token.token_id,
+                deps.api.canonical_address(&env.message.sender)?, 
+                deps.api.canonical_address(&add_balance.address)?, 
                 add_balance.amount, 
-                token_info_op.clone().unwrap()
+                memo.clone()
             )?;
         }
     }
+
+    contr_conf_w(&mut deps.storage).save(&config)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -165,9 +214,10 @@ pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     token_id: String,
-    sender: HumanAddr,
+    from: HumanAddr,
     recipient: HumanAddr,
     amount: Uint128,
+    memo: Option<String>,
 ) -> StdResult<HandleResponse> {
     // check that token_id exists
     let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
@@ -179,24 +229,39 @@ pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
         ))
     }
 
-    // check if `sender` == message sender || has permission to send tokens
+    // check if `from` == message sender || has permission to send tokens
     // permission logic todo!()
     let permission = false;
 
     // perform check
-    if sender != env.message.sender && !permission {
+    if from != env.message.sender && !permission {
         return Err(StdError::generic_err("you need to either be the owner of or have permission to transfer the tokens"))
     }
 
     // transfer tokens
     exec_change_balance(
         &mut deps.storage, 
-        token_id, 
-        Some(sender), 
-        recipient, 
-        amount, 
-        token_info_op.unwrap()
+        &token_id, 
+        Some(&from), 
+        &recipient, 
+        &amount, 
+        &token_info_op.unwrap()
     )?;
+
+    // store transaction
+    let mut config = contr_conf_r(&mut deps.storage).load()?;
+    store_transfer(
+        &mut deps.storage, 
+        &mut config, 
+        &env.block, 
+        token_id, 
+        deps.api.canonical_address(&from)?, 
+        None, 
+        deps.api.canonical_address(&recipient)?, 
+        amount, 
+        memo
+    )?;
+    contr_conf_w(&mut deps.storage).save(&config)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -237,12 +302,15 @@ fn verify_minter<S: Storage>(
 }
 
 /// checks if `token_id` is available (ie: not yet created), then creates new `token_id` and initial balances
-fn exec_mint_token_id<S: Storage>(
-    storage: &mut S,
+fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: &Env,
+    config: &mut ContrConf,
     initial_token: MintTokenId,
+    memo: Option<String>,
 ) -> StdResult<()> {
     // check: token_id has not been created yet
-    if tkn_info_r(storage).may_load(initial_token.token_info.token_id.as_bytes())?.is_some() {
+    if tkn_info_r(&deps.storage).may_load(initial_token.token_info.token_id.as_bytes())?.is_some() {
         return Err(StdError::generic_err("token_id already exists. Try a different id String"))
     }
 
@@ -262,12 +330,24 @@ fn exec_mint_token_id<S: Storage>(
     }
 
     // crate and save new token info
-    tkn_info_w(storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
+    tkn_info_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
 
-    // set initial balances
+    // set initial balances and store mint history
     for balance in initial_token.balances {
-        balances_w(storage, &initial_token.token_info.token_id)
+        balances_w(&mut deps.storage, &initial_token.token_info.token_id)
         .save(to_binary(&balance.address)?.as_slice(), &balance.amount)?;
+
+        // store mint_token_id
+        store_mint(
+            &mut deps.storage, 
+            config, 
+            &env.block,
+            &initial_token.token_info.token_id, 
+            deps.api.canonical_address(&env.message.sender)?, 
+            deps.api.canonical_address(&balance.address)?, 
+            balance.amount, 
+            memo.clone()
+        )?;
     }
 
     Ok(())
@@ -278,11 +358,11 @@ fn exec_mint_token_id<S: Storage>(
 /// If is_nft == true, then `remove_from` MUST be Some(_).
 fn exec_change_balance<S: Storage>(
     storage: &mut S,
-    token_id: String,
-    remove_from: Option<HumanAddr>,
-    add_to: HumanAddr,
-    amount: Uint128,
-    token_info: TknInfo,
+    token_id: &str,
+    remove_from: Option<&HumanAddr>,
+    add_to: &HumanAddr,
+    amount: &Uint128,
+    token_info: &TknInfo,
 ) -> StdResult<()> {
     // check whether token_id is an NFT => cannot mint
     if token_info.is_nft && remove_from == None {
@@ -290,12 +370,12 @@ fn exec_change_balance<S: Storage>(
     }
 
     // check whether token_id is an NFT => assert!(amount == 1). 
-    if token_info.is_nft && amount != Uint128(1) {
+    if token_info.is_nft && amount != &Uint128(1) {
         return Err(StdError::generic_err("NFT amount must == 1"))
     }
 
     // remove balance
-    if let Some(ref from) = remove_from {
+    if let Some(from) = remove_from {
         let from_existing_bal = balances_r(storage, &token_id).load(to_binary(&from)?.as_slice())?;
         let from_new_amount_op = from_existing_bal.u128().checked_sub(amount.u128());
         if from_new_amount_op.is_none() {

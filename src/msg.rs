@@ -1,4 +1,4 @@
-use cosmwasm_std::{Uint128, HumanAddr};
+use cosmwasm_std::{Uint128, HumanAddr, Binary};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -26,13 +26,35 @@ pub struct InitMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleMsg {
-    MintTokenIds(Vec<MintTokenId>),
-    MintTokens(Vec<MintToken>),
+    MintTokenIds {
+        initial_tokens: Vec<MintTokenId>,
+        memo: Option<String>,
+        padding: Option<String>,
+    },
+    MintTokens {
+        mint_tokens: Vec<MintToken>,
+        memo: Option<String>,
+        padding: Option<String>,
+    },
     Transfer {
         token_id: String,
-        sender: HumanAddr,
+        // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+        from: HumanAddr,
         recipient: HumanAddr,
-        amount: Uint128
+        amount: Uint128,
+        memo: Option<String>,
+        padding: Option<String>,
+    },
+    Send {
+        token_id: String,
+        // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+        from: HumanAddr,
+        recipient: HumanAddr,
+        recipient_code_hash: Option<String>,
+        amount: Uint128,
+        msg: Option<Binary>,
+        memo: Option<String>,
+        padding: Option<String>,
     }
 }
 
@@ -42,6 +64,7 @@ pub enum HandleAnswer {
     NewTokenIds { status: ResponseStatus },
     Mint { status: ResponseStatus },
     Transfer { status: ResponseStatus },
+    Send { status: ResponseStatus },
 }
 
 
