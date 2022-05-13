@@ -2,6 +2,8 @@ pub mod contract;
 pub mod msg;
 pub mod state;
 mod token;
+mod receiver;
+mod vk;
 mod expiration;
 
 #[cfg(test)]

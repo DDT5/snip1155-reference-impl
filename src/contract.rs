@@ -1,8 +1,9 @@
 use cosmwasm_std::{
     Env, Extern, Storage, Api, Querier, 
-    InitResponse, HandleResponse, Binary, to_binary,
+    InitResponse, HandleResponse, Binary, to_binary, log,
     StdResult, StdError,
     HumanAddr, Uint128,
+    CosmosMsg, 
     // debug_print, 
 };
 use secret_toolkit::utils::space_pad;
@@ -13,17 +14,24 @@ use crate::{
         ResponseStatus::{Success}, //Failure 
     },
     state::{
-        RESPONSE_BLOCK_SIZE, ContrConf,
-        contr_conf_w, tkn_info_r, TknInfo,
-        MintTokenId, MintToken, tkn_info_w, balances_w, balances_r, contr_conf_r, 
-        store_transfer, store_mint,
-    }
+        RESPONSE_BLOCK_SIZE, 
+        ContrConf, TknInfo, MintTokenId, TokenAmount, Balance, 
+        contr_conf_w, tkn_info_r, 
+        tkn_info_w, balances_w, balances_r, contr_conf_r, 
+        store_transfer, store_mint, store_burn,
+        set_receiver_hash, get_receiver_hash, write_viewing_key, 
+    },
+    receiver::{Snip1155ReceiveMsg}, 
+    vk::{
+        viewing_key::ViewingKey,
+        rand::sha_256,
+    },
+    
 };
 
 /////////////////////////////////////////////////////////////////////////////////
 // Init
 /////////////////////////////////////////////////////////////////////////////////
-
 
 pub fn init<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
@@ -41,10 +49,12 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     };
     
     // create contract config -- save later
+    let prng_seed: Vec<u8> = sha_256(base64::encode(msg.entropy).as_bytes()).to_vec();
     let mut config = ContrConf { 
         admin, 
         minters: msg.minters,
         tx_cnt: 0u64,
+        prng_seed,
     };
 
     // set initial balances
@@ -94,6 +104,16 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             mint_tokens,
             memo
         ),
+        HandleMsg::BurnTokens { 
+            burn_tokens, 
+            memo, 
+            padding: _ 
+        } => try_burn_tokens(
+            deps, 
+            env, 
+            burn_tokens, 
+            memo
+        ),
         HandleMsg::Transfer { 
             token_id,
             from,
@@ -111,20 +131,53 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             memo,
         ),
         HandleMsg::Send { 
-            token_id: _, 
-            from: _, 
-            recipient: _, 
-            recipient_code_hash: _, 
-            amount: _, 
-            msg: _, 
-            memo: _, 
+            token_id, 
+            from, 
+            recipient, 
+            recipient_code_hash, 
+            amount, 
+            msg, 
+            memo, 
             padding: _, 
-        } => todo!(),
+        } => try_send(
+            deps,
+            env,
+            TokenAmount { token_id, balances: [Balance {address: from, amount }].to_vec()},
+            recipient,
+            recipient_code_hash,
+            msg,
+            memo,
+        ),
+        HandleMsg::RegisterReceive { 
+            code_hash, 
+            padding: _, 
+        } => try_register_receive(
+            deps, 
+            env, 
+            code_hash
+        ),
+        HandleMsg::CreateViewingKey { 
+            entropy, 
+            padding: _ 
+        } => try_create_key(
+            deps, 
+            env, 
+            entropy
+        ),
+        HandleMsg::SetViewingKey { 
+            key, 
+            padding: _ 
+        } => try_set_key(
+            deps, 
+            env, 
+            key
+        ),
+        
     };
     pad_response(response)
 }
 
-pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
+fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     initial_tokens: Vec<MintTokenId>,
@@ -134,7 +187,7 @@ pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     verify_minter(&deps.storage, &env)?;
 
     // mint new token_ids
-    let mut config = contr_conf_r(&mut deps.storage).load()?;
+    let mut config = contr_conf_r(&deps.storage).load()?;
     for initial_token in initial_tokens {
         exec_mint_token_id(
             deps, 
@@ -154,40 +207,39 @@ pub fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-
-pub fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
+fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    mint_tokens: Vec<MintToken>,
+    mint_tokens: Vec<TokenAmount>,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
     // check if sender is a minter
     verify_minter(&deps.storage, &env)?;
 
     // mint tokens
-    let mut config = contr_conf_r(&mut deps.storage).load()?;
+    let mut config = contr_conf_r(&deps.storage).load()?;
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
     
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
-                "token_id does not exist. Cannot mint or transfer non-existent `token_ids`.
+                "token_id does not exist. Cannot mint non-existent `token_ids`.
                 Use `mint_token_ids` to create tokens on new `token_ids`"
             ))
         }
 
         // add balances
-        for add_balance in mint_token.add_balances {
+        for add_balance in mint_token.balances {
             exec_change_balance(
                 &mut deps.storage, 
                 &mint_token.token_id, 
                 None, 
-                &add_balance.address, 
+                Some(&add_balance.address), 
                 &add_balance.amount, 
                 &token_info_op.clone().unwrap()
             )?;
 
-            // store mint_token_id
+            // store mint_token
             store_mint(
                 &mut deps.storage, 
                 &mut config, 
@@ -206,11 +258,82 @@ pub fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
     Ok(HandleResponse {
         messages: vec![],
         log: vec![],
-        data: Some(to_binary(&HandleAnswer::Mint { status: Success })?)
+        data: Some(to_binary(&HandleAnswer::MintTokens { status: Success })?)
     })
 }
 
-pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
+// in the base specifications, this function can be performed by token owner only
+fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    burn_tokens: Vec<TokenAmount>,
+    memo: Option<String>,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+    
+    // burn tokens
+    for burn_token in burn_tokens {
+        let token_info_op = tkn_info_r(&deps.storage).may_load(burn_token.token_id.as_bytes())?;
+    
+        if token_info_op.is_none() {
+            return Err(StdError::generic_err(
+                "token_id does not exist. Cannot burn non-existent `token_ids`.
+                Use `mint_token_ids` to create tokens on new `token_ids`"
+            ))
+        }
+
+        let token_info = token_info_op.clone().unwrap();
+
+        if !token_info.token_config.enable_burn {
+            return Err(StdError::generic_err(
+                "burn is not enabled for this token_id"
+            ))
+        }
+
+        // remove balances
+        for rem_balance in burn_token.balances {
+            // in base specification, burner MUST be the owner
+            if rem_balance.address != env.message.sender {
+                return Err(StdError::generic_err(format!(
+                    "you do not have permission to burn {} tokens from address {}",
+                    rem_balance.amount, rem_balance.address
+                )))
+            }
+
+            exec_change_balance(
+                &mut deps.storage, 
+                &burn_token.token_id, 
+                Some(&rem_balance.address), 
+                None,
+                &rem_balance.amount, 
+                &token_info
+            )?;
+
+            // store burn_token
+            store_burn(
+                &mut deps.storage, 
+                &mut config, 
+                &env.block,
+                &burn_token.token_id,
+                // in base specification, burner MUST be the owner
+                None, 
+                deps.api.canonical_address(&rem_balance.address)?, 
+                rem_balance.amount, 
+                memo.clone()
+            )?;
+        }
+    }
+
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::BurnTokens { status: Success })?)
+    })
+}
+
+fn try_transfer<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     token_id: String,
@@ -219,49 +342,15 @@ pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
-    // check that token_id exists
-    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
-
-    if token_info_op.is_none() {
-        return Err(StdError::generic_err(
-            "token_id does not exist. Cannot mint or transfer non-existent `token_ids`.
-            Use `mint_token_ids` to create tokens on new `token_ids`"
-        ))
-    }
-
-    // check if `from` == message sender || has permission to send tokens
-    // permission logic todo!()
-    let permission = false;
-
-    // perform check
-    if from != env.message.sender && !permission {
-        return Err(StdError::generic_err("you need to either be the owner of or have permission to transfer the tokens"))
-    }
-
-    // transfer tokens
-    exec_change_balance(
-        &mut deps.storage, 
+    impl_transfer(
+        deps, 
+        &env, 
         &token_id, 
-        Some(&from), 
+        &from, 
         &recipient, 
-        &amount, 
-        &token_info_op.unwrap()
-    )?;
-
-    // store transaction
-    let mut config = contr_conf_r(&mut deps.storage).load()?;
-    store_transfer(
-        &mut deps.storage, 
-        &mut config, 
-        &env.block, 
-        token_id, 
-        deps.api.canonical_address(&from)?, 
-        None, 
-        deps.api.canonical_address(&recipient)?, 
         amount, 
         memo
     )?;
-    contr_conf_w(&mut deps.storage).save(&config)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -269,6 +358,108 @@ pub fn try_transfer<S: Storage, A: Api, Q: Querier>(
         data: Some(to_binary(&HandleAnswer::Transfer { status: Success })?)
     })
 }
+
+fn try_send<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    from_amount: TokenAmount, 
+    recipient: HumanAddr,
+    recipient_code_hash: Option<String>,
+    msg: Option<Binary>,
+    memo: Option<String>,
+) -> StdResult<HandleResponse> {
+    let token_id = from_amount.token_id;
+    let from = &from_amount.balances[0].address;
+    let amount = from_amount.balances[0].amount;
+
+    // implements transfer of tokens
+    impl_transfer(
+        deps, 
+        &env, 
+        &token_id, 
+        from, 
+        &recipient, 
+        amount, 
+        memo.clone()
+    )?;
+
+    // create cosmos message
+    let mut messages = vec![];
+    let sender = env.message.sender;
+    try_add_receiver_api_callback(
+        &deps.storage,
+        &mut messages,
+        recipient,
+        recipient_code_hash,
+        msg,
+        sender,
+        token_id,
+        from.to_owned(),
+        amount,
+        memo,
+    )?;
+
+    Ok(HandleResponse {
+        messages,
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::Send { status: Success })?)
+    })
+}
+
+fn try_register_receive<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    code_hash: String,
+) -> StdResult<HandleResponse> {
+    set_receiver_hash(&mut deps.storage, &env.message.sender, code_hash);
+    let res = HandleResponse {
+        messages: vec![],
+        log: vec![log("register_status", "success")],
+        data: Some(to_binary(&HandleAnswer::RegisterReceive {
+            status: Success,
+        })?),
+    };
+    Ok(res)
+}
+
+fn try_create_key<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    entropy: String,
+) -> StdResult<HandleResponse> {
+    // let constants = ReadonlyConfig::from_storage(&deps.storage).constants()?;
+    let contr_conf = contr_conf_r(&deps.storage).load()?;
+    let prng_seed = contr_conf.prng_seed;
+
+    let key = ViewingKey::new(&env, &prng_seed, (&entropy).as_ref());
+
+    let message_sender = deps.api.canonical_address(&env.message.sender)?;
+    write_viewing_key(&mut deps.storage, &message_sender, &key);
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::CreateViewingKey { key })?),
+    })
+}
+
+fn try_set_key<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    key: String,
+) -> StdResult<HandleResponse> {
+    let vk = ViewingKey(key);
+
+    let message_sender = deps.api.canonical_address(&env.message.sender)?;
+    write_viewing_key(&mut deps.storage, &message_sender, &vk);
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::SetViewingKey { status: Success })?),
+    })
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -353,14 +544,76 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
     Ok(())
 }
 
-/// change token balance of an existing `token_id`. If `remove_from`==None, new tokens will be minted.
-/// Check that `token_id` already exists before calling this function.
-/// If is_nft == true, then `remove_from` MUST be Some(_).
+/// Implements transfer of tokens, and saves the transfer history. Used by
+/// `Transfer` and `Send` messages
+fn impl_transfer<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: &Env,
+    token_id: &str,
+    from: &HumanAddr,
+    recipient: &HumanAddr,
+    amount: Uint128,
+    memo: Option<String>,
+) -> StdResult<()> {
+    // check that token_id exists
+    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+
+    if token_info_op.is_none() {
+        return Err(StdError::generic_err(
+            "token_id does not exist. Cannot transfer non-existent `token_ids`.
+            Use `mint_token_ids` to create tokens on new `token_ids`"
+        ))
+    }
+
+    // check if `from` == message sender || has permission to send tokens
+    // permission logic todo!()
+    let permission = false;
+
+    // perform check
+    if from != &env.message.sender && !permission {
+        return Err(StdError::generic_err("you need to either be the owner of or have permission to transfer the tokens"))
+    }
+
+    // transfer tokens
+    exec_change_balance(
+        &mut deps.storage, 
+        token_id, 
+        Some(from), 
+        Some(recipient), 
+        &amount, 
+        &token_info_op.unwrap()
+    )?;
+
+    // store transaction
+    let mut config = contr_conf_r(&deps.storage).load()?;
+    store_transfer(
+        &mut deps.storage, 
+        &mut config, 
+        &env.block, 
+        token_id, 
+        deps.api.canonical_address(from)?, 
+        None, 
+        deps.api.canonical_address(recipient)?, 
+        amount, 
+        memo
+    )?;
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(())
+}
+
+/// change token balance of an existing `token_id`. 
+/// 
+/// Should check that `token_id` already exists before calling this function, which is not done
+/// explicitly in this function.
+/// * If `remove_from` == None: minted new tokens.
+/// * If `add_to` == None: burn tokens.
+/// * If is_nft == true, then `remove_from` MUST be Some(_).
 fn exec_change_balance<S: Storage>(
     storage: &mut S,
     token_id: &str,
     remove_from: Option<&HumanAddr>,
-    add_to: &HumanAddr,
+    add_to: Option<&HumanAddr>,
     amount: &Uint128,
     token_info: &TknInfo,
 ) -> StdResult<()> {
@@ -376,32 +629,70 @@ fn exec_change_balance<S: Storage>(
 
     // remove balance
     if let Some(from) = remove_from {
-        let from_existing_bal = balances_r(storage, &token_id).load(to_binary(&from)?.as_slice())?;
+        let from_existing_bal = balances_r(storage, token_id).load(to_binary(&from)?.as_slice())?;
         let from_new_amount_op = from_existing_bal.u128().checked_sub(amount.u128());
         if from_new_amount_op.is_none() {
-            return Err(StdError::generic_err("sender has insufficient funds"))
+            return Err(StdError::generic_err("insufficient funds"))
         }    
-        balances_w(storage, &token_id)
+        balances_w(storage, token_id)
         .save(to_binary(&from)?.as_slice(), &Uint128(from_new_amount_op.unwrap()))?;
     }
 
     // add balance
-    let to_existing_bal_op = balances_r(storage, &token_id).may_load(to_binary(&add_to)?.as_slice())?; 
-    let to_existing_bal = match to_existing_bal_op {
-        Some(i) => i,
-        None => Uint128(0),
-    };
-    let to_new_amount_op = to_existing_bal.u128().checked_add(amount.u128());
-    if to_new_amount_op.is_none() {
-        return Err(StdError::generic_err("recipient will become too rich. Total tokens exceeds 2^128"))
-    }
+    if let Some(to) = add_to {
+        let to_existing_bal_op = balances_r(storage, token_id).may_load(to_binary(&to)?.as_slice())?; 
+        let to_existing_bal = match to_existing_bal_op {
+            Some(i) => i,
+            // if `to` address has no balance yet, initiate zero balance
+            None => Uint128(0),
+        };
+        let to_new_amount_op = to_existing_bal.u128().checked_add(amount.u128());
+        if to_new_amount_op.is_none() {
+            return Err(StdError::generic_err("recipient will become too rich. Total tokens exceeds 2^128"))
+        }
 
-    // save new balances
-    balances_w(storage, &token_id)
-    .save(to_binary(&add_to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
+        // save new balances
+        balances_w(storage, token_id)
+        .save(to_binary(&to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
+    }
 
     Ok(())
 }
+
+#[allow(clippy::too_many_arguments)]
+fn try_add_receiver_api_callback<S: Storage>(
+    storage: &S,
+    messages: &mut Vec<CosmosMsg>,
+    recipient: HumanAddr,
+    recipient_code_hash: Option<String>,
+    msg: Option<Binary>,
+    sender: HumanAddr,
+    token_id: String,
+    from: HumanAddr,
+    amount: Uint128,
+    memo: Option<String>,
+) -> StdResult<()> {
+    if let Some(receiver_hash) = recipient_code_hash {
+        let receiver_msg = Snip1155ReceiveMsg::new(sender, token_id, from, amount, memo, msg);
+        let callback_msg = receiver_msg.into_cosmos_msg(receiver_hash, recipient)?;
+
+        messages.push(callback_msg);
+        return Ok(());
+    }
+
+    let receiver_hash = get_receiver_hash(storage, &recipient);
+    if let Some(receiver_hash) = receiver_hash {
+        let receiver_hash = receiver_hash?;
+        let receiver_msg = Snip1155ReceiveMsg::new(sender, token_id, from, amount, memo, msg);
+        let callback_msg = receiver_msg.into_cosmos_msg(receiver_hash, recipient)?;
+
+        messages.push(callback_msg);
+    }
+    
+    Ok(())
+}
+
+
 
 /////////////////////////////////////////////////////////////////////////////////
 // Queries

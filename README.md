@@ -20,7 +20,8 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
     - [CreateViewingKey and SetViewingKey](#createviewingkey-and-setviewingkey)
     - [Allowances and private metadata viewership](#allowances-and-private-metadata-viewership)
     - [Revoke](#revoke)
-    - [Mint, BatchMint, Burn and BatchBurn](#mint-batchmint-burn-and-batchburn)
+    - [Mint, BatchMint](#mint-batchmint)
+    - [Burn and BatchBurn](#burn-and-batchburn)
     - [AddMinters and RemoveMinters](#addminters-and-removeminters)
     - [ChangeAdmin](#changeadmin)
     - [BreakAdminKey](#breakadminkey)
@@ -95,18 +96,18 @@ A SNIP1155 contract SHOULD have the ability to hold multiple `tokens_id`s, each 
 
 Each `token_id` can have 1 or more `tokens`, which are indistinguishable from one another (hence fungible).
 
-| Variable         | Type           | Description                                               | Optional |
-| ---------------- | -------------- | --------------------------------------------------------- | -------- |
-| admin            | HumanAddr      | Can to add/remove minters and break admin key             | Yes      |
-| minter           | Vec<HumanAddr> | Can mint/burn tokens and change metadata if config allows | Yes      |
-| token_id         | String         | Unique identifier                                         | No       |
-| name             | String         | Name of fungible tokens or NFT                            | No       |
-| symbol           | String         | Symbol of fungible tokens or NFT                          | No       |
-| (total_supply)   | Uint128        | Total tokens of a given token_id. MUST be == 1 for NFTs   | No       |
-| is_nft           | bool           | Determines if token_id is an NFT                          | No       |
-| token_config     | TokenConfig    | Includes enable burn, enable additional minting. etc      | No       |
-| public metadata  | Metadata       | Publicly viewable `uri` and `extension`                   | No       |
-| private metadata | Metadata       | Non-publicly viewable `uri` and `extension`               | No       |
+| Variable         | Type           | Description                                             | Optional |
+| ---------------- | -------------- | ------------------------------------------------------- | -------- |
+| admin            | HumanAddr      | Can to add/remove minters and break admin key           | Yes      |
+| minter           | Vec<HumanAddr> | Can mint tokens and change metadata if config allows    | Yes      |
+| token_id         | String         | Unique identifier                                       | No       |
+| name             | String         | Name of fungible tokens or NFT                          | No       |
+| symbol           | String         | Symbol of fungible tokens or NFT                        | No       |
+| (total_supply)   | Uint128        | Total tokens of a given token_id. MUST be == 1 for NFTs | No       |
+| is_nft           | bool           | Determines if token_id is an NFT                        | No       |
+| token_config     | TokenConfig    | Includes enable burn, enable additional minting. etc    | No       |
+| public metadata  | Metadata       | Publicly viewable `uri` and `extension`                 | No       |
+| private metadata | Metadata       | Non-publicly viewable `uri` and `extension`             | No       |
 
 Application developers MAY change `extension` within `public metadata` and `private metadata` to any `struct` that fits their use case.
 
@@ -126,9 +127,9 @@ The admin MUST be able to perform admin-only transactions. Admin-only transactio
 The existence of the `break_admin_key` function is enforced in SNIP1155 standards in order to encourage permissionless designs. 
 
 ## The minter(s) role
-A minter mints and burns tokens. Minters can also change the public and private metadata if the configuration of the token_id allows this. 
+A minter mints tokens. Minters can also change the public and private metadata if the configuration of the token_id allows this. 
 
-Details of functions accessible to minters are described [here](#mint-batchmint-burn-and-batchburn).
+Details of functions accessible to minters are described [here](#mint-batchmint).
 
 ## NFT vs fungible tokens
 Public metadata and and private metadata (together "metadata") can be optionally set for both NFTs and fungible tokens. An NFT owner SHOULD be able to change the metadata if the configuration allows it to; fungible token metadata cannot be changed in the standard implementation[^1] but is OPTIONAL within this standards. The rules that govern how fungible metadata is changed is left to application developers to decide.
@@ -167,10 +168,13 @@ It is OPTIONAL to include `IncreaseAllowance` and `DecreaseAllowance` messages, 
 ### Revoke
 An operator with existing permissions can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `SetWhitelistApproval` can also be used for this purpose.  
 
-### Mint, BatchMint, Burn and BatchBurn
+### Mint, BatchMint
 These functions MUST NOT be accessible to any address other than minters'. (Note that admins cannot mint unless it is also a minter). 
 
-A minter MUST be able to create new token_ids. A minter MUST be able to mint and burn tokens on existing token_ids if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens) or burn tokens (both fungible and non-fungible tokens).
+A minter MUST be able to create new token_ids. A minter MUST be able to mint tokens on existing token_ids if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens).
+
+### Burn and BatchBurn
+Owners of tokens MUST be allowed to burn their tokens only if the token_id configuration allows it to. The base specification does not allow any address to burn tokens they do not own, but this feature is OPTIONAL.
 
 ### AddMinters and RemoveMinters
 These functions MUST NOT be accessible to any address other than the admin's. AddMinters add one or more minters to the list of minters, while RemoveMinters remove one or more minters from the list of minters.
