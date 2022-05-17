@@ -1,29 +1,17 @@
-import axios from "axios";
-import { Wallet, SecretNetworkClient, fromUtf8 } from "secretjs";
+import { SecretNetworkClient, fromUtf8, Tx } from "secretjs";
 import fs from "fs";
 import assert from "assert";
+import { initClient } from "./int_helpers";
+import { Account, ContractInfo, jsEnv } from "./int_utils";
 
-// Returns a client with which we can interact with secret network
-const initializeClient = async (endpoint: string, chainId: string) => {
-  const wallet = new Wallet(); // Use default constructor of wallet to generate random mnemonic.
-  const accAddress = wallet.address;
-  const client = await SecretNetworkClient.create({
-    // Create a client to interact with the network
-    grpcWebUrl: endpoint,
-    chainId: chainId,
-    wallet: wallet,
-    walletAddress: accAddress,
-  });
-
-  console.log(`Initialized client with wallet address: ${accAddress}`);
-  return client;
-};
 
 // Stores and instantiaties a new contract in our network
 const initializeContract = async (
   client: SecretNetworkClient,
-  contractPath: string
+  contractPath: string,
+  initMsg: unknown, // any
 ) => {
+  // upload contract
   const wasmCode = fs.readFileSync(contractPath);
   console.log("Uploading contract");
 
@@ -35,6 +23,7 @@ const initializeContract = async (
       builder: "",
     },
     {
+      broadcastCheckIntervalMs: 100,
       gasLimit: 5000000,
     }
   );
@@ -58,15 +47,18 @@ const initializeContract = async (
   const contractCodeHash = await client.query.compute.codeHash(codeId);
   console.log(`Contract hash: ${contractCodeHash}`);
 
+  // instantiate contract
   const contract = await client.tx.compute.instantiateContract(
     {
       sender: client.address,
       codeId,
-      initMsg: { count: 4 }, // Initialize our counter to start from 4. This message will trigger our Init function
+      initMsg: initMsg, 
       codeHash: contractCodeHash,
-      label: "My contract" + Math.ceil(Math.random() * 10000), // The label should be unique for every contract, add random string in order to maintain uniqueness
+      // label: "My contract" + Math.ceil(Math.random() * 10000), // The label should be unique for every contract, add random string in order to maintain uniqueness
+      label: "Contract " + client.address.slice(6),
     },
     {
+      broadcastCheckIntervalMs: 100,
       gasLimit: 1000000,
     }
   );
@@ -87,205 +79,417 @@ const initializeContract = async (
   return contractInfo;
 };
 
-const getFromFaucet = async (address: string) => {
-  await axios.get(`http://localhost:5000/faucet?address=${address}`);
-};
+// Initialization procedure: Initialize client, fund new accounts, and upload/instantiate contract
+async function init_default(): Promise<jsEnv> {
+  const accounts = await initClient();
+  const { secretjs } = accounts[0] 
 
-async function getScrtBalance(userCli: SecretNetworkClient): Promise<string> {
-  let balanceResponse = await userCli.query.bank.balance({
-    address: userCli.address,
-    denom: "uscrt",
-  });
-  return balanceResponse.balance!.amount;
-}
-
-async function fillUpFromFaucet(
-  client: SecretNetworkClient,
-  targetBalance: Number
-) {
-  let balance = await getScrtBalance(client);
-  while (Number(balance) < targetBalance) {
-    try {
-      await getFromFaucet(client.address);
-    } catch (e) {
-      console.error(`failed to get tokens from faucet: ${e}`);
-    }
-    balance = await getScrtBalance(client);
-  }
-  console.error(`got tokens from faucet: ${balance}`);
-}
-
-// Initialization procedure
-async function initializeAndUploadContract() {
-  let endpoint = "http://localhost:9091";
-  let chainId = "secretdev-1";
-
-  const client = await initializeClient(endpoint, chainId);
-
-  await fillUpFromFaucet(client, 100_000_000);
-
+  const defaultInitMsg = { 
+    has_admin: true,
+    minters: [accounts[0].address],
+    initial_tokens: [
+      {
+        token_info: { 
+          token_id: "0", 
+          name: "token0", 
+          symbol: "TKN0", 
+          is_nft: false, 
+          token_config: {
+              public_total_supply: false,
+              enable_burn: true, 
+          },
+        }, 
+        balances: [{ 
+            address: accounts[0].address, 
+            amount: "1000" 
+        }]
+      },
+      {
+        token_info: { 
+          token_id: "1", 
+          name: "token1", 
+          symbol: "TKN1", 
+          is_nft: true, 
+          token_config: {
+              public_total_supply: false,
+              enable_burn: true, 
+          },
+        }, 
+        balances: [{ 
+            address: accounts[0].address, 
+            amount: "1" 
+        }]
+      },
+    ],
+    entropy: "entropyhere"
+  };
   const [contractHash, contractAddress] = await initializeContract(
-    client,
-    "contract.wasm"
+    secretjs,
+    "contract.wasm",
+    defaultInitMsg,
   );
 
-  var clientInfo: [SecretNetworkClient, string, string] = [
-    client,
-    contractHash,
-    contractAddress,
-  ];
-  return clientInfo;
+  const contract: ContractInfo = {
+    hash: contractHash,
+    address: contractAddress
+  };
+
+  const env: jsEnv = {
+    accounts,
+    contracts: [contract],
+  }; 
+
+  return env;
 }
 
-async function queryCount(
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddress: string
-): Promise<number> {
-  type CountResponse = { count: number };
+/////////////////////////////////////////////////////////////////////////////////
+// Handle Messages
+/////////////////////////////////////////////////////////////////////////////////
 
-  const countResponse = (await client.query.compute.queryContract({
-    contractAddress: contractAddress,
-    codeHash: contractHash,
-    query: { get_count: {} },
-  })) as CountResponse;
+async function mintTokenIds(
+  account: Account,
+  contract: ContractInfo,
+  token_id: string,
+  token_name: string,
+  token_symbol: string,
+  is_nft: boolean,
+  mint_to_address: string,
+  mint_amount: string,
+) {
+  const { secretjs } = account;
+  const tx = await secretjs.tx.compute.executeContract(
+    {
+      sender: secretjs.address,
+      contractAddress: contract.address,
+      codeHash: contract.hash,
+      msg: {
+        mint_token_ids: { 
+          initial_tokens: [{
+            token_info: { 
+              token_id, 
+              name: token_name, 
+              symbol: token_symbol, 
+              is_nft, 
+              token_config: {
+                  public_total_supply: true,
+                  enable_burn: true, 
+              },
+            }, 
+            balances: [{ 
+                address: mint_to_address, 
+                amount: mint_amount 
+            }]
+          }]
+        },
+      },
+      sentFunds: [],
+    },
+    {
+      broadcastCheckIntervalMs: 100,
+      gasLimit: 200000,
+    }
+  );
 
-  if ('err"' in countResponse) {
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  console.log(`MintTokenIds used ${tx.gasUsed} gas`);
+  return tx
+}
+
+async function setViewingKey(
+  account: Account,
+  contract: ContractInfo,
+) {
+  const { secretjs } = account;
+  const tx = await secretjs.tx.compute.executeContract(
+    {
+      sender: secretjs.address,
+      contractAddress: contract.address,
+      codeHash: contract.hash,
+      msg: {
+        set_viewing_key: { key: "vkey" },
+      },
+      sentFunds: [],
+    },
+    {
+      broadcastCheckIntervalMs: 100,
+      gasLimit: 200000,
+    }
+  );
+
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  console.log(`SetViewingKey used ${tx.gasUsed} gas`);
+  return tx
+}
+
+async function transfer(
+  sender: Account,
+  contract: ContractInfo,
+  token_id: string,
+  from: Account,
+  recipient: Account,
+  amount: string,
+): Promise<Tx> {
+  const { secretjs } = sender;
+  const tx = await secretjs.tx.compute.executeContract(
+    {
+      sender: secretjs.address,
+      contractAddress: contract.address,
+      codeHash: contract.hash,
+      msg: {
+        transfer: { 
+          token_id,
+          from: from.address,
+          recipient: recipient.address,
+          amount, 
+        },
+      },
+      sentFunds: [],
+    },
+    {
+      broadcastCheckIntervalMs: 100,
+      gasLimit: 200000,
+    }
+  );
+
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  console.log(`Transfer used ${tx.gasUsed} gas`);
+  return tx
+}
+
+async function givePermission(
+  sender: Account,
+  contract: ContractInfo,
+  address: Account,
+  token_id: string,
+  view_owner?: boolean,
+  view_private_metadata?: boolean,
+  transfer?: string,
+): Promise<Tx> {
+  const { secretjs } = sender;
+  const tx = await secretjs.tx.compute.executeContract(
+    {
+      sender: secretjs.address,
+      contractAddress: contract.address,
+      codeHash: contract.hash,
+      msg: {
+        give_permission: { 
+          address: address.address,
+          token_id,
+          view_owner,
+          view_private_metadata,
+          transfer,
+        },
+      },
+      sentFunds: [],
+    },
+    {
+      broadcastCheckIntervalMs: 100,
+      gasLimit: 200000,
+    }
+  );
+
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  console.log(`GivePermission used ${tx.gasUsed} gas`);
+  return tx
+}
+
+/////////////////////////////////////////////////////////////////////////////////
+// Query Messages
+/////////////////////////////////////////////////////////////////////////////////
+
+async function queryContractInfo(
+  env: jsEnv,
+  contract: ContractInfo,
+): Promise<string> {
+  const { secretjs } = env.accounts[0];
+  type ContractInfo = { contract_info: { info: string }};
+
+  const contractInfoResponse = (await secretjs.query.compute.queryContract({
+    contractAddress: contract.address,
+    codeHash: contract.hash,
+    query: { contract_info: {} },
+  })) as ContractInfo;
+
+  if ('err"' in contractInfoResponse) {
     throw new Error(
-      `Query failed with the following err: ${JSON.stringify(countResponse)}`
+      `Query failed with the following err: ${JSON.stringify(contractInfoResponse)}`
     );
   }
 
-  return countResponse.count;
+  return contractInfoResponse.contract_info.info;
 }
 
-async function incrementTx(
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddess: string
-) {
-  const tx = await client.tx.compute.executeContract(
-    {
-      sender: client.address,
-      contractAddress: contractAddess,
-      codeHash: contractHash,
-      msg: {
-        increment: {},
-      },
-      sentFunds: [],
-    },
-    {
-      gasLimit: 200000,
-    }
-  );
+async function queryBalance(
+  account: Account,
+  contract: ContractInfo,
+  key: string,
+  token_id: string,
+): Promise<string> {
+  const { secretjs } = account;
+  type Balance = { balance: { amount: string }};
 
-  //let parsedTransactionData = JSON.parse(fromUtf8(tx.data[0])); // In our case we don't really need to access transaction data
-  console.log(`Increment TX used ${tx.gasUsed} gas`);
-}
+  const BalanceResponse = (await secretjs.query.compute.queryContract({
+    contractAddress: contract.address,
+    codeHash: contract.hash,
+    query: { balance: {
+      address: account.address,
+      key: key,
+      token_id: token_id,
+    } },
+  })) as Balance;
 
-async function resetTx(
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddess: string
-) {
-  const tx = await client.tx.compute.executeContract(
-    {
-      sender: client.address,
-      contractAddress: contractAddess,
-      codeHash: contractHash,
-      msg: {
-        reser: { count: 0 },
-      },
-      sentFunds: [],
-    },
-    {
-      gasLimit: 200000,
-    }
-  );
-
-  console.log(`Reset TX used ${tx.gasUsed} gas`);
-}
-
-// The following functions are only some examples of how to write integration tests, there are many tests that we might want to write here.
-async function test_count_on_intialization(
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddress: string
-) {
-  const onInitializationCounter: number = await queryCount(
-    client,
-    contractHash,
-    contractAddress
-  );
-  assert(
-    onInitializationCounter === 4,
-    `The counter on initialization expected to be 4 instead of ${onInitializationCounter}`
-  );
-}
-
-async function test_increment_stress(
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddress: string
-) {
-  const onStartCounter: number = await queryCount(
-    client,
-    contractHash,
-    contractAddress
-  );
-
-  let stressLoad: number = 10;
-  for (let i = 0; i < stressLoad; ++i) {
-    await incrementTx(client, contractHash, contractAddress);
+  if ('err"' in BalanceResponse) {
+    throw new Error(
+      `Query failed with the following err: ${JSON.stringify(BalanceResponse)}`
+    );
   }
+  
+  return BalanceResponse.balance.amount;
+}
 
-  const afterStressCounter: number = await queryCount(
-    client,
-    contractHash,
-    contractAddress
+/////////////////////////////////////////////////////////////////////////////////
+// Tests
+/////////////////////////////////////////////////////////////////////////////////
+
+async function test_intialization_sanity(
+  env: jsEnv
+): Promise<void> {
+  const contract = env.contracts[0];
+  const account = env.accounts[0];
+  const onInitializationData: string = await queryContractInfo(
+    env,
+    contract,
   );
   assert(
-    afterStressCounter - onStartCounter === stressLoad,
-    `After running stress test the counter expected to be ${
-      onStartCounter + 10
-    } instead of ${afterStressCounter}`
+    onInitializationData === "data",
+    `The contract info on initialization expected to be "data" instead of ${onInitializationData}`
+  );
+
+  await setViewingKey(account, contract);
+  const initBalance0: string = await queryBalance(
+    account, contract, "vkey", "0"
+  );
+  assert(
+    initBalance0 === "1000",
+    `Initial balance expected to be "1000" instead of ${initBalance0}`
+  );
+  const initBalance1: string = await queryBalance(
+    account, contract, "vkey", "1"
+  );
+  assert(
+    initBalance1 === "1",
+    `Initial balance expected to be "1000" instead of ${initBalance1}`
   );
 }
 
-async function test_gas_limits() {
-  // There is no accurate way to measue gas limits but it is actually very recommended to make sure that the gas that is used by a specific tx makes sense
+async function test_mint_token_ids(
+  env: jsEnv,
+) {
+  const minter = env.accounts[0];
+  const contract = env.contracts[0];
+
+  let tx = await mintTokenIds(minter, contract, "2", "token1", "TKN1", false, minter.address, "1000");
+  assert(fromUtf8(tx.data[0]).includes(`{"mint_token_ids":{"status":"success"}}`));
+
+  await setViewingKey(minter, contract);
+  let bal: string = await queryBalance(minter, contract, "vkey", "2");
+  assert(bal === "1000");
+
+  // cannot mint token_id with same name
+  tx = await mintTokenIds(minter, contract, "2", "token1a", "TKN1a", false, minter.address, "123");
+  assert(tx.rawLog.includes("token_id already exists. Try a different id String"));
+  bal = await queryBalance(minter, contract, "vkey", "2");
+  assert(bal === "1000");
+
+  // can mint NFT
+  await mintTokenIds(minter, contract, "3", "a new nft", "NFT3", true, minter.address, "1");
+  bal = await queryBalance(minter, contract, "vkey", "3");
+  assert(bal === "1");
+
+  // cannot mint NFT with amount != 1
+  tx = await mintTokenIds(minter, contract, "4a", "a new nft", "NFT2", true, minter.address, "0");
+  assert(tx.rawLog.includes("token_id 4a is an NFT; there can only be one NFT. Balances.amount must == 1"));
+  tx = await mintTokenIds(minter, contract, "4b", "a new nft", "NFT2", true, minter.address, "2");
+  assert(tx.rawLog.includes("token_id 4b is an NFT; there can only be one NFT. Balances.amount must == 1"));
+  bal = await queryBalance(minter, contract, "vkey", "4a"); assert(bal === "0");
+  bal = await queryBalance(minter, contract, "vkey", "4b"); assert(bal === "0");
+  
 }
 
-async function runTestFunction(
+async function test_transfer_tokens(
+  env: jsEnv,
+): Promise<void> {
+  const contract = env.contracts[0]
+  const from = env.accounts[0];
+  const to = env.accounts[1];
+  const addr2 = env.accounts[2];
+
+  await setViewingKey(from, contract);
+  await setViewingKey(to, contract);
+  let balance0: string = await queryBalance(from, contract, "vkey", "0");
+  let balance1: string = await queryBalance(to, contract, "vkey", "0");
+  assert(balance0 === "1000");
+  assert(balance1 === "0");
+
+  // can transfer own tokens
+  let tx = await transfer(from, contract, "0", from, to, "200");
+  assert(tx.code === 0);
+  balance0 = await queryBalance(from, contract, "vkey", "0");
+  balance1 = await queryBalance(to, contract, "vkey", "0");
+  assert(balance0 === "800");
+  assert(balance1 === "200");
+
+  // cannot transfer if no permission
+  tx = await transfer(addr2, contract, "0", from, to, "200");
+  assert(tx.rawLog.includes("These tokens do not exist or you have no permission to transfer"));
+
+  // cannot transfer if not enough transfer allowance
+  await givePermission(from, contract, addr2, "0", undefined, undefined, "100");
+  tx = await transfer(addr2, contract, "0", from, to, "200");
+  assert(tx.rawLog.includes("Insufficient transfer allowance: "));
+
+  // transfer successful with enough transfer allowance
+  await givePermission(from, contract, addr2, "0", undefined, undefined, "300");
+  tx = await transfer(addr2, contract, "0", from, to, "200");
+  assert(fromUtf8(tx.data[0]).includes(`{"transfer":{"status":"success"}}`));
+
+  // allowances get consumed. Cannot make second transfer such that combined  transfers exceed allowance
+  tx = await transfer(addr2, contract, "0", from, to, "101");
+  assert(tx.rawLog.includes("Insufficient transfer allowance: 100"));
+
+  // can use remaining allowance
+  tx = await transfer(addr2, contract, "0", from, to, "100");
+  assert(fromUtf8(tx.data[0]).includes(`{"transfer":{"status":"success"}}`));
+  balance0 = await queryBalance(from, contract, "vkey", "0");
+  balance1 = await queryBalance(to, contract, "vkey", "0");
+  assert(balance0 === "500");
+  assert(balance1 === "500");
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
+// Main
+/////////////////////////////////////////////////////////////////////////////////
+
+async function runTest(
   tester: (
-    client: SecretNetworkClient,
-    contractHash: string,
-    contractAddress: string
+    env: jsEnv,
   ) => void,
-  client: SecretNetworkClient,
-  contractHash: string,
-  contractAddress: string
+  env: jsEnv
 ) {
-  console.log(`Testing ${tester.name}`);
-  await tester(client, contractHash, contractAddress);
+  console.log(`[TESTING...]: ${tester.name}`);
+  await tester(env);
   console.log(`[SUCCESS] ${tester.name}`);
 }
 
 (async () => {
-  const [client, contractHash, contractAddress] =
-    await initializeAndUploadContract();
+  const env0 = await init_default();
+  await runTest(test_intialization_sanity, env0);
+  await runTest(test_mint_token_ids, env0);
 
-  await runTestFunction(
-    test_count_on_intialization,
-    client,
-    contractHash,
-    contractAddress
-  );
-  await runTestFunction(
-    test_increment_stress,
-    client,
-    contractHash,
-    contractAddress
-  );
-  await runTestFunction(test_gas_limits, client, contractHash, contractAddress);
+  const env1 = await init_default();
+  await runTest(test_transfer_tokens, env1);
+
+  console.log("All tests COMPLETED SUCCESSFULLY")
+
 })();

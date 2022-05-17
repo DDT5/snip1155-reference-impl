@@ -3,29 +3,32 @@ use cosmwasm_std::{
     InitResponse, HandleResponse, Binary, to_binary, log,
     StdResult, StdError,
     HumanAddr, Uint128,
-    CosmosMsg, 
+    CosmosMsg, QueryResult, 
     // debug_print, 
 };
 use secret_toolkit::utils::space_pad;
 
 use crate::{
     msg::{
-        InitMsg, HandleMsg, HandleAnswer, QueryMsg,
-        ResponseStatus::{Success}, //Failure 
+        InitMsg, HandleMsg, HandleAnswer, QueryMsg, QueryAnswer,
+        ResponseStatus::{Success}, 
     },
     state::{
-        RESPONSE_BLOCK_SIZE, 
-        ContrConf, TknInfo, MintTokenId, TokenAmount, Balance, 
+        RESPONSE_BLOCK_SIZE, BLOCK_KEY,
+        ContrConf, TknInfo, MintTokenId, TokenAmount, Balance, Permission,
         contr_conf_w, tkn_info_r, 
         tkn_info_w, balances_w, balances_r, contr_conf_r, 
         store_transfer, store_mint, store_burn,
-        set_receiver_hash, get_receiver_hash, write_viewing_key, 
+        set_receiver_hash, get_receiver_hash, write_viewing_key, read_viewing_key, get_txs,
+        permission_w, permission_r,
+        json_save, 
     },
     receiver::{Snip1155ReceiveMsg}, 
     vk::{
-        viewing_key::ViewingKey,
+        viewing_key::{VIEWING_KEY_SIZE, ViewingKey,},
         rand::sha_256,
-    },
+    }, 
+    // expiration::Expiration,
     
 };
 
@@ -38,6 +41,9 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     env: Env,
     msg: InitMsg,
 ) -> StdResult<InitResponse> {
+    // save latest block info. not necessary once we migrate to CosmWasm v1.0 
+    json_save(&mut deps.storage, BLOCK_KEY, &env.block)?;
+
     // set admin. If `has_admin` == None => no admin. 
     // If `has_admin` == true && msg.admin == None => admin is the instantiator
     let admin = match msg.has_admin {
@@ -83,6 +89,10 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
     env: Env,
     msg: HandleMsg,
 ) -> StdResult<HandleResponse> {
+    // allows approx latest block info to be available for queries. Important to enforce
+    // allowance expiration. Remove this after BlockInfo becomes available to queries
+    json_save(&mut deps.storage, BLOCK_KEY, &env.block)?;
+
     let response = match msg {
         HandleMsg::MintTokenIds {
             initial_tokens,
@@ -148,6 +158,22 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             msg,
             memo,
         ),
+        HandleMsg::GivePermission {
+            address,
+            token_id,
+            view_owner,
+            view_private_metadata,
+            transfer,
+            padding: _,
+        } => try_give_permission(
+            deps,
+            env,
+            address,
+            token_id,
+            view_owner,
+            view_private_metadata,
+            transfer,
+            ),
         HandleMsg::RegisterReceive { 
             code_hash, 
             padding: _, 
@@ -171,8 +197,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             deps, 
             env, 
             key
-        ),
-        
+        ),        
     };
     pad_response(response)
 }
@@ -203,7 +228,7 @@ fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     Ok(HandleResponse {
         messages: vec![],
         log: vec![],
-        data: Some(to_binary(&HandleAnswer::NewTokenIds { status: Success })?)
+        data: Some(to_binary(&HandleAnswer::MintTokenIds { status: Success })?)
     })
 }
 
@@ -368,6 +393,7 @@ fn try_send<S: Storage, A: Api, Q: Querier>(
     msg: Option<Binary>,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
+    // done to avoid having too many arguments
     let token_id = from_amount.token_id;
     let from = &from_amount.balances[0].address;
     let amount = from_amount.balances[0].amount;
@@ -403,6 +429,47 @@ fn try_send<S: Storage, A: Api, Q: Querier>(
         messages,
         log: vec![],
         data: Some(to_binary(&HandleAnswer::Send { status: Success })?)
+    })
+}
+
+/// does not check if `token_id` exists so attacker cannot easily figure out if
+/// a `token_id` has been created 
+pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    address: HumanAddr,
+    token_id: String,
+    view_owner: Option<bool>,
+    view_private_metadata: Option<bool>,
+    transfer: Option<Uint128>, 
+) -> StdResult<HandleResponse> {
+    // may_load current permission
+    let address_key = to_binary(&address)?;
+    let permission_op = permission_r(
+        &deps.storage,
+        &env.message.sender,
+        &token_id,
+    ).may_load(address_key.as_slice())?;
+
+    // start with default permission if no permission has been created yet
+    let mut permission = match permission_op {
+        Some(i) => i,
+        None => Permission::default(),
+    };
+    
+    // modify permission struct
+    if let Some(i) = view_owner { permission.view_owner_perm = i };
+    if let Some(i) = view_private_metadata { permission.view_pr_metadata_perm = i };
+    if let Some(i) = transfer { permission.trfer_allowance_perm = i };
+    
+    // save new permission
+    permission_w(&mut deps.storage, &env.message.sender, &token_id)
+        .save(address_key.as_slice(), &permission)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::GivePermission { status: Success })?),
     })
 }
 
@@ -555,23 +622,40 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
-    // check that token_id exists
-    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    let sender_bin = to_binary(&env.message.sender)?;
+    let sender_u8 = sender_bin.as_slice(); 
+    // check if `from` == message sender || has enough allowance to send tokens
+    let permission_op = permission_r(&deps.storage, from, token_id)
+        .may_load(sender_u8)?;
 
-    if token_info_op.is_none() {
-        return Err(StdError::generic_err(
-            "token_id does not exist. Cannot transfer non-existent `token_ids`.
-            Use `mint_token_ids` to create tokens on new `token_ids`"
-        ))
+    // perform allowance check, and may reduce allowance 
+    let mut throw_err = false;
+    if from != &env.message.sender {
+        match permission_op {
+            // no permission given
+            None => throw_err = true,
+            // not enough allowance to transfer amount
+            Some(perm) if perm.trfer_allowance_perm < amount => return Err(StdError::generic_err(format!(
+                "Insufficient transfer allowance: {}", perm.trfer_allowance_perm
+            ))),
+            // reduce allowance
+            Some(mut perm) if perm.trfer_allowance_perm >= amount => {
+                let new_allowance = Uint128(perm.trfer_allowance_perm.u128().checked_sub(amount.u128()).expect("something strange happened"));
+                perm.trfer_allowance_perm = new_allowance;
+                permission_w(&mut deps.storage, from, token_id).save(sender_u8, &perm)?;
+            },
+            Some(_) => unreachable!()
+        }
     }
 
-    // check if `from` == message sender || has permission to send tokens
-    // permission logic todo!()
-    let permission = false;
+    // check that token_id exists
+    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    if token_info_op.is_none() { throw_err = true }
 
-    // perform check
-    if from != &env.message.sender && !permission {
-        return Err(StdError::generic_err("you need to either be the owner of or have permission to transfer the tokens"))
+    // combined error message for no token_id or no permission given in one place to make it harder to identify if token_id already exists
+    match throw_err {
+        true => return Err(StdError::generic_err("These tokens do not exist or you have no permission to transfer")),
+        false => (),
     }
 
     // transfer tokens
@@ -693,11 +777,9 @@ fn try_add_receiver_api_callback<S: Storage>(
 }
 
 
-
 /////////////////////////////////////////////////////////////////////////////////
 // Queries
 /////////////////////////////////////////////////////////////////////////////////
-
 
 pub fn query<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
@@ -705,12 +787,101 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
 ) -> StdResult<Binary> {
     match msg {
         QueryMsg::ContractInfo {  } => query_contract_info(deps),
+        QueryMsg::Balance { .. } |
+        QueryMsg::TransferHistory { .. } | 
+        QueryMsg::Permission { .. }  => viewing_keys_queries(deps, msg),
     }
 }
 
-pub fn query_contract_info<S: Storage, A: Api, Q: Querier>(
+fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    msg: QueryMsg,
+) -> QueryResult {
+    let (addresses, key) = msg.get_validation_params();
+
+    for address in addresses {
+        let canonical_addr = deps.api.canonical_address(address)?;
+
+        let expected_key = read_viewing_key(&deps.storage, &canonical_addr);
+
+        if expected_key.is_none() {
+            // Checking the key will take significant time. We don't want to exit immediately if it isn't set
+            // in a way which will allow to time the command and determine if a viewing key doesn't exist
+            key.check_viewing_key(&[0u8; VIEWING_KEY_SIZE]);
+        } else if key.check_viewing_key(expected_key.unwrap().as_slice()) {
+            return match msg {
+                QueryMsg::Balance { address, token_id, .. } => query_balance(deps, &address, token_id),
+                QueryMsg::TransferHistory {
+                    address,
+                    page,
+                    page_size,
+                    ..
+                } => query_transfers(deps, &address, page.unwrap_or(0), page_size),
+                QueryMsg::Permission { owner, perm_address, token_id, .. } => query_permission(deps, token_id, owner, perm_address),
+                _ => panic!("This query type does not require authentication"),
+            };
+        }
+    }
+
+    to_binary(&QueryAnswer::ViewingKeyError {
+        msg: "Wrong viewing key for this address or viewing key not set".to_string(),
+    })
+}
+
+fn query_contract_info<S: Storage, A: Api, Q: Querier>(
     _deps: &Extern<S, A, Q>,
 ) -> StdResult<Binary> {
-    to_binary(&"data".to_string())
+    let info = "data".to_string();
+    let response = QueryAnswer::ContractInfo { info };
+    to_binary(&response)
 }
+
+fn query_balance<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    account: &HumanAddr,
+    token_id: String,
+) -> StdResult<Binary> {
+    let address = deps.api.canonical_address(account)?;
+
+    let amount_op = balances_r(&deps.storage, &token_id)
+        .may_load(to_binary(&deps.api.human_address(&address)?)?.as_slice())?;
+    let amount = match amount_op {
+        Some(i) => i,
+        None => Uint128(0),
+    };
+    let response = QueryAnswer::Balance { amount };
+    to_binary(&response)
+}
+
+fn query_transfers<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    account: &HumanAddr,
+    page: u32,
+    page_size: u32,
+) -> StdResult<Binary> {
+    let address = deps.api.canonical_address(account)?;
+    let (txs, total) = get_txs(&deps.storage, &address, page, page_size)?;
+
+    let result = QueryAnswer::TransferHistory {
+        txs,
+        total: Some(total),
+    };
+    to_binary(&result)
+}
+
+fn query_permission<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    token_id: String,
+    owner: HumanAddr,
+    perm_address: HumanAddr,
+) -> StdResult<Binary> {
+    let perm_addr_bin = to_binary(&perm_address)?;
+    let perm_addr_bytes = perm_addr_bin.as_slice();
+    let permission = permission_r(&deps.storage, &owner, &token_id).may_load(&perm_addr_bytes)?
+        .unwrap_or_default();
+
+    let response = QueryAnswer::Permission(permission);
+    to_binary(&response)
+}
+
 

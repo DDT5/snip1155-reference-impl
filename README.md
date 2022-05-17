@@ -20,8 +20,9 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
     - [CreateViewingKey and SetViewingKey](#createviewingkey-and-setviewingkey)
     - [Allowances and private metadata viewership](#allowances-and-private-metadata-viewership)
     - [Revoke](#revoke)
-    - [Mint, BatchMint](#mint-batchmint)
-    - [Burn and BatchBurn](#burn-and-batchburn)
+    - [MintTokenIds](#minttokenids)
+    - [MintTokens](#minttokens)
+    - [BurnTokens](#burntokens)
     - [AddMinters and RemoveMinters](#addminters-and-removeminters)
     - [ChangeAdmin](#changeadmin)
     - [BreakAdminKey](#breakadminkey)
@@ -153,7 +154,7 @@ Similar to `Transfer`. If the recipient has registered itself with a `RegisterRe
 The SNIP1155 `Send` interface more closely reflects SNIP721 than SNIP20. SNIP20's `Send` and `SendFrom` functions can both be performed using SNIP1155's `Send` function. 
 
 ### BatchTransfer and BatchSend
-These functions perform multiple `Transfer`, or `Send` actions in a single transaction. Multiple `token_ids` MUST be allowed to be transfered or sent in a batch, including a mix of NFTs and fungible tokens of the same SNIP1155 contract.
+These functions perform multiple `Transfer`, or `Send` actions in a single transaction. Multiple `token_id`s and recipients MUST be allowed in a batch, including a mix of NFTs and fungible tokens of the same SNIP1155 contract.
 
 `BatchSend` MUST allow different callback messages to be sent for each `Send` action.
 
@@ -161,20 +162,34 @@ These functions perform multiple `Transfer`, or `Send` actions in a single trans
 These perform the same functions as specified in the SNIP20 standards.
 
 ### Allowances and private metadata viewership
-`SetWhitelistApproval` reflects the functionality in SNIP721. For SNIP1155, this is used by an address to grant other addresses permissions to view or transfer its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global).  
+`GivePermission` is used by an address to grant other addresses permissions to view or transfer its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global). Permissions MUST include the ability for a token owner to allow another address to:
+* view token owner's balance
+* view private metadata 
+* transfer tokens up to a specified allowance
 
 It is OPTIONAL to include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces. These are optional because their functionalities can be performed with `SetWhitelistApproval`. 
 
 ### Revoke
-An operator with existing permissions can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `SetWhitelistApproval` can also be used for this purpose.  
+An operator with existing permissions can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
 
-### Mint, BatchMint
-These functions MUST NOT be accessible to any address other than minters'. (Note that admins cannot mint unless it is also a minter). 
+### MintTokenIds
+This function MUST NOT be accessible to any address other than minters'. (Note that admins cannot mint unless it is also a minter). 
 
-A minter MUST be able to create new token_ids. A minter MUST be able to mint tokens on existing token_ids if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens).
+A minter MUST be able to create new `token_id`s. The minter MUST be able to configure the token and set initial balances. A minter MUST NOT be able to mint a token_id with the same `token_id`, which it its unique identifier.
 
-### Burn and BatchBurn
-Owners of tokens MUST be allowed to burn their tokens only if the token_id configuration allows it to. The base specification does not allow any address to burn tokens they do not own, but this feature is OPTIONAL.
+`MintTokenIds` MUST be able to mint multiple `token_id`s and set multiple initial balances in a single transaction. Therefore, `BatchMintTokenIds` is not necesary. 
+
+### MintTokens
+This function MUST NOT be accessible to any address other than minters'. (Note that admins cannot mint unless it is also a minter). 
+
+A minter MUST be able to mint tokens on existing `token_id`s if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens).
+
+`MintTokens` MUST be able to mint multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchMintTokens` is not necessary.
+
+### BurnTokens
+Owners of tokens MUST be allowed to burn their tokens only if the `token_id` configuration allows it to. The base specification does not allow any address to burn tokens they do not own, but this feature is OPTIONAL.
+
+`BurnTokens` MUST be able to burn multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchBurnTokens` is not necessary.
 
 ### AddMinters and RemoveMinters
 These functions MUST NOT be accessible to any address other than the admin's. AddMinters add one or more minters to the list of minters, while RemoveMinters remove one or more minters from the list of minters.

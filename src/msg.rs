@@ -3,8 +3,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    state::{MintTokenId, TokenAmount}, 
-    vk::viewing_key::ViewingKey
+    state::{MintTokenId, TokenAmount, Tx, Permission}, 
+    vk::viewing_key::ViewingKey, 
+    // expiration::Expiration
 };
 
 
@@ -63,6 +64,21 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
+    GivePermission {
+        /// address being granted/revoked permission
+        address: HumanAddr,
+        /// token id to apply approval/revocation to.
+        /// Todo: if == None, perform action for all owner's `token_id`s
+        token_id: String,
+        /// optional permission level for viewing the owner. If ignored, leaves current permission settings
+        view_owner: Option<bool>,
+        /// optional permission level for viewing private metadata. If ignored, leaves current permission settings
+        view_private_metadata: Option<bool>,
+        /// set allowance by for transfer approvals. If ignored, leaves current permission settings
+        transfer: Option<Uint128>,
+        /// optional message length padding
+        padding: Option<String>,
+    },
     RegisterReceive {
         code_hash: String,
         padding: Option<String>,
@@ -80,11 +96,12 @@ pub enum HandleMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleAnswer {
-    NewTokenIds { status: ResponseStatus },
+    MintTokenIds { status: ResponseStatus },
     MintTokens { status: ResponseStatus },
     BurnTokens { status: ResponseStatus },
     Transfer { status: ResponseStatus },
     Send { status: ResponseStatus },
+    GivePermission { status: ResponseStatus },
     RegisterReceive { status: ResponseStatus },
     CreateViewingKey { key: ViewingKey },
     SetViewingKey { status: ResponseStatus },
@@ -100,9 +117,59 @@ pub enum HandleAnswer {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     ContractInfo { },
+    Balance {
+        address: HumanAddr,
+        key: String,
+        token_id: String,
+    },
+    TransferHistory {
+        address: HumanAddr,
+        key: String,
+        page: Option<u32>,
+        page_size: u32,
+    },
+    Permission {
+        owner: HumanAddr,
+        perm_address: HumanAddr,
+        key: String,
+        token_id: String,
+    },
 }
 
+impl QueryMsg {
+    pub fn get_validation_params(&self) -> (Vec<&HumanAddr>, ViewingKey) {
+        match self {
+            Self::Balance { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::TransferHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::Permission {
+                owner,
+                perm_address,
+                key,
+                ..
+            } => (vec![owner, perm_address], ViewingKey(key.clone())),
+            _ => panic!("This query type does not require authentication"),
+        }
+    }
+}
 
+#[derive(Serialize, Deserialize, JsonSchema, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryAnswer {
+    ContractInfo {
+        info: String,
+    },
+    Balance {
+        amount: Uint128,
+    },
+    TransferHistory {
+        txs: Vec<Tx>,
+        total: Option<u64>,
+    },
+    Permission(Permission),
+    ViewingKeyError {
+        msg: String,
+    },
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 // Structs, Enums and other functions

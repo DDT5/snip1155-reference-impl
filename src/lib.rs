@@ -1,7 +1,7 @@
 pub mod contract;
 pub mod msg;
 pub mod state;
-mod token;
+mod metadata;
 mod receiver;
 mod vk;
 mod expiration;

@@ -13,6 +13,15 @@ test: unit-test
 unit-test:
 	cargo unit-test
 
+# Integration test
+# .ONESHELL:
+.PHONY: integration-test
+integration-test: build _integration-test
+_integration-test:
+	@# this line below doesn't work, but the point is you need to use npm v16
+	@#. ${HOME}/.nvm/nvm.sh && nvm use 16
+	npx ts-node ./tests/integration.ts
+
 # This is a local build with debug-prints activated. Debug prints only show up
 # in the local development chain (see the `start-server` command below)
 # and mainnet won't accept contracts built with the feature enabled.
@@ -40,27 +49,34 @@ build-mainnet-reproducible:
 compress-wasm:
 	cp ./target/wasm32-unknown-unknown/release/*.wasm ./contract.wasm
 	@## The following line is not necessary, may work only on linux (extra size optimization)
-	@# wasm-opt -Os ./contract.wasm -o ./contract.wasm
+	wasm-opt -Os ./contract.wasm -o ./contract.wasm
 	cat ./contract.wasm | gzip -9 > ./contract.wasm.gz
 
 .PHONY: schema
 schema:
 	cargo run --example schema
 
-# Run local development chain with four funded accounts (named a, b, c, and d)
+# Ctrl-C to exit terminal, but does not stop the server
 .PHONY: start-server
-start-server: # CTRL+C to stop
-	docker run -it --rm \
-		-p 26657:26657 -p 26656:26656 -p 1317:1317 -p 5000:5000 \
-		-v $$(pwd):/root/code \
-		--name secretdev enigmampc/secret-network-sw-dev:v1.2.6
+start-server:
+	docker start -a localsecret
 
-# This relies on running `start-server` in another console
-# You can run other commands on the secretcli inside the dev image
-# by using `docker exec secretdev secretcli`.
-.PHONY: store-contract-local
-store-contract-local:
-	docker exec secretdev secretcli tx compute store -y --from a --gas 1000000 /root/code/contract.wasm.gz
+.PHONY: stop-server
+stop-server:
+	docker stop localsecret
+
+.PHONY: reset-server
+reset-server:
+	docker stop localsecret || true
+	docker rm localsecret || true
+	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
+
+.PHONY: speedup-server
+speedup-server:
+	@# ok to reduce further to eg: 200ms
+	docker exec localsecret sed -E -i '/timeout_(propose|prevote|precommit|commit)/s/[0-9]+m?s/500ms/' .secretd/config/config.toml
+	docker stop localsecret
+	docker start -a localsecret
 
 .PHONY: clean
 clean:
