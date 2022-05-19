@@ -58,7 +58,7 @@ pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     let mut mint1 = MintTokenId::default();
     mint1.token_info.token_id = "1".to_string();
     mint1.token_info.name = "token1".to_string();
-    mint1.token_info.symbol = "TKN1".to_string();
+    mint1.token_info.symbol = "TKNA".to_string();
     mint1.balances[0].address = addr1.clone();
     mint1.balances[0].amount = Uint128(500);
 
@@ -66,7 +66,7 @@ pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     let mut mint2 = MintTokenId::default();
     mint2.token_info.token_id = "2".to_string();
     mint2.token_info.name = "token2".to_string();
-    mint2.token_info.symbol = "TKN2".to_string();
+    mint2.token_info.symbol = "TKNB".to_string();
     mint2.token_info.is_nft = true;
     mint2.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
     
@@ -74,7 +74,7 @@ pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     let mut mint3 = MintTokenId::default();
     mint3.token_info.token_id = "3".to_string();
     mint3.token_info.name = "token3".to_string();
-    mint3.token_info.symbol = "TKN3".to_string();
+    mint3.token_info.symbol = "TKNC".to_string();
     mint3.token_info.is_nft = true;
     mint3.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
 

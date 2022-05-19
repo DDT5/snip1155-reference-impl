@@ -6,21 +6,25 @@ use cosmwasm_std::{
     CosmosMsg, QueryResult, 
     // debug_print, 
 };
-use secret_toolkit::utils::space_pad;
+use secret_toolkit::{
+    utils::space_pad, 
+    permit::{Permit, RevokedPermits, TokenPermissions, validate, }
+};
 
 use crate::{
     msg::{
-        InitMsg, HandleMsg, HandleAnswer, QueryMsg, QueryAnswer,
-        ResponseStatus::{Success}, 
+        InitMsg, HandleMsg, HandleAnswer, QueryMsg, QueryWithPermit, QueryAnswer,
+        TransferAction, SendAction,
+        ResponseStatus::{Success},  
     },
     state::{
-        RESPONSE_BLOCK_SIZE, BLOCK_KEY,
-        ContrConf, TknInfo, MintTokenId, TokenAmount, Balance, Permission,
+        RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS,
+        ContrConf, TknInfo, MintTokenId, TokenAmount, Permission,
         contr_conf_w, tkn_info_r, 
         tkn_info_w, balances_w, balances_r, contr_conf_r, 
         store_transfer, store_mint, store_burn,
         set_receiver_hash, get_receiver_hash, write_viewing_key, read_viewing_key, get_txs,
-        permission_w, permission_r,
+        new_permission, update_permission, may_load_permission, // list_owner_permission_keys,
         json_save, 
     },
     receiver::{Snip1155ReceiveMsg}, 
@@ -61,6 +65,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         minters: msg.minters,
         tx_cnt: 0u64,
         prng_seed,
+        contract_address: env.contract.address.clone()
     };
 
     // set initial balances
@@ -140,6 +145,12 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             amount,
             memo,
         ),
+        HandleMsg::BatchTransfer { actions, padding: _ 
+        } => try_batch_transfer(
+            deps,
+            env,
+            actions,
+        ),
         HandleMsg::Send { 
             token_id, 
             from, 
@@ -152,14 +163,24 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_send(
             deps,
             env,
-            TokenAmount { token_id, balances: [Balance {address: from, amount }].to_vec()},
-            recipient,
-            recipient_code_hash,
-            msg,
-            memo,
+            SendAction {
+                token_id,
+                from,
+                recipient,
+                recipient_code_hash,
+                amount,
+                msg,
+                memo,
+            }
         ),
+        HandleMsg::BatchSend { actions, padding: _ 
+        } => try_batch_send(
+            deps,
+            env,
+            actions,
+        ),     
         HandleMsg::GivePermission {
-            address,
+            allowed_address,
             token_id,
             view_owner,
             view_private_metadata,
@@ -168,12 +189,24 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_give_permission(
             deps,
             env,
-            address,
+            allowed_address,
             token_id,
             view_owner,
             view_private_metadata,
             transfer,
             ),
+        HandleMsg::RevokePermission { 
+            token_id, 
+            owner, 
+            allowed_address, 
+            padding: _ 
+        } => try_revoke_permission(
+            deps,
+            env,
+            token_id,
+            owner,
+            allowed_address,
+        ),
         HandleMsg::RegisterReceive { 
             code_hash, 
             padding: _, 
@@ -197,7 +230,40 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             deps, 
             env, 
             key
-        ),        
+        ),
+        HandleMsg::AddMinters { add_minters, padding: _ 
+        } => try_add_minters(
+            deps,
+            env,
+            add_minters,
+        ),
+        HandleMsg::RemoveMinters { remove_minters, padding: _ 
+        } => try_remove_minters(
+            deps,
+            env,
+            remove_minters,
+        ),
+        HandleMsg::ChangeAdmin { new_admin, padding: _ 
+        } => try_change_admin(
+            deps,
+            env,
+            new_admin,
+        ),
+        HandleMsg::BreakAdminKey { 
+            current_admin, 
+            contract_address, 
+            padding: _ 
+        } => try_break_admin_key(
+            deps,
+            env,
+            current_admin,
+            contract_address,
+        ),   
+        HandleMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
+            deps, 
+            env,
+            permit_name,
+        ),
     };
     pad_response(response)
 }
@@ -208,11 +274,11 @@ fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     initial_tokens: Vec<MintTokenId>,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
     // check if sender is a minter
-    verify_minter(&deps.storage, &env)?;
+    verify_minter(&config, &env)?;
 
     // mint new token_ids
-    let mut config = contr_conf_r(&deps.storage).load()?;
     for initial_token in initial_tokens {
         exec_mint_token_id(
             deps, 
@@ -238,18 +304,25 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
     mint_tokens: Vec<TokenAmount>,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
     // check if sender is a minter
-    verify_minter(&deps.storage, &env)?;
+    verify_minter(&config, &env)?;
 
     // mint tokens
-    let mut config = contr_conf_r(&deps.storage).load()?;
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
-    
+        
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
                 "token_id does not exist. Cannot mint non-existent `token_ids`.
                 Use `mint_token_ids` to create tokens on new `token_ids`"
+            ))
+        }
+
+        if !token_info_op.clone().unwrap().token_config.enable_mint {
+            return Err(StdError::generic_err(
+                "minting is not enabled for this token_ids"
             ))
         }
 
@@ -384,45 +457,43 @@ fn try_transfer<S: Storage, A: Api, Q: Querier>(
     })
 }
 
+fn try_batch_transfer<S: Storage, A:Api, Q:Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    actions: Vec<TransferAction>,
+) -> StdResult<HandleResponse> {
+    for action in actions {
+        impl_transfer(
+            deps, 
+            &env, 
+            &action.token_id, 
+            &action.from, 
+            &action.recipient, 
+            action.amount, 
+            action.memo
+        )?;
+    }
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::BatchTransfer { status: Success })?)
+    })
+}
+
 fn try_send<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    from_amount: TokenAmount, 
-    recipient: HumanAddr,
-    recipient_code_hash: Option<String>,
-    msg: Option<Binary>,
-    memo: Option<String>,
+    action: SendAction,
 ) -> StdResult<HandleResponse> {
-    // done to avoid having too many arguments
-    let token_id = from_amount.token_id;
-    let from = &from_amount.balances[0].address;
-    let amount = from_amount.balances[0].amount;
-
-    // implements transfer of tokens
-    impl_transfer(
-        deps, 
-        &env, 
-        &token_id, 
-        from, 
-        &recipient, 
-        amount, 
-        memo.clone()
-    )?;
-
-    // create cosmos message
+    // set up cosmos messages
     let mut messages = vec![];
-    let sender = env.message.sender;
-    try_add_receiver_api_callback(
-        &deps.storage,
+
+    impl_send(
+        deps,
+        &env,
         &mut messages,
-        recipient,
-        recipient_code_hash,
-        msg,
-        sender,
-        token_id,
-        from.to_owned(),
-        amount,
-        memo,
+        action,
     )?;
 
     Ok(HandleResponse {
@@ -432,44 +503,201 @@ fn try_send<S: Storage, A: Api, Q: Querier>(
     })
 }
 
+fn try_batch_send<S: Storage, A:Api, Q:Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    actions: Vec<SendAction>,
+) -> StdResult<HandleResponse> {
+    // set up cosmos messages
+    let mut messages = vec![];
+
+    for action in actions {
+        impl_send(
+            deps,
+            &env,
+            &mut messages,
+            action
+        )?;
+    }
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::BatchSend { status: Success })?)
+    })
+}
+
 /// does not check if `token_id` exists so attacker cannot easily figure out if
 /// a `token_id` has been created 
 pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    address: HumanAddr,
+    allowed_address: HumanAddr,
     token_id: String,
     view_owner: Option<bool>,
     view_private_metadata: Option<bool>,
     transfer: Option<Uint128>, 
 ) -> StdResult<HandleResponse> {
     // may_load current permission
-    let address_key = to_binary(&address)?;
-    let permission_op = permission_r(
+    let permission_op = may_load_permission(
         &deps.storage,
         &env.message.sender,
         &token_id,
-    ).may_load(address_key.as_slice())?;
-
-    // start with default permission if no permission has been created yet
-    let mut permission = match permission_op {
-        Some(i) => i,
-        None => Permission::default(),
+        &allowed_address,
+    )?;
+    
+    // create action that modifies permission
+    let action = | 
+        permission: &mut Permission,
+        view_owner: Option<bool>, 
+        view_private_metadata: Option<bool>, 
+        transfer: Option<Uint128> 
+    | -> StdResult<()> { 
+        if let Some(i) = view_owner { permission.view_owner_perm = i };
+        if let Some(i) = view_private_metadata { permission.view_pr_metadata_perm = i };
+        if let Some(i) = transfer { permission.trfer_allowance_perm = i };
+        Ok(())
     };
-    
-    // modify permission struct
-    if let Some(i) = view_owner { permission.view_owner_perm = i };
-    if let Some(i) = view_private_metadata { permission.view_pr_metadata_perm = i };
-    if let Some(i) = transfer { permission.trfer_allowance_perm = i };
-    
-    // save new permission
-    permission_w(&mut deps.storage, &env.message.sender, &token_id)
-        .save(address_key.as_slice(), &permission)?;
+
+    // create new permission if not created yet, otherwise update existing permission
+    match permission_op {
+        Some(mut permission) => {
+            action(&mut permission, view_owner, view_private_metadata, transfer)?;
+            update_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &permission)?;
+        },
+        None => {
+            let mut permission = Permission::default();
+            action(&mut permission, view_owner, view_private_metadata, transfer)?;
+            new_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &permission)?;
+        }
+    };
 
     Ok(HandleResponse {
         messages: vec![],
         log: vec![],
         data: Some(to_binary(&HandleAnswer::GivePermission { status: Success })?),
+    })
+}
+
+fn try_add_minters<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    add_minters: Vec<HumanAddr>,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
+    // verify admin
+    verify_admin(&config, &env)?;
+
+    // add minters
+    for minter in add_minters {
+        config.minters.push(minter);
+    }
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::AddMinters { status: Success })?)
+    })
+}
+
+fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    remove_minters: Vec<HumanAddr>,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
+    // verify admin
+    verify_admin(&config, &env)?;
+
+    // add minters
+    for minter in remove_minters {
+        config.minters.retain(|x| x != &minter);
+    }
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RemoveMinters { status: Success })?)
+    })
+}
+
+fn try_change_admin<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    new_admin: HumanAddr,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
+    // verify admin
+    verify_admin(&config, &env)?;
+
+    // change admin
+    config.admin = Some(new_admin);
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::ChangeAdmin { status: Success })?)
+    })
+}
+
+fn try_break_admin_key<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    current_admin: HumanAddr,
+    contract_address: HumanAddr,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
+    // verify admin
+    verify_admin(&config, &env)?;
+
+    // checks on redundancy inputs, designed to reduce chances of accidentally 
+    // calling this function
+    if current_admin != config.admin.unwrap() || contract_address != config.contract_address { 
+        return Err(StdError::generic_err("your inputs are incorrect to perform this function")) 
+    }
+    
+    // remove admin
+    config.admin = None;
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::BreakAdminKey { status: Success })?)
+    })
+}
+
+/// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
+/// entry in storage, because itis unecessarily in most use cases, but will require also removing 
+/// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
+/// If permission does not exist, message will return an error. 
+fn try_revoke_permission<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    token_id: String,
+    owner: HumanAddr,
+    allowed_addr: HumanAddr,
+) -> StdResult<HandleResponse> {
+    // either owner or allowed_address can remove permission
+    if env.message.sender != owner && env.message.sender != allowed_addr {
+        return Err(StdError::generic_err(
+            "only the owner or address with permission can remove permission"
+        ))
+    }
+    
+    update_permission(&mut deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RevokePermission { status: Success })?),
     })
 }
 
@@ -527,6 +755,24 @@ fn try_set_key<S: Storage, A: Api, Q: Querier>(
     })
 }
 
+fn try_revoke_permit<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    permit_name: String,
+) -> StdResult<HandleResponse> {
+    RevokedPermits::revoke_permit(
+        &mut deps.storage,
+        PREFIX_REVOKED_PERMITS,
+        &env.message.sender,
+        &permit_name,
+    );
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RevokePermit { status: Success })?),
+    })
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 // Private functions
@@ -544,13 +790,47 @@ fn pad_response(
     })
 }
 
+fn is_valid_name(name: &str) -> bool {
+    let len = name.len();
+    (3..=30).contains(&len)
+}
+
+fn is_valid_symbol(symbol: &str) -> bool {
+    let len = symbol.len();
+    let len_is_valid = (3..=6).contains(&len);
+
+    len_is_valid && symbol.bytes().all(|byte| (b'A'..=b'Z').contains(&byte))
+}
+
+fn verify_admin(
+    contract_config: &ContrConf,
+    env: &Env,
+) -> StdResult<()> {
+    // check if sender is a minter
+    let admin_op = &contract_config.admin;
+    match admin_op {
+        Some(admin) => {
+            if admin != &env.message.sender {
+                return Err(StdError::generic_err(
+                    "This is an admin function",
+                ));
+            }
+        },
+        None => return Err(StdError::generic_err(
+            "This contract has no admin",
+        )),
+    }
+    
+    Ok(())
+}
+
 /// verifies if sender is a minter
-fn verify_minter<S: Storage>(
-    storage: &S,
+fn verify_minter(
+    contract_config: &ContrConf,
     env: &Env
 ) -> StdResult<()> {
     // check if sender is a minter
-    let minters = contr_conf_r(storage).load()?.minters;
+    let minters = &contract_config.minters;
     if !minters.contains(&env.message.sender) {
         return Err(StdError::generic_err(
             "Only minters are allowed to mint",
@@ -587,7 +867,23 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
         }
     }
 
-    // crate and save new token info
+    // Check name, symbol, decimals
+    if !is_valid_name(&initial_token.token_info.name) {
+        return Err(StdError::generic_err(
+            "Name is not in the expected format (3-30 UTF-8 bytes)",
+        ));
+    }
+    if !is_valid_symbol(&initial_token.token_info.symbol) {
+        return Err(StdError::generic_err(
+            "Ticker symbol is not in expected format [A-Z]{3,6}",
+        ));
+    }
+    if initial_token.token_info.decimals > 18 {
+        return Err(StdError::generic_err("Decimals must not exceed 18"));
+    }
+
+
+    // create and save new token info
     tkn_info_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
 
     // set initial balances and store mint history
@@ -611,8 +907,54 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
     Ok(())
 }
 
-/// Implements transfer of tokens, and saves the transfer history. Used by
-/// `Transfer` and `Send` messages
+/// Implements a single `Send` function. Transfers Uint128 amount of a single `token_id`, 
+/// saves transfer history, may register-receive, and creates callback message.
+fn impl_send<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: &Env,
+    messages: &mut Vec<CosmosMsg>,
+    action: SendAction,
+) -> StdResult<()> {
+    // action variables from SendAction
+    let token_id = action.token_id;
+    let from = action.from;
+    let amount = action.amount;
+    let recipient = action.recipient;
+    let recipient_code_hash = action.recipient_code_hash;
+    let msg = action.msg;
+    let memo = action.memo;
+
+    // implements transfer of tokens
+    impl_transfer(
+        deps, 
+        env, 
+        &token_id, 
+        &from, 
+        &recipient, 
+        amount, 
+        memo.clone()
+    )?;
+
+    // create cosmos message
+    try_add_receiver_api_callback(
+        &deps.storage,
+        messages,
+        recipient,
+        recipient_code_hash,
+        msg,
+        env.message.sender.clone(),
+        token_id,
+        from.to_owned(),
+        amount,
+        memo,
+    )?;
+
+    Ok(())
+}
+
+/// Implements a single `Transfer` function. Transfers a Uint128 amount of a 
+/// single `token_id` and saves the transfer history. Used by `Transfer` and 
+/// `Send` (via `impl_send`) messages
 fn impl_transfer<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: &Env,
@@ -622,11 +964,8 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
-    let sender_bin = to_binary(&env.message.sender)?;
-    let sender_u8 = sender_bin.as_slice(); 
     // check if `from` == message sender || has enough allowance to send tokens
-    let permission_op = permission_r(&deps.storage, from, token_id)
-        .may_load(sender_u8)?;
+    let permission_op = may_load_permission(&deps.storage, from, token_id, &env.message.sender)?;
 
     // perform allowance check, and may reduce allowance 
     let mut throw_err = false;
@@ -634,17 +973,24 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
         match permission_op {
             // no permission given
             None => throw_err = true,
+            // allowance has expired
+            Some(perm) if perm.trfer_allowance_exp.is_expired(&env.block) 
+                => return Err(StdError::generic_err(format!(
+                "Allowance has expired: {}", perm.trfer_allowance_exp
+            ))),
             // not enough allowance to transfer amount
             Some(perm) if perm.trfer_allowance_perm < amount => return Err(StdError::generic_err(format!(
                 "Insufficient transfer allowance: {}", perm.trfer_allowance_perm
             ))),
-            // reduce allowance
+            // success, so need to reduce allowance
             Some(mut perm) if perm.trfer_allowance_perm >= amount => {
-                let new_allowance = Uint128(perm.trfer_allowance_perm.u128().checked_sub(amount.u128()).expect("something strange happened"));
+                let new_allowance = Uint128(perm.trfer_allowance_perm.u128()
+                    .checked_sub(amount.u128())
+                    .expect("something strange happened"));
                 perm.trfer_allowance_perm = new_allowance;
-                permission_w(&mut deps.storage, from, token_id).save(sender_u8, &perm)?;
+                update_permission(&mut deps.storage, from, token_id, &env.message.sender, &perm)?;
             },
-            Some(_) => unreachable!()
+            Some(_) => unreachable!("impl_transfer permission check: this should not be reachable")
         }
     }
 
@@ -787,9 +1133,62 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
 ) -> StdResult<Binary> {
     match msg {
         QueryMsg::ContractInfo {  } => query_contract_info(deps),
+        QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::Balance { .. } |
         QueryMsg::TransferHistory { .. } | 
         QueryMsg::Permission { .. }  => viewing_keys_queries(deps, msg),
+    }
+}
+
+fn permit_queries<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    permit: Permit,
+    query: QueryWithPermit,
+) -> Result<Binary, StdError> {
+    // Validate permit content
+    let contract_address = contr_conf_r(&deps.storage).load()?.contract_address;
+
+    let account = validate(deps, PREFIX_REVOKED_PERMITS, &permit, contract_address, None)?;
+
+    // Permit validated! We can now execute the query.
+    match query {
+        QueryWithPermit::Balance { token_id } => {
+            if !permit.check_permission(&TokenPermissions::Balance) {
+                return Err(StdError::generic_err(format!(
+                    "No permission to query balance, got permissions {:?}",
+                    permit.params.permissions
+                )));
+            }
+
+            query_balance(deps, &HumanAddr(account), token_id)
+        }
+        QueryWithPermit::TransferHistory { page, page_size } => {
+            if !permit.check_permission(&TokenPermissions::History) {
+                return Err(StdError::generic_err(format!(
+                    "No permission to query history, got permissions {:?}",
+                    permit.params.permissions
+                )));
+            }
+
+            query_transfers(deps, &HumanAddr(account), page.unwrap_or(0), page_size)
+        },
+        QueryWithPermit::Permission { owner, allowed_address, token_id } => {
+            if !permit.check_permission(&TokenPermissions::Allowance) {
+                return Err(StdError::generic_err(format!(
+                    "No permission to query allowance, got permissions {:?}",
+                    permit.params.permissions
+                )));
+            }
+
+            if account != owner.as_str() && account != allowed_address.as_str() {
+                return Err(StdError::generic_err(format!(
+                    "Cannot query allowance. Requires permit for either owner {:?} or viewer||spender {:?}, got permit for {:?}",
+                    owner.as_str(), allowed_address.as_str(), account.as_str()
+                )));
+            }
+
+            query_permission(deps, token_id, owner, allowed_address)
+        },
     }
 }
 
@@ -817,7 +1216,7 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
                     page_size,
                     ..
                 } => query_transfers(deps, &address, page.unwrap_or(0), page_size),
-                QueryMsg::Permission { owner, perm_address, token_id, .. } => query_permission(deps, token_id, owner, perm_address),
+                QueryMsg::Permission { owner, allowed_address, token_id, .. } => query_permission(deps, token_id, owner, allowed_address),
                 _ => panic!("This query type does not require authentication"),
             };
         }
@@ -873,11 +1272,9 @@ fn query_permission<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     token_id: String,
     owner: HumanAddr,
-    perm_address: HumanAddr,
+    allowed_addr: HumanAddr,
 ) -> StdResult<Binary> {
-    let perm_addr_bin = to_binary(&perm_address)?;
-    let perm_addr_bytes = perm_addr_bin.as_slice();
-    let permission = permission_r(&deps.storage, &owner, &token_id).may_load(&perm_addr_bytes)?
+    let permission = may_load_permission(&deps.storage, &owner, &token_id, &allowed_addr)?
         .unwrap_or_default();
 
     let response = QueryAnswer::Permission(permission);

@@ -37,9 +37,9 @@ debug-print = ["cosmwasm-std/debug-print"]
 snafu = { version = "0.6.3" }
 serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 schemars = "0.7"
-cosmwasm-std = { version = "0.10", package = "secret-cosmwasm-std" }
+cosmwasm-std = { version = "0.10.1", package = "secret-cosmwasm-std" }
 cosmwasm-storage = { version = "0.10", package = "secret-cosmwasm-storage" }
-secret-toolkit = "0.2.0" # Uncomment this for extra tools
+secret-toolkit = { version = "0.3.0", features = ["permit"] } # Uncomment this for extra tools
 
 # for viewing_key
 sha2 = { version = "0.9.1", default-features = false }

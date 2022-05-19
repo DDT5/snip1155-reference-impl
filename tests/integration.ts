@@ -92,10 +92,12 @@ async function init_default(): Promise<jsEnv> {
         token_info: { 
           token_id: "0", 
           name: "token0", 
-          symbol: "TKN0", 
+          symbol: "TKN", 
+          decimals: 6,
           is_nft: false, 
           token_config: {
               public_total_supply: false,
+              enable_mint: true, 
               enable_burn: true, 
           },
         }, 
@@ -108,10 +110,12 @@ async function init_default(): Promise<jsEnv> {
         token_info: { 
           token_id: "1", 
           name: "token1", 
-          symbol: "TKN1", 
+          symbol: "TKNA", 
+          decimals: 6,
           is_nft: true, 
           token_config: {
               public_total_supply: false,
+              enable_mint: true, 
               enable_burn: true, 
           },
         }, 
@@ -169,9 +173,11 @@ async function mintTokenIds(
               token_id, 
               name: token_name, 
               symbol: token_symbol, 
+              decimals: 0,
               is_nft, 
               token_config: {
                   public_total_supply: true,
+                  enable_mint: true, 
                   enable_burn: true, 
               },
             }, 
@@ -259,7 +265,7 @@ async function transfer(
 async function givePermission(
   sender: Account,
   contract: ContractInfo,
-  address: Account,
+  allowed_address: Account,
   token_id: string,
   view_owner?: boolean,
   view_private_metadata?: boolean,
@@ -273,7 +279,7 @@ async function givePermission(
       codeHash: contract.hash,
       msg: {
         give_permission: { 
-          address: address.address,
+          allowed_address: allowed_address.address,
           token_id,
           view_owner,
           view_private_metadata,
@@ -388,7 +394,7 @@ async function test_mint_token_ids(
   const minter = env.accounts[0];
   const contract = env.contracts[0];
 
-  let tx = await mintTokenIds(minter, contract, "2", "token1", "TKN1", false, minter.address, "1000");
+  let tx = await mintTokenIds(minter, contract, "2", "token2", "TKNB", false, minter.address, "1000");
   assert(fromUtf8(tx.data[0]).includes(`{"mint_token_ids":{"status":"success"}}`));
 
   await setViewingKey(minter, contract);
@@ -396,20 +402,20 @@ async function test_mint_token_ids(
   assert(bal === "1000");
 
   // cannot mint token_id with same name
-  tx = await mintTokenIds(minter, contract, "2", "token1a", "TKN1a", false, minter.address, "123");
+  tx = await mintTokenIds(minter, contract, "2", "token2a", "TKNBB", false, minter.address, "123");
   assert(tx.rawLog.includes("token_id already exists. Try a different id String"));
   bal = await queryBalance(minter, contract, "vkey", "2");
   assert(bal === "1000");
 
   // can mint NFT
-  await mintTokenIds(minter, contract, "3", "a new nft", "NFT3", true, minter.address, "1");
+  await mintTokenIds(minter, contract, "3", "a new nft", "NFT", true, minter.address, "1");
   bal = await queryBalance(minter, contract, "vkey", "3");
   assert(bal === "1");
 
   // cannot mint NFT with amount != 1
-  tx = await mintTokenIds(minter, contract, "4a", "a new nft", "NFT2", true, minter.address, "0");
+  tx = await mintTokenIds(minter, contract, "4a", "a new nft", "NFTA", true, minter.address, "0");
   assert(tx.rawLog.includes("token_id 4a is an NFT; there can only be one NFT. Balances.amount must == 1"));
-  tx = await mintTokenIds(minter, contract, "4b", "a new nft", "NFT2", true, minter.address, "2");
+  tx = await mintTokenIds(minter, contract, "4b", "a new nft", "NFTA", true, minter.address, "2");
   assert(tx.rawLog.includes("token_id 4b is an NFT; there can only be one NFT. Balances.amount must == 1"));
   bal = await queryBalance(minter, contract, "vkey", "4a"); assert(bal === "0");
   bal = await queryBalance(minter, contract, "vkey", "4b"); assert(bal === "0");

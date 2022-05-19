@@ -18,8 +18,9 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
     - [Send](#send)
     - [BatchTransfer and BatchSend](#batchtransfer-and-batchsend)
     - [CreateViewingKey and SetViewingKey](#createviewingkey-and-setviewingkey)
+    - [RevokePermit](#revokepermit)
     - [Allowances and private metadata viewership](#allowances-and-private-metadata-viewership)
-    - [Revoke](#revoke)
+    - [RevokePermission](#revokepermission)
     - [MintTokenIds](#minttokenids)
     - [MintTokens](#minttokens)
     - [BurnTokens](#burntokens)
@@ -161,6 +162,9 @@ These functions perform multiple `Transfer`, or `Send` actions in a single trans
 ### CreateViewingKey and SetViewingKey 
 These perform the same functions as specified in the SNIP20 standards.
 
+### RevokePermit
+Similar to SNIP20 and SNIP721; allows an address revoke a query permit that it may have previously created and shared.
+
 ### Allowances and private metadata viewership
 `GivePermission` is used by an address to grant other addresses permissions to view or transfer its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global). Permissions MUST include the ability for a token owner to allow another address to:
 * view token owner's balance
@@ -169,8 +173,8 @@ These perform the same functions as specified in the SNIP20 standards.
 
 It is OPTIONAL to include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces. These are optional because their functionalities can be performed with `SetWhitelistApproval`. 
 
-### Revoke
-An operator with existing permissions can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
+### RevokePermission
+An operator with existing permissions (not to be confused with Query Permits) can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
 
 ### MintTokenIds
 This function MUST NOT be accessible to any address other than minters'. (Note that admins cannot mint unless it is also a minter). 

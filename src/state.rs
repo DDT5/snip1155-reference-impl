@@ -1,4 +1,8 @@
-use std::any::type_name;
+use std::{
+    any::type_name,
+    // collections::HashSet,
+};
+
 use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -21,16 +25,11 @@ use secret_toolkit::{
 use crate::{
     metadata::{Metadata},
     vk::viewing_key::{ViewingKey},
-    // expiration::{Expiration},
+    expiration::{Expiration},
 };
-
-// U256
-// use uint::{construct_uint};
-// construct_uint! { pub struct U256(4); }
 
 
 pub const RESPONSE_BLOCK_SIZE: usize = 256;
-
 
 // namespaces
 pub const CONTR_CONF: &[u8] = b"contrconfig";
@@ -43,8 +42,12 @@ pub const BLOCK_KEY: &[u8] = b"blockinfo";
 pub const PREFIX_TXS: &[u8] = b"preftxs";
 /// prefix for storage of tx ids
 pub const PREFIX_TX_IDS: &[u8] = b"txids";
+/// prefix for storing permissions
 pub const PREFIX_PERMISSIONS: &[u8] = b"permissions";
+/// prefix for storing permission identifier (ID) for a given address
+pub const PREFIX_PERMISSION_ID: &[u8] = b"permid";
 pub const PREFIX_VIEW_KEY: &[u8] = b"s1155viewkey";
+pub const PREFIX_REVOKED_PERMITS: &str = "revokedperms";
 pub const PREFIX_RECEIVERS: &[u8] = b"s1155receivers";
 
 
@@ -75,6 +78,13 @@ pub fn tkn_info_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, TknInfo> {
     bucket_read(TKN_INFO, storage)
 }
 
+// /// PermissionKey list for a given `owner`
+// fn pkey_list_w<S: Storage>(storage: &mut S) -> Bucket<S, Vec<PermissionKey>> {
+//     bucket(PREFIX_PERMISSION_ID, storage)
+// }
+// fn pkey_list_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Vec<PermissionKey>> {
+//     bucket_read(PREFIX_PERMISSION_ID, storage)
+// }
 
 /////////////////////////////////////////////////////////////////////////////////
 // Multi-level Buckets
@@ -94,9 +104,10 @@ pub fn balances_r<'a, 'b, S: Storage>(
     ReadonlyBucket::multilevel(&[BALANCES, token_id.as_bytes()], storage)
 }
 
-/// To store permission. key intended to be [`owner`, `token_id`, `perm_addr`]
-/// `perm_addr` is `to_binary(&HumanAddr)?.as_slice()` 
-pub fn permission_w<'a, S: Storage>(
+/// private functions.
+/// To store permission. key intended to be [`owner`, `token_id`, `allowed_addr`]
+/// `allowed_addr` is `to_binary(&HumanAddr)?.as_slice()` 
+fn permission_w<'a, S: Storage>(
     storage: &'a mut S,
     owner: &'a HumanAddr,
     token_id: &'a str,
@@ -104,7 +115,16 @@ pub fn permission_w<'a, S: Storage>(
     let owner_bin = to_binary(owner).unwrap();
     Bucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
 }
-pub fn permission_r<'a, S: Storage>(
+fn permission_r<'a, S: Storage>(
+    storage: &'a S,
+    owner: &'a HumanAddr,
+    token_id: &'a str,
+) -> ReadonlyBucket<'a, S, Permission> {
+    let owner_bin = to_binary(owner).unwrap();
+    ReadonlyBucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
+}
+#[cfg(test)]
+pub fn perm_r<'a, S: Storage>(
     storage: &'a S,
     owner: &'a HumanAddr,
     token_id: &'a str,
@@ -116,23 +136,6 @@ pub fn permission_r<'a, S: Storage>(
 /////////////////////////////////////////////////////////////////////////////////
 // Transaction history
 /////////////////////////////////////////////////////////////////////////////////
-
-/// Returns StdResult<()> after saving tx id
-///
-/// # Arguments
-///
-/// * `storage` - a mutable reference to the storage this item should go to
-/// * `tx_id` - the tx id to store
-/// * `address` - a reference to the address for which to store this tx id
-fn append_tx_for_addr<S: Storage>(
-    storage: &mut S,
-    tx_id: u64,
-    address: &CanonicalAddr,
-) -> StdResult<()> {
-    let mut store = PrefixedStorage::multilevel(&[PREFIX_TX_IDS, address.as_slice()], storage);
-    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
-    store.push(&tx_id)
-}
 
 /// Returns StdResult<(Vec<Tx>, u64)> of the txs to display and the total count of txs
 ///
@@ -181,7 +184,6 @@ pub fn get_txs<S: ReadonlyStorage>( //A: Api,
 
     txs.map(|t| (t, count))
 }
-
 
 #[allow(clippy::too_many_arguments)]
 pub fn store_transfer<S: Storage>(
@@ -296,49 +298,169 @@ pub fn store_burn<S: Storage>(
     Ok(())
 }
 
+/// Returns StdResult<()> after saving tx id
+///
+/// # Arguments
+///
+/// * `storage` - a mutable reference to the storage this item should go to
+/// * `tx_id` - the tx id to store
+/// * `address` - a reference to the address for which to store this tx id
+fn append_tx_for_addr<S: Storage>(
+    storage: &mut S,
+    tx_id: u64,
+    address: &CanonicalAddr,
+) -> StdResult<()> {
+    let mut store = PrefixedStorage::multilevel(&[PREFIX_TX_IDS, address.as_slice()], storage);
+    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
+    store.push(&tx_id)
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 // Permissions
 /////////////////////////////////////////////////////////////////////////////////
 
+/// saves new permission entry and adds identifier to the list of permissions the owner address has
+pub fn new_permission<S: Storage>(
+    storage: &mut S,
+    owner: &HumanAddr,
+    token_id: &str,
+    allowed_addr: &HumanAddr,
+    // permission_key: &PermissionKey,
+    permission: &Permission,
+) -> StdResult<()> {
+    // store permission
+    permission_w(storage, owner, token_id).save(
+        to_binary(allowed_addr)?.as_slice(),
+        &permission
+    )?;
 
-// // bids: Appendstore + bucket combo
-// pub fn add_tkn_id<S: Storage>(
-//     store: &mut S,
-//     balance: &Balance,
-// ) -> StdResult<()> {
-//     // appendstore: adds info with u32 key 
-//     let mut append_store = PrefixedStorage::new(BALANCES, store);
-//     let mut append_store = AppendStoreMut::attach_or_create(&mut append_store)?;
-//     append_store.push(balance)?;
-//     Ok(())
-// }
+    // add permission to list of permissions for a given owner
+    append_permission_for_addr(storage, owner, token_id, allowed_addr)?;
 
+    Ok(())
+}
 
-// pub fn add_permission<S: Storage, A: Api, Q: Querier>(
-//     deps: &mut Extern<S, A, Q>,
+// /// updates an existing permission entry. Does not check that existing entry exists, so 
+// /// riskier to use this. But saves gas from potentially loading permission twice
+// pub fn update_permission_unchecked<S: Storage>(
+//     storage: &mut S,
 //     owner: &HumanAddr,
-//     permission_key: &PermissionKey,
+//     token_id: &str,
+//     allowed_addr: &HumanAddr,
 //     permission: &Permission,
 // ) -> StdResult<()> {
-//     let owner_bytes = deps.api.canonical_address(owner)?.as_slice();
-//     let perm_key_bin = to_binary(permission_key)?;
-//     // appendstore: adds info with u32 key 
-//     let mut append_store = PrefixedStorage::multilevel(&[PREFIX_PERMISSIONS, owner_bytes, perm_key_bin.as_slice()], &mut deps.storage);
-//     let mut append_store = AppendStoreMut::attach_or_create(&mut append_store)?;
-//     append_store.push(permission)?;
+//     permission_w(storage, owner, token_id).save(
+//         to_binary(allowed_addr)?.as_slice(),
+//         permission
+//     )?;
+
 //     Ok(())
 // }
+
+/// updates an existing permission entry. Returns error if permission entry does not aleady exist
+pub fn update_permission<S> (
+    storage: &mut S,
+    owner: &HumanAddr,
+    token_id: &str,
+    allowed_addr: &HumanAddr,
+    permission: &Permission
+    // update_action: A,
+) -> StdResult<()> 
+    where
+    S: Storage, 
+    // A: FnOnce(Option<Permission>) -> StdResult<Permission> 
+    {
+
+    let update_action = |perm: Option<Permission>| -> StdResult<Permission> {
+        match perm {
+            Some(_) => return Ok(permission.clone()),
+            None => return Err(StdError::generic_err("cannot update or revoke a non-existent permission entry"))
+        }
+    };
+
+    permission_w(storage, owner, token_id).update(
+        to_binary(allowed_addr)?.as_slice(),
+        update_action
+    )?;
+
+    Ok(())
+}
+
+/// returns StdResult<Option<Permission>> for a given [`owner`, `token_id`, `allowed_addr`] combination.
+/// If permission does not exist, returns StdResult<None>
+pub fn may_load_permission<S: Storage>(
+    storage: &S,
+    owner: &HumanAddr,
+    token_id: &str,
+    allowed_addr: &HumanAddr,
+) -> StdResult<Option<Permission>> {
+    permission_r(storage, owner, token_id).may_load(to_binary(allowed_addr)?.as_slice())
+}
+
+/// Return (Vec<`PermissionKey { token_id, allowed_addr }`>, u64)
+/// returns a list and total number of PermissionKeys for a given owner. The PermissionKeys represents (part of) 
+/// the keys to retrieve all permissions an `owner` has currently granted
+pub fn list_owner_permission_keys<S: Storage>(
+    storage: &S,
+    owner: &HumanAddr,
+    page: u32,
+    page_size: u32,
+) -> StdResult<(Vec<PermissionKey>, u64)> {
+    let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
+
+    // Try to access the storage of PermissionKeys for the account.
+    // If it doesn't exist yet, return an empty list of transfers.
+    let store = AppendStore::<PermissionKey, _, _>::attach(&store);
+    let store = if let Some(result) = store {
+        result?
+    } else {
+        return Ok((vec![], 0));
+    };
+
+    // Take `page_size` starting from the latest entry, potentially skipping `page * page_size`
+    // entries from the start.
+    let pkeys_iter = store
+        .iter()
+        .rev()
+        .skip((page * page_size) as _)
+        .take(page_size as _);
+
+    // Transform iterator to a `Vec<PermissionKey>`
+    let pkeys: StdResult<Vec<PermissionKey>> = pkeys_iter
+        .map(|pkey| pkey)
+        .collect();
+    // return `(Vec<PermissionKey> , total_permission)`
+    pkeys.map(|pkeys| (pkeys, store.len() as u64))
+}
+
+/// stores a `PermissionKey {token_id: String, allowed_addr: String]` for a given `owner`. Note that 
+/// permission key is [`owner`, `token_id`, `allowed_addr`]. This function does not enforce that the 
+/// list of PermissionKey stored is unique; while this doesn't really matter, the ref implementation's 
+/// functions aim to ensure each entry is unique, for storage efficiency.
+fn append_permission_for_addr<S: Storage>(
+    storage: &mut S,
+    owner: &HumanAddr,
+    token_id: &str,
+    allowed_addr: &HumanAddr,
+) -> StdResult<()> {
+    let permission_key = PermissionKey {
+        token_id: token_id.to_string(),
+        allowed_addr: allowed_addr.clone(),
+    };
+    let mut store = PrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
+    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
+    store.push(&permission_key)
+}
 
 /// struct to store permission for a `[token_id, owner, allowed_addr]` combination
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, Default)]
 pub struct Permission {
     pub view_owner_perm: bool,
-    // pub view_owner_exp: Expiration,
+    pub view_owner_exp: Expiration,
     pub view_pr_metadata_perm: bool,
-    // pub view_pr_metadata_exp: Expiration,
+    pub view_pr_metadata_exp: Expiration,
     pub trfer_allowance_perm: Uint128, 
-    // pub trfer_allowance_exp: Expiration, 
+    pub trfer_allowance_exp: Expiration, 
 }
 
 /// to store all keys to access all permissions for a given `owner`
@@ -395,6 +517,7 @@ pub struct ContrConf {
     pub minters: Vec<HumanAddr>,
     pub tx_cnt: u64,
     pub prng_seed: Vec<u8>,
+    pub contract_address: HumanAddr,
 }
 
 /// information for a specific `token_id`
@@ -403,6 +526,10 @@ pub struct TknInfo {
     pub token_id: String,
     pub name: String,
     pub symbol: String,
+    /// applications should ignore decimals if `is_nft` == true. Decimals play no part in the
+    /// contract logic of the base specification of SNIP1155, as there are no `deposit` and 
+    /// `redeem` features as seen in SNIP20
+    pub decimals: u8,
     pub is_nft: bool, 
     pub token_config: TknConf,
     pub public_metadata: Option<Metadata>,
@@ -412,7 +539,8 @@ pub struct TknInfo {
 /// configuration for a given `token_id`, which sits in the `TknInfo` struct
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TknConf {
-    pub public_total_supply: bool,
+    pub public_total_supply: bool, // todo!() not implemented in contract yet
+    pub enable_mint: bool,
     pub enable_burn: bool,
 }
 
@@ -420,6 +548,7 @@ impl TknConf {
     pub fn default() -> Self {
         Self {
             public_total_supply: false, 
+            enable_mint: false,
             enable_burn: false,
         }
     }
@@ -495,11 +624,13 @@ impl Default for MintTokenId {
             token_info: TknInfo { 
                 token_id: "0".to_string(), 
                 name: "token0".to_string(), 
-                symbol: "TKN0".to_string(), 
+                symbol: "TKN".to_string(), 
+                decimals: 6u8,
                 is_nft: false, 
                 token_config: TknConf {
                     public_total_supply: false,
                     // note that default is normally `false`. Default to `true` is for unit testing purposes
+                    enable_mint: true, 
                     enable_burn: true, 
                 },
                 public_metadata: None, 

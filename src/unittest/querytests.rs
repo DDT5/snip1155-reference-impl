@@ -10,6 +10,7 @@ use super::super::{
     contract::*,
     msg::*,
     // state::*,
+    expiration::Expiration,
 };
 
 use cosmwasm_std::{
@@ -71,7 +72,7 @@ fn test_q_permission() -> StdResult<()> {
     // give permission to transfer
     let mut env = mock_env("addr0", &[]);
     let msg0_perm_1 = HandleMsg::GivePermission { 
-        address: addr1.clone(), 
+        allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
         view_owner: Some(true), view_private_metadata: None, 
         transfer: Some(Uint128(10)), 
@@ -80,7 +81,7 @@ fn test_q_permission() -> StdResult<()> {
     handle(&mut deps, env.clone(), msg0_perm_1)?;
 
     // query permission fails: no viewing key
-    let msg_q = QueryMsg::Permission { owner: addr0.clone(), perm_address: addr1.clone(), key: "vkey".to_string(), token_id: "0".to_string() };
+    let msg_q = QueryMsg::Permission { owner: addr0.clone(), allowed_address: addr1.clone(), key: "vkey".to_string(), token_id: "0".to_string() };
     let q_result = query(&deps, msg_q.clone());
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
@@ -98,7 +99,13 @@ fn test_q_permission() -> StdResult<()> {
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Permission(perm
-        ) => assert_eq!(perm, Permission { view_owner_perm: true, view_pr_metadata_perm: false, trfer_allowance_perm: Uint128(10) }),
+        ) => assert_eq!(perm, 
+                Permission { 
+                    view_owner_perm: true, view_owner_exp: Expiration::default(), 
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
+                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
+                }
+            ),
         _ => panic!("query error")
     }
 
@@ -108,12 +115,19 @@ fn test_q_permission() -> StdResult<()> {
     let msg_vk2 = HandleMsg::SetViewingKey { key: "vkey2".to_string(), padding: None };
     handle(&mut deps, env.clone(), msg_vk2)?;
     // ii) query permissions
-    let msg_q2 = QueryMsg::Permission { owner: addr0, perm_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
+    let msg_q2 = QueryMsg::Permission { owner: addr0, allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
     let q_result = query(&deps, msg_q2);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Permission(perm
-        ) => assert_eq!(perm, Permission { view_owner_perm: true, view_pr_metadata_perm: false, trfer_allowance_perm: Uint128(10) }),
+        ) => assert_eq!(
+                perm, 
+                Permission { 
+                    view_owner_perm: true, view_owner_exp: Expiration::default(), 
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
+                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
+                }
+            ),
         _ => panic!("query error")
     }
     

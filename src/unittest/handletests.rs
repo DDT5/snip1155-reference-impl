@@ -7,6 +7,7 @@ use super::super::{
     msg::*,
     state::*,
     receiver::{Snip1155ReceiveMsg, ReceiverHandleMsg},
+    expiration::Expiration,
 };
 
 use cosmwasm_std::{
@@ -396,7 +397,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     // cannot transfer with insufficient allowance
     env.message.sender = addr0.clone();
     let msg0_perm_1 = HandleMsg::GivePermission { 
-        address: addr1.clone(), 
+        allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
         view_owner: None, view_private_metadata: None, 
         transfer: Some(Uint128(9)), 
@@ -406,12 +407,12 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
 
     env.message.sender = addr1.clone();
     result = handle(&mut deps, env.clone(), msg_trnsf_0.clone());
-    assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: "));
+    assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: 9"));
 
     // cannot transfer with wrong allowances: wrong spender address: addr2 has the transfer permission
     env.message.sender = addr0.clone();
     let msg0_perm_2 = HandleMsg::GivePermission { 
-        address: addr2.clone(), 
+        allowed_address: addr2.clone(), 
         token_id: "0".to_string(), 
         view_owner: None, view_private_metadata: None, 
         transfer: Some(Uint128(15)), 
@@ -426,7 +427,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     // cannot transfer with wrong allowances: wrong owner address: addr1 giving permission
     env.message.sender = addr1.clone();
     let msg1_perm_1 = HandleMsg::GivePermission { 
-        address: addr1.clone(), 
+        allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
         view_owner: None, view_private_metadata: None, 
         transfer: Some(Uint128(10)), 
@@ -447,9 +448,9 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: 5"));
 
     // allowance for different address does not get consumed
-    assert_eq!(permission_r(&deps.storage, &addr0, "0").load(addr1_u8)?.trfer_allowance_perm, Uint128(9));
-    assert_eq!(permission_r(&deps.storage, &addr0, "0").load(addr2_u8)?.trfer_allowance_perm, Uint128(5));
-    assert_eq!(permission_r(&deps.storage, &addr1, "0").load(addr1_u8)?.trfer_allowance_perm, Uint128(10));
+    assert_eq!(perm_r(&deps.storage, &addr0, "0").load(addr1_u8)?.trfer_allowance_perm, Uint128(9));
+    assert_eq!(perm_r(&deps.storage, &addr0, "0").load(addr2_u8)?.trfer_allowance_perm, Uint128(5));
+    assert_eq!(perm_r(&deps.storage, &addr1, "0").load(addr1_u8)?.trfer_allowance_perm, Uint128(10));
 
     // owner can transfer regardless of allowance
     env.message.sender = addr0.clone();
@@ -494,7 +495,7 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     // give permission to transfer
     env.message.sender = addr2.clone();
     let msg2_perm_1 = HandleMsg::GivePermission { 
-        address: addr1.clone(), 
+        allowed_address: addr1.clone(), 
         token_id: "2".to_string(), 
         view_owner: None, view_private_metadata: None, 
         transfer: Some(Uint128(1)), 
@@ -518,7 +519,7 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     // give permission to transfern token 3
     env.message.sender = addr2.clone();
     let msg2_perm_1 = HandleMsg::GivePermission { 
-        address: addr1.clone(), 
+        allowed_address: addr1.clone(), 
         token_id: "3".to_string(), 
         view_owner: None, view_private_metadata: None, 
         transfer: Some(Uint128(1)), 
@@ -527,8 +528,12 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     handle(&mut deps, env.clone(), msg2_perm_1)?;
     // double check that addr1 has permission to transfer token 3
     assert_eq!(
-        permission_r(&deps.storage, &addr2, "3").load(addr1_u8)?, 
-        Permission { view_owner_perm: false, view_pr_metadata_perm: false, trfer_allowance_perm: Uint128(1) }
+        perm_r(&deps.storage, &addr2, "3").load(addr1_u8)?, 
+        Permission { 
+            view_owner_perm: false, view_owner_exp: Expiration::default(), 
+            view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
+            trfer_allowance_perm: Uint128(1), trfer_allowance_exp: Expiration::default(), 
+        } 
     );
     
     // addr2 transfers away token 3
