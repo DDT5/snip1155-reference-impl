@@ -33,6 +33,7 @@ pub const RESPONSE_BLOCK_SIZE: usize = 256;
 
 // namespaces
 pub const CONTR_CONF: &[u8] = b"contrconfig";
+pub const TKN_TOTAL_SUPPLY: &[u8] = b"totalsupply";
 pub const BALANCES: &[u8] = b"balances";
 pub const TKN_INFO: &[u8] = b"tokeninfo";
 /// storage key for the BlockInfo when the last handle was executed
@@ -42,6 +43,8 @@ pub const BLOCK_KEY: &[u8] = b"blockinfo";
 pub const PREFIX_TXS: &[u8] = b"preftxs";
 /// prefix for storage of tx ids
 pub const PREFIX_TX_IDS: &[u8] = b"txids";
+/// prefix for NFT ownership history
+pub const PREFIX_NFT_OWNER: &[u8] = b"nftowner";
 /// prefix for storing permissions
 pub const PREFIX_PERMISSIONS: &[u8] = b"permissions";
 /// prefix for storing permission identifier (ID) for a given address
@@ -70,7 +73,7 @@ pub fn contr_conf_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, ContrConf> 
 // Buckets
 /////////////////////////////////////////////////////////////////////////////////
 
-/// token_id configs
+/// token_id configs. Key is `token_id.as_bytes()`
 pub fn tkn_info_w<S: Storage>(storage: &mut S) -> Bucket<S, TknInfo> {
     bucket(TKN_INFO, storage)
 }
@@ -78,19 +81,20 @@ pub fn tkn_info_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, TknInfo> {
     bucket_read(TKN_INFO, storage)
 }
 
-// /// PermissionKey list for a given `owner`
-// fn pkey_list_w<S: Storage>(storage: &mut S) -> Bucket<S, Vec<PermissionKey>> {
-//     bucket(PREFIX_PERMISSION_ID, storage)
-// }
-// fn pkey_list_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Vec<PermissionKey>> {
-//     bucket_read(PREFIX_PERMISSION_ID, storage)
-// }
+/// total supply of a token_id. Key is `token_id.as_bytes()`
+pub fn tkn_tot_supply_w<S: Storage>(storage: &mut S) -> Bucket<S, Uint128> {
+    bucket(TKN_TOTAL_SUPPLY, storage)
+}
+pub fn tkn_tot_supply_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Uint128> {
+    bucket_read(TKN_TOTAL_SUPPLY, storage)
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 // Multi-level Buckets
 /////////////////////////////////////////////////////////////////////////////////
 
 /// Multilevel bucket to store balances for each token_id & addr combination. Key intended to be [`token_id`, HumanAddr]  
+/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
 pub fn balances_w<'a, 'b, S: Storage>(
     storage: &'a mut S,
     token_id: &'b str
@@ -316,6 +320,36 @@ fn append_tx_for_addr<S: Storage>(
 }
 
 /////////////////////////////////////////////////////////////////////////////////
+// Transfer history (for NFTs only)
+/////////////////////////////////////////////////////////////////////////////////
+
+/// stores ownership history for a given token_id. Meant to be used for nfts.
+/// In base specification, only the latest (ie: current) owner is relevant. But  
+/// this design pattern is used to allow viewing a token_id's ownership history, 
+/// which is allowed in the additional specifications
+pub fn append_new_owner<S: Storage>(
+    storage: &mut S,
+    token_id: &str,
+    address: &HumanAddr,
+) -> StdResult<()> {
+    let mut store = PrefixedStorage::multilevel(&[PREFIX_NFT_OWNER, token_id.as_bytes()], storage);
+    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
+    store.push(address)
+}
+
+pub fn get_current_owner<S: Storage>(
+    storage: &S,
+    token_id: &str,
+) -> StdResult<HumanAddr> {
+    let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_NFT_OWNER, token_id.as_bytes()], storage);
+    let store = AppendStore::<HumanAddr, _, _>::attach(&store).unwrap()?;
+    let pos = store.len().saturating_sub(1);
+    let current_owner = store.get_at(pos)?;
+    Ok(current_owner)
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////
 // Permissions
 /////////////////////////////////////////////////////////////////////////////////
 
@@ -515,6 +549,7 @@ pub fn set_receiver_hash<S: Storage>(store: &mut S, account: &HumanAddr, code_ha
 pub struct ContrConf {
     pub admin: Option<HumanAddr>,
     pub minters: Vec<HumanAddr>,
+    pub token_id_list: Vec<String>,
     pub tx_cnt: u64,
     pub prng_seed: Vec<u8>,
     pub contract_address: HumanAddr,
@@ -644,14 +679,21 @@ impl Default for MintTokenId {
     }
 }
 
+/// used for MintToken and BurnToken in the base specifications
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenAmount {
     pub token_id: String,
+    /// For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the 
+    /// owner's address. This design decision is to allow `BurnToken` to apply to other addresses, 
+    /// possible in the additional specifications
     pub balances: Vec<Balance>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Balance {
+    /// For BurnToken, `address` needs to be the owner's address. This design decision is 
+    /// to allow `BurnToken` to apply to other addresses, possible in the additional 
+    /// specifications
     pub address: HumanAddr,
     pub amount: Uint128,
 }

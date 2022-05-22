@@ -1,5 +1,5 @@
 use cosmwasm_std::{
-    Env, Extern, Storage, Api, Querier, 
+    Env, Extern, Storage, Api, Querier, BlockInfo, 
     InitResponse, HandleResponse, Binary, to_binary, log,
     StdResult, StdError,
     HumanAddr, Uint128,
@@ -18,14 +18,14 @@ use crate::{
         ResponseStatus::{Success},  
     },
     state::{
-        RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS,
+        RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS, 
         ContrConf, TknInfo, MintTokenId, TokenAmount, Permission,
-        contr_conf_w, tkn_info_r, 
-        tkn_info_w, balances_w, balances_r, contr_conf_r, 
+        contr_conf_r, contr_conf_w, tkn_info_r, 
+        tkn_info_w, balances_w, balances_r, append_new_owner, get_current_owner, tkn_tot_supply_w, tkn_tot_supply_r,
         store_transfer, store_mint, store_burn,
         set_receiver_hash, get_receiver_hash, write_viewing_key, read_viewing_key, get_txs,
-        new_permission, update_permission, may_load_permission, // list_owner_permission_keys,
-        json_save, 
+        new_permission, update_permission, may_load_permission, list_owner_permission_keys,
+        json_save, json_may_load,
     },
     receiver::{Snip1155ReceiveMsg}, 
     vk::{
@@ -63,9 +63,10 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     let mut config = ContrConf { 
         admin, 
         minters: msg.minters,
+        token_id_list: vec![],
         tx_cnt: 0u64,
         prng_seed,
-        contract_address: env.contract.address.clone()
+        contract_address: env.contract.address.clone(),
     };
 
     // set initial balances
@@ -315,14 +316,13 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
         
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
-                "token_id does not exist. Cannot mint non-existent `token_ids`.
-                Use `mint_token_ids` to create tokens on new `token_ids`"
+                "token_id does not exist. Cannot mint non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"
             ))
         }
 
         if !token_info_op.clone().unwrap().token_config.enable_mint {
             return Err(StdError::generic_err(
-                "minting is not enabled for this token_ids"
+                "minting is not enabled for this token_id"
             ))
         }
 
@@ -375,8 +375,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
     
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
-                "token_id does not exist. Cannot burn non-existent `token_ids`.
-                Use `mint_token_ids` to create tokens on new `token_ids`"
+                "token_id does not exist. Cannot burn non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"
             ))
         }
 
@@ -384,7 +383,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
 
         if !token_info.token_config.enable_burn {
             return Err(StdError::generic_err(
-                "burn is not enabled for this token_id"
+                "burning is not enabled for this token_id"
             ))
         }
 
@@ -884,12 +883,19 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
 
 
     // create and save new token info
-    tkn_info_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
+    tkn_info_w(&mut deps.storage).save(&initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
 
     // set initial balances and store mint history
     for balance in initial_token.balances {
+        // save new balances
         balances_w(&mut deps.storage, &initial_token.token_info.token_id)
         .save(to_binary(&balance.address)?.as_slice(), &balance.amount)?;
+        // if is_nft == true, store owner of NFT
+        if initial_token.token_info.is_nft {
+            append_new_owner(&mut deps.storage, &initial_token.token_info.token_id, &balance.address)?;
+        }
+        // initiate total token supply
+        tkn_tot_supply_w(&mut deps.storage).save(&initial_token.token_info.token_id.as_bytes(), &balance.amount)?;
 
         // store mint_token_id
         store_mint(
@@ -903,6 +909,9 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
             memo.clone()
         )?;
     }
+
+    // push token_id to token_id_list
+    config.token_id_list.push(initial_token.token_info.token_id);
 
     Ok(())
 }
@@ -1035,10 +1044,12 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
 /// change token balance of an existing `token_id`. 
 /// 
 /// Should check that `token_id` already exists before calling this function, which is not done
-/// explicitly in this function.
+/// explicitly in this function. Although token_info is an argument in this function, so it is 
+/// likely that the calling function would have had to check. 
 /// * If `remove_from` == None: minted new tokens.
 /// * If `add_to` == None: burn tokens.
 /// * If is_nft == true, then `remove_from` MUST be Some(_).
+/// * If is_nft == true, stores new owner of NFT
 fn exec_change_balance<S: Storage>(
     storage: &mut S,
     token_id: &str,
@@ -1066,6 +1077,9 @@ fn exec_change_balance<S: Storage>(
         }    
         balances_w(storage, token_id)
         .save(to_binary(&from)?.as_slice(), &Uint128(from_new_amount_op.unwrap()))?;
+
+        // if nft, the ownership history remains. Any existing viewing permissions will remain too
+        // ...
     }
 
     // add balance
@@ -1084,6 +1098,35 @@ fn exec_change_balance<S: Storage>(
         // save new balances
         balances_w(storage, token_id)
         .save(to_binary(&to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
+
+        // if is_nft == true, store new owner of NFT
+        if token_info.is_nft {
+        append_new_owner(storage, &token_info.token_id, &to)?;
+        }
+    }
+
+    // may change total token supply
+    match (remove_from, add_to) {
+        (None, None) => (),
+        (Some(_), Some(_)) => (),
+        (None, Some(_)) => {
+            let old_amount = tkn_tot_supply_r(storage).load(&token_info.token_id.as_bytes())?;
+            let new_amount_op = old_amount.u128().checked_add(amount.u128());
+            let new_amount = match new_amount_op {
+                Some(i) => Uint128(i),
+                None => return Err(StdError::generic_err("total supply exceeds max allowed of 2^128")),
+            };
+            tkn_tot_supply_w(storage).save(&token_info.token_id.as_bytes(), &new_amount)?;
+        },
+        (Some(_), None) => {
+            let old_amount = tkn_tot_supply_r(storage).load(&token_info.token_id.as_bytes())?;
+            let new_amount_op = old_amount.u128().checked_sub(amount.u128());
+            let new_amount = match new_amount_op {
+                Some(i) => Uint128(i),
+                None => return Err(StdError::generic_err("total supply drops below zero")),
+            };
+            tkn_tot_supply_w(storage).save(&token_info.token_id.as_bytes(), &new_amount)?;
+        },
     }
 
     Ok(())
@@ -1133,10 +1176,14 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
 ) -> StdResult<Binary> {
     match msg {
         QueryMsg::ContractInfo {  } => query_contract_info(deps),
+        QueryMsg::TokenIdPublicInfo { token_id } => query_token_id_public_info(deps, token_id),
+        QueryMsg::RegisteredCodeHash { contract } => query_registered_code_hash(deps, contract),
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::Balance { .. } |
         QueryMsg::TransferHistory { .. } | 
-        QueryMsg::Permission { .. }  => viewing_keys_queries(deps, msg),
+        QueryMsg::Permission { .. } |
+        QueryMsg::AllPermissions { .. } |
+        QueryMsg::TokenIdPrivateInfo { .. } => viewing_keys_queries(deps, msg),
     }
 }
 
@@ -1150,45 +1197,32 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
 
     let account = validate(deps, PREFIX_REVOKED_PERMITS, &permit, contract_address, None)?;
 
+    if !permit.check_permission(&TokenPermissions::Owner) {
+        return Err(StdError::generic_err(format!(
+            "`Owner` permit required for SNIP1155 permit queries, got permissions {:?}",
+            permit.params.permissions
+        )));
+    }
+
     // Permit validated! We can now execute the query.
     match query {
-        QueryWithPermit::Balance { token_id } => {
-            if !permit.check_permission(&TokenPermissions::Balance) {
-                return Err(StdError::generic_err(format!(
-                    "No permission to query balance, got permissions {:?}",
-                    permit.params.permissions
-                )));
-            }
-
-            query_balance(deps, &HumanAddr(account), token_id)
-        }
-        QueryWithPermit::TransferHistory { page, page_size } => {
-            if !permit.check_permission(&TokenPermissions::History) {
-                return Err(StdError::generic_err(format!(
-                    "No permission to query history, got permissions {:?}",
-                    permit.params.permissions
-                )));
-            }
-
-            query_transfers(deps, &HumanAddr(account), page.unwrap_or(0), page_size)
-        },
+        QueryWithPermit::Balance { token_id } => query_balance(deps, &HumanAddr(account), token_id),
+        QueryWithPermit::TransferHistory { page, page_size 
+        } => query_transfers(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
-            if !permit.check_permission(&TokenPermissions::Allowance) {
-                return Err(StdError::generic_err(format!(
-                    "No permission to query allowance, got permissions {:?}",
-                    permit.params.permissions
-                )));
-            }
-
             if account != owner.as_str() && account != allowed_address.as_str() {
                 return Err(StdError::generic_err(format!(
-                    "Cannot query allowance. Requires permit for either owner {:?} or viewer||spender {:?}, got permit for {:?}",
+                    "Cannot query permission. Requires permit for either owner {:?} or viewer||spender {:?}, got permit for {:?}",
                     owner.as_str(), allowed_address.as_str(), account.as_str()
                 )));
             }
 
             query_permission(deps, token_id, owner, allowed_address)
         },
+        QueryWithPermit::AllPermissions { page, page_size 
+        } => query_all_permissions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
+        QueryWithPermit::TokenIdPrivateInfo { token_id 
+        } => query_token_id_private_info(deps, HumanAddr(account), token_id)
     }
 }
 
@@ -1211,12 +1245,13 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
             return match msg {
                 QueryMsg::Balance { address, token_id, .. } => query_balance(deps, &address, token_id),
                 QueryMsg::TransferHistory {
-                    address,
                     page,
                     page_size,
                     ..
                 } => query_transfers(deps, &address, page.unwrap_or(0), page_size),
                 QueryMsg::Permission { owner, allowed_address, token_id, .. } => query_permission(deps, token_id, owner, allowed_address),
+                QueryMsg::AllPermissions { page, page_size, .. } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
+                QueryMsg::TokenIdPrivateInfo { address, token_id, .. } => query_token_id_private_info(deps, address, token_id),
                 _ => panic!("This query type does not require authentication"),
             };
         }
@@ -1228,10 +1263,102 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
 }
 
 fn query_contract_info<S: Storage, A: Api, Q: Querier>(
-    _deps: &Extern<S, A, Q>,
+    deps: &Extern<S, A, Q>,
 ) -> StdResult<Binary> {
-    let info = "data".to_string();
-    let response = QueryAnswer::ContractInfo { info };
+    let contr_conf = contr_conf_r(&deps.storage).load()?;
+    let response = QueryAnswer::ContractInfo { 
+        admin: contr_conf.admin, 
+        minters: contr_conf.minters, 
+        all_token_ids: contr_conf.token_id_list, 
+    };
+    to_binary(&response)
+}
+
+fn query_token_id_public_info<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    token_id: String,
+) -> StdResult<Binary> {
+    let tkn_info_op= tkn_info_r(&deps.storage).may_load(&token_id.as_bytes())?;
+    match tkn_info_op {
+        None => return Err(StdError::generic_err(format!(
+            "token_id {} does not exist",
+            token_id
+        ))),
+        Some(mut tkn_info) => {
+            // add public supply if public_total_supply == true 
+            let total_supply: Option<Uint128>;
+            if tkn_info.token_config.public_total_supply { 
+                total_supply = Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
+            } else { total_supply = None }
+
+            // private_metadata always == None for public info query 
+            tkn_info.private_metadata = None;
+            let response = QueryAnswer::TokenIdPublicInfo { token_id_info: tkn_info, total_supply };
+            to_binary(&response) 
+        },
+    }
+}
+
+fn query_token_id_private_info<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    requester: HumanAddr,
+    token_id: String
+) -> StdResult<Binary> {
+    let tkn_info_op= tkn_info_r(&deps.storage).may_load(&token_id.as_bytes())?;
+    if let None = tkn_info_op {
+        return Err(StdError::generic_err(format!(
+            "token_id {} does not exist",
+            token_id
+        )))
+    }
+
+    let mut tkn_info = tkn_info_op.unwrap();
+    let mut owner: Option<HumanAddr>;
+    match tkn_info.is_nft {
+        true => owner = Some(get_current_owner(&deps.storage, &token_id)?),
+        false => owner = None,
+    }    
+
+    // If owner, can view `owner` and `private_metadata`. Otherwise check viewership permissions. 
+    if owner.as_ref().unwrap() != &requester {
+        let permission_op = may_load_permission(&deps.storage, owner.as_ref().unwrap(), &token_id, &requester)?; 
+        match permission_op {
+            None => return Err(StdError::generic_err("you do have have permission to view private token info")),
+            Some(perm) => {
+                let block: BlockInfo = json_may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+                    height: 1,
+                    time: 1,
+                    chain_id: "not used".to_string(),
+                });
+                if !perm.view_owner_perm || perm.view_owner_exp.is_expired(&block) { owner = None };
+                if !perm.view_pr_metadata_perm || perm.view_pr_metadata_exp.is_expired(&block) { tkn_info.private_metadata = None };
+            },       
+        }
+    }
+
+    // add public supply if public_total_supply == true
+    let total_supply: Option<Uint128>;
+    if tkn_info.token_config.public_total_supply { 
+        total_supply = Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
+    } else { total_supply = None }
+    
+    let response = QueryAnswer::TokenIdPrivateInfo { token_id_info: tkn_info, total_supply, owner };
+    to_binary(&response)
+}
+
+fn query_registered_code_hash<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    contract: HumanAddr,
+) -> StdResult<Binary> {
+    let may_hash_res = get_receiver_hash(&deps.storage, &contract);
+    let response: QueryAnswer;
+    match may_hash_res {
+        Some(hash_res) => {
+            response = QueryAnswer::RegisteredCodeHash { code_hash: Some(hash_res?) };
+        }
+        None => { response = QueryAnswer::RegisteredCodeHash { code_hash: None }},
+    } 
+
     to_binary(&response)
 }
 
@@ -1261,11 +1388,11 @@ fn query_transfers<S: Storage, A: Api, Q: Querier>(
     let address = deps.api.canonical_address(account)?;
     let (txs, total) = get_txs(&deps.storage, &address, page, page_size)?;
 
-    let result = QueryAnswer::TransferHistory {
+    let response = QueryAnswer::TransferHistory {
         txs,
         total: Some(total),
     };
-    to_binary(&result)
+    to_binary(&response)
 }
 
 fn query_permission<S: Storage, A: Api, Q: Querier>(
@@ -1281,4 +1408,25 @@ fn query_permission<S: Storage, A: Api, Q: Querier>(
     to_binary(&response)
 }
 
+fn query_all_permissions<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    account: &HumanAddr,
+    page: u32,
+    page_size: u32,
+) -> StdResult<Binary> {
+    let (permission_keys, total) = list_owner_permission_keys(&deps.storage, account, page, page_size)?;
+    let mut permissions: Vec<Permission> = vec![];
+    for pkey in permission_keys {
+        let permission = may_load_permission(
+            &deps.storage, 
+            &account,
+            &pkey.token_id,
+            &pkey.allowed_addr,
+        )?;
+        if let Some(i) = permission { permissions.push(i) };
+    }
+    
+    let response = QueryAnswer::AllPermissions { permissions, total };
+    to_binary(&response)
+}
 

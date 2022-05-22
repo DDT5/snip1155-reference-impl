@@ -34,6 +34,10 @@ export const initClient = async () => {
       }),
     };
     // console.log(`Genesis wallet ${i} with address: ${walletAmino.address}`);
+      // Genesis wallet a with address: secret1ap26qrlp8mcq2pg6r47w43l0y8zkqm8a450s03
+      // Genesis wallet b with address: secret1fc3fzy78ttp0lwuujw7e52rhspxn8uj52zfyne
+      // Genesis wallet c with address: secret1ajz54hz8azwuy34qwy9fkjnfcrvf0dzswy0lqq
+      // Genesis wallet d with address: secret1ldjxljw7v4vk6zhyduywh04hpj0jdwxsmrlatf
   }
 
   // Generate additional accounts
@@ -58,7 +62,7 @@ export const initClient = async () => {
     console.log(`Initialized wallet ${i-4} with address: ${address}`);
   }
 
-  // Send 100k SCRT from account 0 to each of accounts 1-19
+  // Send 100k SCRT from account 0 to each of accounts 1-`numNewAcc`
 
   const { secretjs } = accounts[0];
 

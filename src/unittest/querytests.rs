@@ -26,7 +26,7 @@ use cosmwasm_std::{
 /////////////////////////////////////////////////////////////////////////////////
 
 #[test]
-fn test_q_balance() -> StdResult<()> {
+fn test_q_init() -> StdResult<()> {
     // init addresses
     let addr0 = HumanAddr("addr0".to_string());
 
@@ -39,7 +39,11 @@ fn test_q_balance() -> StdResult<()> {
     let q_result = query(&deps, msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
-        QueryAnswer::ContractInfo { info } => assert_eq!(&info, "data"),
+        QueryAnswer::ContractInfo { admin, minters, all_token_ids } => {
+            assert_eq!(&admin.unwrap(), &addr0);
+            assert_eq!(&minters, &vec![addr0.clone()]);
+            assert_eq!(&all_token_ids, &vec!["0".to_string()]);
+        }
         _ => panic!("query error")
     }
 

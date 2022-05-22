@@ -24,7 +24,7 @@ You can also choose to debug your code by using the following steps (Using vscod
 There are no strict conventions, the only recommandation is to write test functions with "snake_case" naming sense (Only for the function name)
 It is very important for the code to be clear and verbose in its outputs also as for the test functions to be self explanatory.
 
-## Add tsconfig.json file; not necessary to run tests, but removes the error message on VS Code 
+## Add tsconfig.json file; not strictly necessary to run the tests.. 
 ```sh
 npx tsc --init 
 ```

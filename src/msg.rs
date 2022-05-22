@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    state::{MintTokenId, TokenAmount, Tx, Permission}, 
+    state::{MintTokenId, TokenAmount, Tx, Permission, TknInfo}, 
     vk::viewing_key::ViewingKey, 
     // expiration::Expiration
 };
@@ -78,7 +78,7 @@ pub enum HandleMsg {
         /// address being granted/revoked permission
         allowed_address: HumanAddr,
         /// token id to apply approval/revocation to.
-        /// Todo: if == None, perform action for all owner's `token_id`s
+        /// Additional Spec feature: if == None, perform action for all owner's `token_id`s
         token_id: String,
         /// optional permission level for viewing the owner. If ignored, leaves current permission settings
         view_owner: Option<bool>,
@@ -171,7 +171,7 @@ pub enum HandleAnswer {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
-    ContractInfo { },
+    ContractInfo {  },
     Balance {
         address: HumanAddr,
         key: String,
@@ -188,6 +188,23 @@ pub enum QueryMsg {
         allowed_address: HumanAddr,
         key: String,
         token_id: String,
+    },
+    /// displays all permissions that a given address has granted
+    AllPermissions {
+        /// address that has granted permissions to others
+        address: HumanAddr,
+        key: String,
+        page: Option<u32>,
+        page_size: u32,
+    },
+    TokenIdPublicInfo { token_id: String },
+    TokenIdPrivateInfo { 
+        address: HumanAddr,
+        key: String,
+        token_id: String,
+    },
+    RegisteredCodeHash {
+        contract: HumanAddr
     },
     WithPermit {
         permit: Permit,
@@ -206,6 +223,8 @@ impl QueryMsg {
                 key,
                 ..
             } => (vec![owner, allowed_address], ViewingKey(key.clone())),
+            Self::AllPermissions { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::TokenIdPrivateInfo { address, key, .. } => (vec![address], ViewingKey(key.clone())),
             _ => panic!("This query type does not require authentication"),
         }
     }
@@ -224,13 +243,22 @@ pub enum QueryWithPermit {
         allowed_address: HumanAddr,
         token_id: String,
     },
+    AllPermissions {
+        page: Option<u32>,
+        page_size: u32,
+    },
+    TokenIdPrivateInfo { 
+        token_id: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryAnswer {
     ContractInfo {
-        info: String,
+        admin: Option<HumanAddr>,
+        minters: Vec<HumanAddr>,
+        all_token_ids: Vec<String>,
     },
     Balance {
         amount: Uint128,
@@ -240,6 +268,26 @@ pub enum QueryAnswer {
         total: Option<u64>,
     },
     Permission(Permission),
+    AllPermissions{
+        permissions: Vec<Permission>,
+        total: u64,
+    },
+    TokenIdPublicInfo {
+        /// token_id_info.private_metadata will = None
+        token_id_info: TknInfo,
+        /// if public_total_supply == false, total_supply = None
+        total_supply: Option<Uint128>,
+    },
+    TokenIdPrivateInfo {
+        token_id_info: TknInfo,
+        /// if public_total_supply == false, total_supply = None
+        total_supply: Option<Uint128>,
+        owner: Option<HumanAddr>
+    },
+    /// returns None if contract has not registered with SNIP1155 contract
+    RegisteredCodeHash {
+        code_hash: Option<String>,
+    },
     ViewingKeyError {
         msg: String,
     },

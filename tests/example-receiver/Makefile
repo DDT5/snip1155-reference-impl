@@ -13,20 +13,11 @@ test: unit-test
 unit-test:
 	cargo unit-test
 
-# Integration test
-# .ONESHELL:
-.PHONY: integration-test
-integration-test: build _integration-test
-_integration-test:
-	@# this line below doesn't work, but the point is you need to use npm v16
-	@#. ${HOME}/.nvm/nvm.sh && nvm use 16
-	npx ts-node ./tests/integration.ts
-
 # This is a local build with debug-prints activated. Debug prints only show up
 # in the local development chain (see the `start-server` command below)
 # and mainnet won't accept contracts built with the feature enabled.
 .PHONY: build _build
-build: _build compress-wasm build-receiver
+build: _build compress-wasm
 _build:
 	RUSTFLAGS='-C link-arg=-s' cargo build --release --target wasm32-unknown-unknown --features="debug-print"
 
@@ -43,7 +34,7 @@ build-mainnet-reproducible:
 	docker run --rm -v "$$(pwd)":/contract \
 		--mount type=volume,source="$$(basename "$$(pwd)")_cache",target=/contract/target \
 		--mount type=volume,source=registry_cache,target=/usr/local/cargo/registry \
-		enigmampc/secret-contract-optimizer:1.0.7
+		enigmampc/secret-contract-optimizer:1.0.3
 
 .PHONY: compress-wasm
 compress-wasm:
@@ -56,34 +47,22 @@ compress-wasm:
 schema:
 	cargo run --example schema
 
-# Ctrl-C to exit terminal, but does not stop the server
+# Run local development chain with four funded accounts (named a, b, c, and d)
 .PHONY: start-server
-start-server:
-	docker start -a localsecret
+start-server: # CTRL+C to stop
+	docker run -it --rm \
+		-p 26657:26657 -p 26656:26656 -p 1317:1317 -p 5000:5000 \
+		-v $$(pwd):/root/code \
+		--name secretdev enigmampc/secret-network-sw-dev:v1.2.6
 
-.PHONY: stop-server
-stop-server:
-	docker stop localsecret
-
-.PHONY: reset-server
-reset-server:
-	docker stop localsecret || true
-	docker rm localsecret || true
-	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
-
-.PHONY: speedup-server
-speedup-server:
-	@# ok to reduce further to eg: 200ms
-	docker exec localsecret sed -E -i '/timeout_(propose|prevote|precommit|commit)/s/[0-9]+m?s/1000ms/' .secretd/config/config.toml
-	docker stop localsecret
-	docker start -a localsecret
+# This relies on running `start-server` in another console
+# You can run other commands on the secretcli inside the dev image
+# by using `docker exec secretdev secretcli`.
+.PHONY: store-contract-local
+store-contract-local:
+	docker exec secretdev secretcli tx compute store -y --from a --gas 1000000 /root/code/contract.wasm.gz
 
 .PHONY: clean
 clean:
 	cargo clean
 	-rm -f ./contract.wasm ./contract.wasm.gz
-	cd ./tests/example-receiver && $(MAKE) clean	
-
-.PHONY: build-receiver
-build-receiver:
-	cd ./tests/example-receiver && $(MAKE) build
