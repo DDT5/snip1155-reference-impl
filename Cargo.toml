@@ -49,7 +49,8 @@ rand_core = { version = "0.5.1", default-features = false }
 subtle = { version = "2.2.3", default-features = false }
 
 # additions
-uint = "0.9.3"
+# uint = "0.9.3"
 
 [dev-dependencies]
 cosmwasm-schema = "0.10.1"
+serde_json = "1.0.8"

@@ -18,7 +18,6 @@ use cosmwasm_std::{
     to_binary, 
 };
 
-
 /////////////////////////////////////////////////////////////////////////////////
 // Tests
 /////////////////////////////////////////////////////////////////////////////////
@@ -43,6 +42,7 @@ fn init_sanity() -> StdResult<()> {
     // check initial balances
     let balance = balances_r(&deps.storage, &token_id).load(to_binary(&addr0)?.as_slice())?;
     assert_eq!(balance, Uint128(1000));
+    
     Ok(())
 }
 

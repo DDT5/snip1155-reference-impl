@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    state::{MintTokenId, TokenAmount, Tx, Permission, TknInfo}, 
+    state::{MintTokenId, TokenAmount, Tx, PermissionKey, Permission, TknInfo, }, 
     vk::viewing_key::ViewingKey, 
     // expiration::Expiration
 };
@@ -177,7 +177,7 @@ pub enum QueryMsg {
         key: String,
         token_id: String,
     },
-    TransferHistory {
+    TransactionHistory {
         address: HumanAddr,
         key: String,
         page: Option<u32>,
@@ -216,7 +216,7 @@ impl QueryMsg {
     pub fn get_validation_params(&self) -> (Vec<&HumanAddr>, ViewingKey) {
         match self {
             Self::Balance { address, key, .. } => (vec![address], ViewingKey(key.clone())),
-            Self::TransferHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::TransactionHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
             Self::Permission {
                 owner,
                 allowed_address,
@@ -234,7 +234,7 @@ impl QueryMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryWithPermit {
     Balance { token_id: String },
-    TransferHistory {
+    TransactionHistory {
         page: Option<u32>,
         page_size: u32,
     },
@@ -263,12 +263,13 @@ pub enum QueryAnswer {
     Balance {
         amount: Uint128,
     },
-    TransferHistory {
+    TransactionHistory {
         txs: Vec<Tx>,
         total: Option<u64>,
     },
     Permission(Permission),
     AllPermissions{
+        permission_keys: Vec<PermissionKey>,
         permissions: Vec<Permission>,
         total: u64,
     },

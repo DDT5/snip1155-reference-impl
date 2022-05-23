@@ -74,7 +74,7 @@ reset-server:
 .PHONY: speedup-server
 speedup-server:
 	@# ok to reduce further to eg: 200ms
-	docker exec localsecret sed -E -i '/timeout_(propose|prevote|precommit|commit)/s/[0-9]+m?s/1000ms/' .secretd/config/config.toml
+	docker exec localsecret sed -E -i '/timeout_(propose|prevote|precommit|commit)/s/[0-9]+m?s/500ms/' .secretd/config/config.toml
 	docker stop localsecret
 	docker start -a localsecret
 

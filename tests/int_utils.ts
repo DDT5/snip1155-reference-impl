@@ -1,4 +1,4 @@
-import { SecretNetworkClient, Wallet } from "secretjs";
+import { SecretNetworkClient, Wallet, Permit, ViewingKey } from "secretjs";
 import { AminoWallet } from "secretjs/dist/wallet_amino";
 
 export type jsEnv = {
@@ -18,6 +18,14 @@ export type ContractInfo = {
   hash: string;
   address: string;
 }
+
+// export interface Auth {
+//   permit?: Permit;
+//   viewer?: {
+//       viewing_key: ViewingKey;
+//       address: string;
+//   };
+// }
 
 export function getValueFromRawLog(
     rawLog: string | undefined,

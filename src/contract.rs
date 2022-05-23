@@ -19,9 +19,10 @@ use crate::{
     },
     state::{
         RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS, 
-        ContrConf, TknInfo, MintTokenId, TokenAmount, Permission,
+        ContrConf, TknInfo, MintTokenId, TokenAmount, PermissionKey, Permission,
         contr_conf_r, contr_conf_w, tkn_info_r, 
-        tkn_info_w, balances_w, balances_r, append_new_owner, get_current_owner, tkn_tot_supply_w, tkn_tot_supply_r,
+        tkn_info_w, balances_w, balances_r, append_new_owner, get_current_owner, 
+        tkn_tot_supply_w, tkn_tot_supply_r,
         store_transfer, store_mint, store_burn,
         set_receiver_hash, get_receiver_hash, write_viewing_key, read_viewing_key, get_txs,
         new_permission, update_permission, may_load_permission, list_owner_permission_keys,
@@ -1180,7 +1181,7 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
         QueryMsg::RegisteredCodeHash { contract } => query_registered_code_hash(deps, contract),
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::Balance { .. } |
-        QueryMsg::TransferHistory { .. } | 
+        QueryMsg::TransactionHistory { .. } | 
         QueryMsg::Permission { .. } |
         QueryMsg::AllPermissions { .. } |
         QueryMsg::TokenIdPrivateInfo { .. } => viewing_keys_queries(deps, msg),
@@ -1207,7 +1208,7 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
     // Permit validated! We can now execute the query.
     match query {
         QueryWithPermit::Balance { token_id } => query_balance(deps, &HumanAddr(account), token_id),
-        QueryWithPermit::TransferHistory { page, page_size 
+        QueryWithPermit::TransactionHistory { page, page_size 
         } => query_transfers(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
             if account != owner.as_str() && account != allowed_address.as_str() {
@@ -1244,7 +1245,7 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
         } else if key.check_viewing_key(expected_key.unwrap().as_slice()) {
             return match msg {
                 QueryMsg::Balance { address, token_id, .. } => query_balance(deps, &address, token_id),
-                QueryMsg::TransferHistory {
+                QueryMsg::TransactionHistory {
                     page,
                     page_size,
                     ..
@@ -1388,7 +1389,7 @@ fn query_transfers<S: Storage, A: Api, Q: Querier>(
     let address = deps.api.canonical_address(account)?;
     let (txs, total) = get_txs(&deps.storage, &address, page, page_size)?;
 
-    let response = QueryAnswer::TransferHistory {
+    let response = QueryAnswer::TransactionHistory {
         txs,
         total: Some(total),
     };
@@ -1416,6 +1417,7 @@ fn query_all_permissions<S: Storage, A: Api, Q: Querier>(
 ) -> StdResult<Binary> {
     let (permission_keys, total) = list_owner_permission_keys(&deps.storage, account, page, page_size)?;
     let mut permissions: Vec<Permission> = vec![];
+    let mut valid_pkeys: Vec<PermissionKey> = vec![]; 
     for pkey in permission_keys {
         let permission = may_load_permission(
             &deps.storage, 
@@ -1423,10 +1425,13 @@ fn query_all_permissions<S: Storage, A: Api, Q: Querier>(
             &pkey.token_id,
             &pkey.allowed_addr,
         )?;
-        if let Some(i) = permission { permissions.push(i) };
+        if let Some(i) = permission { 
+            permissions.push(i);
+            valid_pkeys.push(pkey);
+        };
     }
     
-    let response = QueryAnswer::AllPermissions { permissions, total };
+    let response = QueryAnswer::AllPermissions { permission_keys: valid_pkeys, permissions, total };
     to_binary(&response)
 }
 

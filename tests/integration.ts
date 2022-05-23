@@ -1,9 +1,8 @@
-import { SecretNetworkClient, toUtf8, fromUtf8, Tx, toBase64, fromBase64} from "secretjs";
+import { SecretNetworkClient, toUtf8, fromUtf8, Tx, toBase64, Permit } from "secretjs";
 import fs from "fs";
 import assert from "assert";
 import { initClient } from "./int_helpers";
 import { Account, ContractInfo, jsEnv } from "./int_utils";
-import exp from "constants";
 
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -31,6 +30,22 @@ type TknConf = {
     enable_mint: boolean, 
     enable_burn: boolean, 
 };
+
+// type Permission = {
+//   view_owner_perm: boolean,
+//   view_owner_exp: string,
+//   view_pr_metadata_perm: boolean,
+//   view_pr_metadata_exp: string,
+//   trfer_allowance_perm: string,
+//   trfer_allowance_exp: string
+// }
+
+// type PermissionKey = {
+//   token_id: string,
+//   allowed_addr: string,
+// };
+
+// type GenErr = { generic_err: { msg: string }};
 
 /////////////////////////////////////////////////////////////////////////////////
 // Upload contract and Init Message
@@ -106,7 +121,7 @@ const initializeContract = async (
 
   console.log(`Contract address: ${contractAddress}`);
 
-  var contractInfo: [string, string] = [contractCodeHash, contractAddress];
+  const contractInfo: [string, string] = [contractCodeHash, contractAddress];
   return contractInfo;
 };
 
@@ -223,8 +238,35 @@ async function initDefaultWithReceiver() {
 // Handle Messages
 /////////////////////////////////////////////////////////////////////////////////
 
+async function execHandle(
+  sender: Account,
+  contract: ContractInfo,
+  msg: object,
+  handle_description?: string
+) {
+  const { secretjs } = sender;
+  const tx = await secretjs.tx.compute.executeContract(
+    {
+      sender: secretjs.address,
+      contractAddress: contract.address,
+      codeHash: contract.hash,
+      msg,
+      sentFunds: [],
+    },
+    {
+      broadcastCheckIntervalMs: 100,
+      gasLimit: 200000,
+    }
+  );
+
+  if (handle_description === undefined) { handle_description = "handle"}
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  console.log(`${handle_description} used ${tx.gasUsed} gas`);
+  return tx
+}
+
 async function mintTokenIds(
-  account: Account,
+  sender: Account,
   contract: ContractInfo,
   token_id: string,
   token_name: string,
@@ -245,134 +287,78 @@ async function mintTokenIds(
     tkn_conf = token_config
   }
 
-  const { secretjs } = account;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        mint_token_ids: { 
-          initial_tokens: [{
-            token_info: { 
-              token_id, 
-              name: token_name, 
-              symbol: token_symbol, 
-              decimals: 0,
-              is_nft, 
-              token_config: tkn_conf,
-            }, 
-            balances: [{ 
-                address: mint_to_address, 
-                amount: mint_amount 
-            }]
-          }]
-        },
-      },
-      sentFunds: [],
+  const msg = {
+    mint_token_ids: { 
+      initial_tokens: [{
+        token_info: { 
+          token_id, 
+          name: token_name, 
+          symbol: token_symbol, 
+          decimals: 0,
+          is_nft, 
+          token_config: tkn_conf,
+        }, 
+        balances: [{ 
+            address: mint_to_address, 
+            amount: mint_amount 
+        }]
+      }]
     },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
+  }
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`mintTokenIds used ${tx.gasUsed} gas`);
+  const tx = await execHandle(sender, contract, msg, "mintTokenIds");
   return tx
 }
 
 async function mintTokens(
-  account: Account,
+  sender: Account,
   contract: ContractInfo,
   token_id: string,
   balances: Balance[],
 ) {
-  const { secretjs } = account;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        mint_tokens: { 
-          mint_tokens: [{
-            token_id, 
-            balances,
-          }]
-        },
-      },
-      sentFunds: [],
+  const msg = {
+    mint_tokens: { 
+      mint_tokens: [{
+        token_id, 
+        balances,
+      }]
     },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
+  };
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`mintTokens used ${tx.gasUsed} gas`);
-  return tx
+  const tx = await execHandle(sender, contract, msg, "mintTokens");
+  return tx;
 }
 
 async function burnTokens(
-  account: Account,
+  sender: Account,
   contract: ContractInfo,
   token_id: string,
   balances: Balance[],
 ) {
-  const { secretjs } = account;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        burn_tokens: { 
-          burn_tokens: [{
-            token_id, 
-            balances,
-          }]
-        },
-      },
-      sentFunds: [],
+  const msg = {
+    burn_tokens: { 
+      burn_tokens: [{
+        token_id, 
+        balances,
+      }]
     },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
+  };
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`burnTokens used ${tx.gasUsed} gas`);
-  return tx
+  const tx = await execHandle(sender, contract, msg, "burnTokens");
+  return tx;
 }
 
 async function setViewingKey(
-  account: Account,
+  sender: Account,
   contract: ContractInfo,
   key: string,
 ) {
-  const { secretjs } = account;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
+  const msg = {
         set_viewing_key: { key: key },
-      },
-      sentFunds: [],
-    },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
+  };
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`setViewingKey used ${tx.gasUsed} gas`);
-  return tx
+  const tx = await execHandle(sender, contract, msg, "setViewingKey");
+  return tx;
 }
 
 async function setViewingKeyAll(
@@ -397,31 +383,18 @@ async function transfer(
   recipient: Account,
   amount: string,
 ): Promise<Tx> {
-  const { secretjs } = sender;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        transfer: { 
-          token_id,
-          from: from.address,
-          recipient: recipient.address,
-          amount, 
-        },
-      },
-      sentFunds: [],
-    },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`Transfer used ${tx.gasUsed} gas`);
-  return tx
+  const msg = {
+    transfer: { 
+      token_id,
+      from: from.address,
+      recipient: recipient.address,
+      amount, 
+    },
+  };
+
+  const tx = await execHandle(sender, contract, msg, "transfer");
+  return tx;
 }
 
 /** @param msg a base64 string of a utf8 json string */
@@ -434,33 +407,19 @@ async function send(
   amount: string,
   msg?: string,
 ): Promise<Tx> {
-  const { secretjs } = sender;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        send: { 
-          token_id,
-          from: from.address,
-          recipient: recipient_contract.address,
-          recipient_code_hash: recipient_contract.hash,
-          amount, 
-          msg
-        },
-      },
-      sentFunds: [],
+  const message = {
+    send: { 
+      token_id,
+      from: from.address,
+      recipient: recipient_contract.address,
+      recipient_code_hash: recipient_contract.hash,
+      amount, 
+      msg
     },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
+  };
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`Send used ${tx.gasUsed} gas`);
-  return tx
+  const tx = await execHandle(sender, contract, message, "send");
+  return tx;
 }
 
 async function givePermission(
@@ -472,90 +431,142 @@ async function givePermission(
   view_private_metadata?: boolean,
   transfer?: string,
 ): Promise<Tx> {
-  const { secretjs } = sender;
-  const tx = await secretjs.tx.compute.executeContract(
-    {
-      sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
-      msg: {
-        give_permission: { 
-          allowed_address: allowed_address.address,
-          token_id,
-          view_owner,
-          view_private_metadata,
-          transfer,
-        },
-      },
-      sentFunds: [],
+  const msg = {
+    give_permission: { 
+      allowed_address: allowed_address.address,
+      token_id,
+      view_owner,
+      view_private_metadata,
+      transfer,
     },
-    {
-      broadcastCheckIntervalMs: 100,
-      gasLimit: 200000,
-    }
-  );
-
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`GivePermission used ${tx.gasUsed} gas`);
-  return tx
+  };
+  const tx = await execHandle(sender, contract, msg, "givePermission");
+  return tx;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 // Query Messages
 /////////////////////////////////////////////////////////////////////////////////
 
+async function execQuery(
+  sender: Account,
+  contract: ContractInfo,
+  msg: object,
+) {
+  const { secretjs } = sender;
+
+  const response = (await secretjs.query.compute.queryContract({
+    contractAddress: contract.address,
+    codeHash: contract.hash,
+    query: msg,
+  }));
+
+  if (JSON.stringify(response).includes('parse_err"')) {
+    throw new Error(`Query parse_err: ${JSON.stringify(response)}`);
+  }
+  
+  return response;
+}
+
 async function queryContractInfo(
-  env: jsEnv,
+  sender: Account,
   contract: ContractInfo,
 ) {
-  const { secretjs } = env.accounts[0];
-  type queryResponse = { contract_info: { 
+  const { secretjs } = sender;
+  type QueryResponse = { contract_info: { 
     admin: string,
     minters: string[],
     all_token_ids: string[],
   }};
 
-  const response = (await secretjs.query.compute.queryContract({
-    contractAddress: contract.address,
-    codeHash: contract.hash,
-    query: { contract_info: {} },
-  })) as queryResponse;
+  const msg = { contract_info: {} };
 
-  if ('err"' in response) {
-    throw new Error(
-      `Query failed with the following err: ${JSON.stringify(response)}`
-    );
-  }
-
+  const response = await execQuery(sender, contract, msg) as QueryResponse;
   return response.contract_info;
 }
 
 async function queryBalance(
-  account: Account,
+  sender: Account,
   contract: ContractInfo,
   key: string,
   token_id: string,
 ): Promise<string> {
-  const { secretjs } = account;
-  type queryResponse = { balance: { amount: string }};
+  type QueryResponse = { balance: { amount: string }};
 
-  const response = (await secretjs.query.compute.queryContract({
-    contractAddress: contract.address,
-    codeHash: contract.hash,
-    query: { balance: {
-      address: account.address,
+  const msg = { balance: {
+      address: sender.address,
       key: key,
       token_id: token_id,
-    } },
-  })) as queryResponse;
-
-  if ('err"' in response) {
-    throw new Error(
-      `Query failed with the following err: ${JSON.stringify(response)}`
-    );
-  }
-  
+  } };
+  const response = await execQuery(sender, contract, msg) as QueryResponse;
   return response.balance.amount;
+}
+
+async function queryTransactionHistory(
+  account: Account,
+  contract: ContractInfo,
+  address: string,
+  key: string,
+  page_size: number,
+  page?: number,
+) {
+  // type QueryResponse = { };
+  const msg = { transaction_history: { 
+    address,
+    key,
+    page,
+    page_size,
+   }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
+  return response;
+}
+
+async function queryAllPermissions(
+  account: Account,
+  contract: ContractInfo,
+  address: string,
+  key: string,
+  page_size: number,
+  page?: number,
+) {
+  // type QueryResponse = { };
+  const msg = { all_permissions: { 
+    address,
+    key,
+    page,
+    page_size,
+   }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
+  return response;
+}
+
+async function queryAllPermissionsPermit(
+  account: Account,
+  contract: ContractInfo,
+  page_size: number,
+  page?: number,
+) {
+  const { secretjs } = account;
+  const permit = await secretjs.utils.accessControl.permit.sign(
+    account.address,
+    "secret-4",
+    "test",
+    [contract.address],
+    ["owner"],
+  );
+
+  // type QueryResponse = { all_permissions: { permission_keys: object[], permissions: object[], total: number }};
+  const msg = { with_permit: {
+    permit,
+    query: {
+      all_permissions: {
+        page,
+        page_size,
+      }
+    }
+  }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
+  return response;
 }
 
 async function queryTokenIdPublicInfo(
@@ -563,30 +574,35 @@ async function queryTokenIdPublicInfo(
   contract: ContractInfo,
   token_id: string,
 ) {
-  const { secretjs } = account;
-  // type queryResponse = { token_id_public_info: { 
-  //   token_id_info: TknInfo,
-  //   total_supply?: string, 
-  // }};
-  type queryResponse = unknown;
-
-  const response = (await secretjs.query.compute.queryContract({
-    contractAddress: contract.address,
-    codeHash: contract.hash,
-    query: { token_id_public_info: {
-      token_id,
-    } },
-  })) as queryResponse;
-
-  // if ('err"' in response) {
-  //   throw new Error(
-  //     `Query failed with the following err: ${JSON.stringify(response)}`
-  //   );
-  // }
-  
+  // type QueryResponse = { };
+  const msg = { token_id_public_info: { token_id }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
   return response;
 }
 
+async function queryTokenIdPrivateInfo(
+  account: Account,
+  contract: ContractInfo,
+  token_id: string,
+) {
+  // type QueryResponse = { };
+  const msg = { token_id_private_info: { token_id }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
+  return response;
+}
+
+async function queryRegisteredCodeHash(
+  account: Account,
+  contract: ContractInfo,
+  input_contract: string,
+) {
+  type QueryResponse = { registered_code_hash: { code_hash?: string } };
+  const msg = { registered_code_hash: { 
+    contract: input_contract,
+   }};
+  const response = await execQuery(account, contract, msg) as QueryResponse;
+  return response;
+}
 
 /////////////////////////////////////////////////////////////////////////////////
 // Receiver messages
@@ -745,13 +761,13 @@ async function queryRecieverGetCount(
   contract: ContractInfo,
 ) {
   const { secretjs } = account;
-  type queryResponse = { count: number };
+  type QueryResponse = { count: number };
 
   const response = (await secretjs.query.compute.queryContract({
     contractAddress: contract.address,
     codeHash: contract.hash,
     query: { get_count: {  } },
-  })) as queryResponse;
+  })) as QueryResponse;
 
   if ('err"' in response) {
     throw new Error(
@@ -770,15 +786,15 @@ async function testIntializationSanity(
   env: jsEnv
 ): Promise<void> {
   const contract = env.contracts[0];
-  const addr0 = env.accounts[0];
+  const acc0 = env.accounts[0];
 
   const onInitializationData = await queryContractInfo(
-    env,
+    env.accounts[0],
     contract,
   );
-  let exp_contract_info = {
-    admin: addr0.address,
-    minters: [addr0.address],
+  const exp_contract_info = {
+    admin: acc0.address,
+    minters: [acc0.address],
     all_token_ids: ["0","1","2"],
   };
   assert(
@@ -786,23 +802,23 @@ async function testIntializationSanity(
     `Contract info on initialization unexpected: ${JSON.stringify(onInitializationData)}`
   );
 
-  await setViewingKey(addr0, contract, "vkey");
+  await setViewingKey(acc0, contract, "vkey");
   const initBalance0: string = await queryBalance(
-    addr0, contract, "vkey", "0"
+    acc0, contract, "vkey", "0"
   );
   assert(
     initBalance0 === "1000",
     `Initial balance expected to be "1000" instead of ${initBalance0}`
   );
   const initBalance1: string = await queryBalance(
-    addr0, contract, "vkey", "1"
+    acc0, contract, "vkey", "1"
   );
   assert(
     initBalance1 === "1000",
     `Initial balance expected to be "1000" instead of ${initBalance1}`
   );
   const initBalance2: string = await queryBalance(
-    addr0, contract, "vkey", "2"
+    acc0, contract, "vkey", "2"
   );
   assert(
     initBalance2 === "1",
@@ -810,21 +826,21 @@ async function testIntializationSanity(
   );
 
   // public token info
-  const tknId0 = await queryTokenIdPublicInfo(addr0, contract, "0"); 
+  const tknId0 = await queryTokenIdPublicInfo(acc0, contract, "0"); 
   const tknId0String = JSON.stringify(tknId0);
   assert(tknId0String.includes('"token_id":"0"'));
   assert(tknId0String.includes('"is_nft":false'));
   assert(tknId0String.includes('"public_total_supply":true'));
   assert(tknId0String.includes('"total_supply":"1000"'));
 
-  const tknId1 = await queryTokenIdPublicInfo(addr0, contract, "1"); 
+  const tknId1 = await queryTokenIdPublicInfo(acc0, contract, "1"); 
   const tknId1String = JSON.stringify(tknId1);
   assert(tknId1String.includes('"token_id":"1"'));
   assert(tknId1String.includes('"is_nft":false'));
   assert(tknId1String.includes('"public_total_supply":false'));
   assert(tknId1String.includes('"total_supply":null'));
 
-  const tknId2 = await queryTokenIdPublicInfo(addr0, contract, "2"); 
+  const tknId2 = await await queryTokenIdPublicInfo(acc0, contract, "2"); 
   const tknId2String = JSON.stringify(tknId2);
   assert(tknId2String.includes('"token_id":"2"'));
   assert(tknId2String.includes('"is_nft":true'));
@@ -949,8 +965,7 @@ async function testTransferTokens(
   const to = env.accounts[1];
   const addr2 = env.accounts[2];
 
-  await setViewingKey(from, contract, "vkey");
-  await setViewingKey(to, contract, "vkey");
+  await setViewingKeyAll(env);
   let balance0: string = await queryBalance(from, contract, "vkey", "0");
   let balance1: string = await queryBalance(to, contract, "vkey", "0");
   assert(balance0 === "1000");
@@ -1041,9 +1056,63 @@ async function testRegreceiveSend(
   // can receive now, and count has incremented to [ 11 ] per the message sent
   tx = await send(account, snip1155, "0", account, receiver, "10", msg_bin)
   assert(tx.code === 0);
-  await setViewingKeyAll(env);
+  await setViewingKey(account, snip1155, "vkey");
   let bal = await queryBalance(account, snip1155, "vkey", "0"); assert(bal === "990");
   let count = await queryRecieverGetCount(account, receiver); assert(count === 11); 
+}
+
+async function testQueries(
+  env: jsEnv
+) {
+  const acc0 = env.accounts[0];
+  const acc1 = env.accounts[1];
+  const acc2 = env.accounts[2];
+  const snip1155 = env.contracts[0];
+
+  let tx = await givePermission(acc0, snip1155, acc1, "0", true, true, "100");
+  assert(tx.code === 0);
+  tx = await givePermission(acc0, snip1155, acc1, "1", true, true, "10");
+  assert(tx.code === 0);
+  tx = await givePermission(acc0, snip1155, acc2, "0", true, true, "200");
+  assert(tx.code === 0);
+
+  let q = await queryAllPermissionsPermit(acc0, snip1155, 5);
+  // console.log(JSON.stringify(q, null, 2));
+  let expPerms = [
+    {
+      view_owner_perm: true,
+      view_owner_exp: "never",
+      view_pr_metadata_perm: true,
+      view_pr_metadata_exp: "never",
+      trfer_allowance_perm: "200",
+      trfer_allowance_exp: "never"
+    },
+    {
+      view_owner_perm: true,
+      view_owner_exp: "never",
+      view_pr_metadata_perm: true,
+      view_pr_metadata_exp: "never",
+      trfer_allowance_perm: "10",
+      trfer_allowance_exp: "never"
+    },
+    {
+      view_owner_perm: true,
+      view_owner_exp: "never",
+      view_pr_metadata_perm: true,
+      view_pr_metadata_exp: "never",
+      trfer_allowance_perm: "100",
+      trfer_allowance_exp: "never"
+    }
+  ];
+  assert(JSON.stringify(q).includes(JSON.stringify(expPerms)));
+
+  tx = await transfer(acc0, snip1155, "0", acc0, acc1, "50");
+  assert(tx.code === 0);
+
+  await setViewingKeyAll(env);
+  q = await queryTransactionHistory(acc0, snip1155, acc0.address, "vkey", 10);
+  // console.log(JSON.stringify(q, null, 2));
+  assert(JSON.stringify(q).includes('"total":4'))
 }
 
 
@@ -1066,21 +1135,24 @@ async function runTest(
 (async () => {
   let env: jsEnv;
 
-  env = await initDefaultWithReceiver();
-  await runTest(testIntializationSanity, env);
-  await runTest(testReceiverSanity, env);
+  // env = await initDefaultWithReceiver();
+  // await runTest(testIntializationSanity, env);
+  // await runTest(testReceiverSanity, env);
+
+  // env = await initDefault();
+  // await runTest(testMintTokenIds, env);
+
+  // env = await initDefault();
+  // await runTest(testMintBurnTokens, env);
+
+  // env = await initDefault();
+  // await runTest(testTransferTokens, env);
+
+  // env = await initDefaultWithReceiver();
+  // await runTest(testRegreceiveSend, env);
 
   env = await initDefault();
-  await runTest(testMintTokenIds, env);
-
-  env = await initDefault();
-  await runTest(testMintBurnTokens, env);
-
-  env = await initDefault();
-  await runTest(testTransferTokens, env);
-
-  env = await initDefaultWithReceiver();
-  await runTest(testRegreceiveSend, env);
+  await runTest(testQueries, env);
 
   console.log("All tests COMPLETED SUCCESSFULLY")
   
