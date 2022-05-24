@@ -1,8 +1,9 @@
 import { SecretNetworkClient, toUtf8, fromUtf8, Tx, toBase64, Permit } from "secretjs";
 import fs from "fs";
 import assert from "assert";
-import { initClient } from "./int_helpers";
+import { initClient, generatePermit } from "./int_helpers";
 import { Account, ContractInfo, jsEnv } from "./int_utils";
+import { Metadata } from "secretjs/dist/extensions/snip721/types";
 
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -31,14 +32,14 @@ type TknConf = {
     enable_burn: boolean, 
 };
 
-// type Permission = {
-//   view_owner_perm: boolean,
-//   view_owner_exp: string,
-//   view_pr_metadata_perm: boolean,
-//   view_pr_metadata_exp: string,
-//   trfer_allowance_perm: string,
-//   trfer_allowance_exp: string
-// }
+type Permission = {
+  view_owner_perm: boolean,
+  view_owner_exp: string,
+  view_pr_metadata_perm: boolean,
+  view_pr_metadata_exp: string,
+  trfer_allowance_perm: string,
+  trfer_allowance_exp: string
+}
 
 // type PermissionKey = {
 //   token_id: string,
@@ -130,6 +131,17 @@ async function initDefault(): Promise<jsEnv> {
   const accounts = await initClient();
   const { secretjs } = accounts[0];
 
+  const public_metadata: Metadata = {
+    token_uri: "public_token_uri",
+  };
+  const private_metadata: Metadata = {
+    token_uri: "private_token_uri",
+    extension: {
+      image_data: "some image data",
+      protected_attributes: ["some protected attributes"]
+    }
+  };
+
   const defaultInitMsg = { 
     has_admin: true,
     minters: [accounts[0].address],
@@ -182,6 +194,8 @@ async function initDefault(): Promise<jsEnv> {
               enable_mint: true, 
               enable_burn: true, 
           },
+          public_metadata,
+          private_metadata,
         }, 
         balances: [{ 
             address: accounts[0].address, 
@@ -367,7 +381,7 @@ async function setViewingKeyAll(
   for (const contr of env.contracts) {
     let tx: Promise<Tx>;
     for (let i=0; i<env.accounts.length; i++) {
-        tx = setViewingKey(env.accounts[i], contr, "vkey");
+        tx = setViewingKey(env.accounts[i], contr, "vkey"+i);
         if (i == env.accounts.length-1) { 
           await tx;
         }
@@ -521,6 +535,25 @@ async function queryTransactionHistory(
   return response;
 }
 
+async function queryPermission(
+  account: Account,
+  contract: ContractInfo,
+  owner: string,
+  allowed_address: string,
+  key: string,
+  token_id: string,
+) {
+  type QueryResponse = { permission: Permission };
+  const msg = { permission: { 
+    owner,
+    allowed_address,
+    key,
+    token_id,
+   }};
+  const response = await execQuery(account, contract, msg) as QueryResponse;
+  return response;
+}
+
 async function queryAllPermissions(
   account: Account,
   contract: ContractInfo,
@@ -540,20 +573,13 @@ async function queryAllPermissions(
   return response;
 }
 
-async function queryAllPermissionsPermit(
+async function queryAllPermissionsQPermit(
   account: Account,
   contract: ContractInfo,
   page_size: number,
   page?: number,
 ) {
-  const { secretjs } = account;
-  const permit = await secretjs.utils.accessControl.permit.sign(
-    account.address,
-    "secret-4",
-    "test",
-    [contract.address],
-    ["owner"],
-  );
+  let permit: Permit = await generatePermit(account, contract);
 
   // type QueryResponse = { all_permissions: { permission_keys: object[], permissions: object[], total: number }};
   const msg = { with_permit: {
@@ -580,13 +606,21 @@ async function queryTokenIdPublicInfo(
   return response;
 }
 
-async function queryTokenIdPrivateInfo(
+async function queryTokenIdPrivateInfoQPermit(
   account: Account,
   contract: ContractInfo,
   token_id: string,
 ) {
+  const permit = await generatePermit(account, contract);
   // type QueryResponse = { };
-  const msg = { token_id_private_info: { token_id }};
+  const msg = { with_permit: {
+    permit,
+    query: {
+      token_id_private_info: {
+        token_id,
+      }
+    }
+  }};
   const response = await execQuery(account, contract, msg); // as QueryResponse;
   return response;
 }
@@ -599,7 +633,7 @@ async function queryRegisteredCodeHash(
   type QueryResponse = { registered_code_hash: { code_hash?: string } };
   const msg = { registered_code_hash: { 
     contract: input_contract,
-   }};
+  }};
   const response = await execQuery(account, contract, msg) as QueryResponse;
   return response;
 }
@@ -922,8 +956,8 @@ async function testMintBurnTokens(
   assert(tx.code === 0);
 
   await setViewingKeyAll(env);
-  let balance0: string = await queryBalance(env.accounts[0], contract, "vkey", "0");
-  let balance1: string = await queryBalance(env.accounts[1], contract, "vkey", "0");
+  let balance0: string = await queryBalance(env.accounts[0], contract, "vkey0", "0");
+  let balance1: string = await queryBalance(env.accounts[1], contract, "vkey1", "0");
   assert(balance0 === "1002");
   assert(balance1 === "100");
 
@@ -951,8 +985,8 @@ async function testMintBurnTokens(
   // fails if one of the attempted burn actions is invalid
   tx = await burnTokens(env.accounts[0], contract, "0", [Bal, Bal, Bal1]);
   assert(tx.rawLog.includes(`you do not have permission to burn 100 tokens from address ${env.accounts[1].address}`));
-  balance0 = await queryBalance(env.accounts[0], contract, "vkey", "0");
-  balance1 = await queryBalance(env.accounts[1], contract, "vkey", "0");
+  balance0 = await queryBalance(env.accounts[0], contract, "vkey0", "0");
+  balance1 = await queryBalance(env.accounts[1], contract, "vkey1", "0");
   assert(balance0 === "999");
   assert(balance1 === "100");
 }
@@ -966,16 +1000,16 @@ async function testTransferTokens(
   const addr2 = env.accounts[2];
 
   await setViewingKeyAll(env);
-  let balance0: string = await queryBalance(from, contract, "vkey", "0");
-  let balance1: string = await queryBalance(to, contract, "vkey", "0");
+  let balance0: string = await queryBalance(from, contract, "vkey0", "0");
+  let balance1: string = await queryBalance(to, contract, "vkey1", "0");
   assert(balance0 === "1000");
   assert(balance1 === "0");
 
   // can transfer own tokens
   let tx = await transfer(from, contract, "0", from, to, "200");
   assert(tx.code === 0);
-  balance0 = await queryBalance(from, contract, "vkey", "0");
-  balance1 = await queryBalance(to, contract, "vkey", "0");
+  balance0 = await queryBalance(from, contract, "vkey0", "0");
+  balance1 = await queryBalance(to, contract, "vkey1", "0");
   assert(balance0 === "800");
   assert(balance1 === "200");
 
@@ -1000,8 +1034,8 @@ async function testTransferTokens(
   // can use remaining allowance
   tx = await transfer(addr2, contract, "0", from, to, "100");
   assert(fromUtf8(tx.data[0]).includes(`{"transfer":{"status":"success"}}`));
-  balance0 = await queryBalance(from, contract, "vkey", "0");
-  balance1 = await queryBalance(to, contract, "vkey", "0");
+  balance0 = await queryBalance(from, contract, "vkey0", "0");
+  balance1 = await queryBalance(to, contract, "vkey1", "0");
   assert(balance0 === "500");
   assert(balance1 === "500");
 }
@@ -1068,6 +1102,7 @@ async function testQueries(
   const acc1 = env.accounts[1];
   const acc2 = env.accounts[2];
   const snip1155 = env.contracts[0];
+  const receiver = env.contracts[1];
 
   let tx = await givePermission(acc0, snip1155, acc1, "0", true, true, "100");
   assert(tx.code === 0);
@@ -1076,9 +1111,63 @@ async function testQueries(
   tx = await givePermission(acc0, snip1155, acc2, "0", true, true, "200");
   assert(tx.code === 0);
 
-  let q = await queryAllPermissionsPermit(acc0, snip1155, 5);
+  await setViewingKeyAll(env);
+
+  // query permission --------------------------------
+  let q_perm = await queryPermission(acc0, snip1155, acc0.address, acc1.address, "vkey0", "0")
+  const expPerm = {
+    permission: {
+      view_owner_perm: true,
+      view_owner_exp: 'never',
+      view_pr_metadata_perm: true,
+      view_pr_metadata_exp: 'never',
+      trfer_allowance_perm: '100',
+      trfer_allowance_exp: 'never'
+    }
+  };
+  assert(JSON.stringify(q_perm).includes(JSON.stringify(expPerm)));
+  
+  // acc1 (grantee) can also view permission: test using Q permits 
+  let permit: Permit = await generatePermit(acc1, snip1155);
+  let msg = { with_permit: {
+    permit,
+    query: {
+      permission: {
+        owner: acc0.address,
+        allowed_address: acc1.address,
+        token_id: "0"
+      }
+    }
+  }};
+  type QueryResponse = { permission: Permission };
+  q_perm = await execQuery(acc0, snip1155, msg) as QueryResponse;
+  assert(JSON.stringify(q_perm).includes(JSON.stringify(expPerm)));
+  
+  // cannot query using permit not from owner or allowed_address
+  permit = await generatePermit(acc2, snip1155);
+  msg.with_permit.permit = permit;
+  q_perm = await execQuery(acc0, snip1155, msg) as QueryResponse; 
+  const err_msg = `Cannot query permission. Requires permit for either owner \\"${acc0.address}\\" or viewer||spender \\"${acc1.address}\\", got permit for \\"${acc2.address}\\"`;
+  assert(JSON.stringify(q_perm).includes(err_msg));  
+
+  // transactionHistory --------------------------------
+  tx = await transfer(acc0, snip1155, "0", acc0, acc1, "50");
+  assert(tx.code === 0);
+
+  // can view own tx history
+  let q = await queryTransactionHistory(acc0, snip1155, acc0.address, "vkey0", 10);
   // console.log(JSON.stringify(q, null, 2));
-  let expPerms = [
+  assert(JSON.stringify(q).includes('"total":4'));
+  q = await queryTransactionHistory(acc1, snip1155, acc1.address, "vkey1", 10);
+  assert(JSON.stringify(q).includes('"total":1'));
+
+  // cannot view another account's history
+  q = await queryTransactionHistory(acc1, snip1155, acc0.address, "vkey1", 10);
+  assert(JSON.stringify(q).includes("Wrong viewing key for this address or viewing key not set"))
+
+  // query allPermissions --------------------------------
+  q = await queryAllPermissionsQPermit(acc0, snip1155, 5);
+  const expPerms = [
     {
       view_owner_perm: true,
       view_owner_exp: "never",
@@ -1105,14 +1194,101 @@ async function testQueries(
     }
   ];
   assert(JSON.stringify(q).includes(JSON.stringify(expPerms)));
+  
+  // grantee cannot see list of permissions that the account has been granted 
+  // not in base specification
+  q = await queryAllPermissionsQPermit(acc1, snip1155, 5);
+  assert(JSON.stringify(q).includes('{"all_permissions":{"permission_keys":[],"permissions":[],"total":0}}'));
 
-  tx = await transfer(acc0, snip1155, "0", acc0, acc1, "50");
-  assert(tx.code === 0);
+  // query token_id private info --------------------------------
+  const expPrivInfo = {
+    token_id_private_info: {
+      token_id_info: {
+        token_id: "2",
+        name: "nftname",
+        symbol: "NFT",
+        decimals: 6,
+        is_nft: true,
+        token_config: {
+          public_total_supply: true,
+          enable_mint: true,
+          enable_burn: true
+        },
+        public_metadata: {
+          token_uri: "public_token_uri",
+          extension: null
+        },
+        private_metadata: {
+          token_uri: "private_token_uri",
+          extension: {
+            image: null,
+            image_data: "some image data",
+            external_url: null,
+            description: null,
+            name: null,
+            attributes: null,
+            background_color: null,
+            animation_url: null,
+            youtube_url: null,
+            media: null,
+            protected_attributes: [
+              "some protected attributes"
+            ],
+            token_subtype: null
+          }
+        }
+      },
+      total_supply: "1",
+      owner: acc0.address,
+    }
+  }
+  q = await queryTokenIdPrivateInfoQPermit(acc0, snip1155, "2");
+  assert(JSON.stringify(q).includes(JSON.stringify(expPrivInfo)));
 
-  await setViewingKeyAll(env);
-  q = await queryTransactionHistory(acc0, snip1155, acc0.address, "vkey", 10);
-  // console.log(JSON.stringify(q, null, 2));
-  assert(JSON.stringify(q).includes('"total":4'))
+  // cannot view private info using permit from another address
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes("you do have have permission to view private token info"));
+
+  // if granted WRONG permission, can see public token info, but not private info (owner and private metadata)
+  tx = await givePermission(acc0, snip1155, acc1, "2", undefined, undefined, "100");
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes('"private_metadata":null'));
+  assert(JSON.stringify(q).includes('"owner":null'));
+
+  // can view owner ONLY, if granted that permission only
+  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, "0");
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes('"private_metadata":null'));
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+
+  // can view only private metadata if granted only that permission
+  tx = await givePermission(acc0, snip1155, acc1, "2", false, true, "0");
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
+  assert(JSON.stringify(q).includes('"owner":null'));
+
+  // can view private info if granted all permissions -- checks that leaving a field blank
+  // (ie: priv_metadata viewership is undefined, or `None` in Rust), leaves setting unchanged
+  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, "0");
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+
+  // error when try to query token_info private info on fungible tokens (per base specification)
+  q = await queryTokenIdPrivateInfoQPermit(acc0, snip1155, "0");
+  assert(JSON.stringify(q).includes('{"generic_err":{"msg":"token_id private info only applies to nfts"}}'));
+
+  // registeredcodehash query --------------------------------
+  let q_hash = await queryRegisteredCodeHash(acc0, snip1155, receiver.address);
+  assert(q_hash.registered_code_hash.code_hash === null);
+  tx = await receiverRegister(acc0, receiver, snip1155.address, snip1155.hash);
+
+  q_hash = await queryRegisteredCodeHash(acc0, snip1155, receiver.address);
+  assert(q_hash.registered_code_hash.code_hash === receiver.hash);
 }
 
 
@@ -1135,23 +1311,23 @@ async function runTest(
 (async () => {
   let env: jsEnv;
 
-  // env = await initDefaultWithReceiver();
-  // await runTest(testIntializationSanity, env);
-  // await runTest(testReceiverSanity, env);
-
-  // env = await initDefault();
-  // await runTest(testMintTokenIds, env);
-
-  // env = await initDefault();
-  // await runTest(testMintBurnTokens, env);
-
-  // env = await initDefault();
-  // await runTest(testTransferTokens, env);
-
-  // env = await initDefaultWithReceiver();
-  // await runTest(testRegreceiveSend, env);
+  env = await initDefaultWithReceiver();
+  await runTest(testIntializationSanity, env);
+  await runTest(testReceiverSanity, env);
 
   env = await initDefault();
+  await runTest(testMintTokenIds, env);
+
+  env = await initDefault();
+  await runTest(testMintBurnTokens, env);
+
+  env = await initDefault();
+  await runTest(testTransferTokens, env);
+
+  env = await initDefaultWithReceiver();
+  await runTest(testRegreceiveSend, env);
+
+  env = await initDefaultWithReceiver();
   await runTest(testQueries, env);
 
   console.log("All tests COMPLETED SUCCESSFULLY")

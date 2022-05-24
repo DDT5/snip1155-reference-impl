@@ -71,6 +71,7 @@ reset-server:
 	docker rm localsecret || true
 	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
 
+# server needs to be running on another terminal
 .PHONY: speedup-server
 speedup-server:
 	@# ok to reduce further to eg: 200ms

@@ -7,9 +7,9 @@ use schemars::JsonSchema;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use cosmwasm_std::{
-    Storage, Uint128, HumanAddr, CanonicalAddr, BlockInfo,  // Extern, Api, Querier,
+    Storage, Api, Uint128, HumanAddr, CanonicalAddr, BlockInfo,  // Extern, Api, Querier,
     StdResult, StdError, //to_binary, 
-    ReadonlyStorage, to_binary, 
+    ReadonlyStorage, to_binary,  
 };
 use cosmwasm_storage::{
     PrefixedStorage, ReadonlyPrefixedStorage, 
@@ -150,8 +150,8 @@ pub fn perm_r<'a, S: Storage>(
 /// * `address` - a reference to the address whose txs to display
 /// * `page` - page to start displaying
 /// * `page_size` - number of txs per page
-pub fn get_txs<S: ReadonlyStorage>( //A: Api, 
-    // api: &A,
+pub fn get_txs<S: ReadonlyStorage, A: Api>( 
+    api: &A,
     storage: &S,
     address: &CanonicalAddr,
     page: u32,
@@ -180,7 +180,7 @@ pub fn get_txs<S: ReadonlyStorage>( //A: Api,
         .map(|id| {
             id.map(|id| {
                 json_load(&tx_store, &id.to_le_bytes())
-                    // .and_then(|tx: StoredTx| tx.into_humanized(api))
+                    .and_then(|tx: StoredTx| tx.into_humanized(api))
             })
             .and_then(|x| x)
         })
@@ -201,13 +201,13 @@ pub fn store_transfer<S: Storage>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
-    let action = TxAction::Transfer {
+    let action = StoredTxAction::Transfer {
         from,
         sender,
         recipient,
         amount,
     };
-    let tx = Tx {
+    let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
         block_time: block.time,
@@ -217,7 +217,7 @@ pub fn store_transfer<S: Storage>(
     };
     let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
-    if let TxAction::Transfer {
+    if let StoredTxAction::Transfer {
         from,
         sender,
         recipient,
@@ -247,8 +247,8 @@ pub fn store_mint<S: Storage>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
-    let action = TxAction::Mint { minter, recipient, amount };
-    let tx = Tx {
+    let action = StoredTxAction::Mint { minter, recipient, amount };
+    let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
         block_time: block.time,
@@ -258,7 +258,7 @@ pub fn store_mint<S: Storage>(
     };
     let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
-    if let TxAction::Mint { minter, recipient, amount: _ } = tx.action {
+    if let StoredTxAction::Mint { minter, recipient, amount: _ } = tx.action {
         append_tx_for_addr(storage, config.tx_cnt, &recipient)?;
         if recipient != minter {
             append_tx_for_addr(storage, config.tx_cnt, &minter)?;
@@ -279,8 +279,8 @@ pub fn store_burn<S: Storage>(
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
-    let action = TxAction::Burn { burner, owner, amount };
-    let tx = Tx {
+    let action = StoredTxAction::Burn { burner, owner, amount };
+    let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
         block_time: block.time,
@@ -290,7 +290,7 @@ pub fn store_burn<S: Storage>(
     };
     let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
-    if let TxAction::Burn { burner, owner, amount: _ } = tx.action {
+    if let StoredTxAction::Burn { burner, owner, amount: _ } = tx.action {
         append_tx_for_addr(storage, config.tx_cnt, &owner)?;
         if let Some(bnr) = burner.as_ref() {
             if bnr != &owner {
@@ -320,7 +320,7 @@ fn append_tx_for_addr<S: Storage>(
 }
 
 /////////////////////////////////////////////////////////////////////////////////
-// Transfer history (for NFTs only)
+// Token transfer history (for NFTs only)
 /////////////////////////////////////////////////////////////////////////////////
 
 /// stores ownership history for a given token_id. Meant to be used for nfts.
@@ -568,13 +568,16 @@ pub struct TknInfo {
     pub is_nft: bool, 
     pub token_config: TknConf,
     pub public_metadata: Option<Metadata>,
+    /// private metadata can only be set for nfts in the base specification. It is OPTIONAL in 
+    /// additional specifications to allow fungible tokens to have private metadata
     pub private_metadata: Option<Metadata>,
 }
 
 /// configuration for a given `token_id`, which sits in the `TknInfo` struct
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TknConf {
-    pub public_total_supply: bool, // todo!() not implemented in contract yet
+    pub public_total_supply: bool,
+    /// NFTs cannot be minted after the initial token is created 
     pub enable_mint: bool,
     pub enable_burn: bool,
 }
@@ -599,10 +602,10 @@ impl TknConf {
 // }
 
 
-/// tx type and specifics
+/// tx type and specifics for storage
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum TxAction {
+pub enum StoredTxAction {
     Mint {
         minter: CanonicalAddr,
         recipient: CanonicalAddr,
@@ -631,6 +634,98 @@ pub enum TxAction {
 /// tx in storage
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub struct StoredTx {
+    /// tx id
+    pub tx_id: u64,
+    /// the block containing this tx
+    pub block_height: u64,
+    /// the time (in seconds since 01/01/1970) of the block containing this tx
+    pub block_time: u64,
+    /// token id
+    pub token_id: String,
+    /// tx type and specifics
+    pub action: StoredTxAction,
+    /// optional memo
+    pub memo: Option<String>,
+}
+
+impl StoredTx {
+    pub fn into_humanized<A: Api>(self, api: &A) -> StdResult<Tx> {
+        let action = match self.action {
+            StoredTxAction::Mint { minter, recipient, amount } => {
+                TxAction::Mint {
+                    minter: api.human_address(&minter)?,
+                    recipient: api.human_address(&recipient)?,
+                    amount,
+                }
+            },
+            StoredTxAction::Burn { burner, owner, amount } => {
+                let bnr = if let Some(b) = burner { 
+                    Some(api.human_address(&b)?) 
+                } else { None };
+                TxAction::Burn { 
+                    burner: bnr, 
+                    owner: api.human_address(&owner)?, 
+                    amount, 
+                }
+            },
+            StoredTxAction::Transfer { from, sender, recipient, amount } => {
+                let sdr = if let Some(s) = sender { 
+                    Some(api.human_address(&s)?) 
+                } else { None };
+                TxAction::Transfer { 
+                    from: api.human_address(&from)?, 
+                    sender: sdr, 
+                    recipient: api.human_address(&recipient)?,  
+                    amount 
+                }
+            },
+        };
+        let tx = Tx {
+            tx_id: self.tx_id,
+            block_height: self.block_height,
+            block_time: self.block_time,
+            token_id: self.token_id,
+            action,
+            memo: self.memo,
+        };
+
+        Ok(tx)
+    }
+}
+
+/// tx type and specifics for storage with HumanAddr
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TxAction {
+    Mint {
+        minter: HumanAddr,
+        recipient: HumanAddr,
+        amount: Uint128,
+    },
+    Burn {
+        /// in the base specification, the burner MUST be the owner. In the additional
+        /// specifications, it is OPTIONAL to allow other addresses to burn tokens.
+        burner: Option<HumanAddr>,
+        owner: HumanAddr,
+        amount: Uint128,
+    },
+    /// `transfer` or `send` txs
+    Transfer {
+        /// previous owner
+        from: HumanAddr,
+        /// optional sender if not owner
+        sender: Option<HumanAddr>,
+        /// new owner
+        recipient: HumanAddr,
+        /// amount of tokens transferred
+        amount: Uint128,
+    },
+}
+
+/// tx in storage
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct Tx {
     /// tx id
     pub tx_id: u64,
@@ -645,6 +740,8 @@ pub struct Tx {
     /// optional memo
     pub memo: Option<String>,
 }
+
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MintTokenId {

@@ -1,6 +1,6 @@
 import axios from "axios";
 import { Wallet, SecretNetworkClient, Tx } from "secretjs";
-import { Account } from "./int_utils";
+import { Account, ContractInfo } from "./int_utils";
 import { AminoWallet } from "secretjs/dist/wallet_amino";
 
 /** creates new accounts by funding from genesis account `a` */ 
@@ -98,6 +98,22 @@ export const initClient = async () => {
   // returns only new accounts
   return accounts.slice(4);
 };
+
+
+export async function generatePermit(
+  account: Account,
+  contract: ContractInfo,
+) {
+  const { secretjs } = account;
+  const permit = await secretjs.utils.accessControl.permit.sign(
+    account.address,
+    "secret-4",
+    "test",
+    [contract.address],
+    ["owner"],
+  );
+  return permit;
+}
 
 // Below function are not used
 /** The faucet drips 1_000_000_000 uscrt at a time. */

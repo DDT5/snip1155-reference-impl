@@ -13,7 +13,7 @@ jobs:
         rust: [stable]
         make:
           - name: Run integration tests # Integration tests
-            task: "sleep 60; npx ts-node tests/integration.ts"
+            task: "sleep 30; npx ts-node tests/integration.ts"
         include:
           - os: ubuntu-latest
             sccache-path: /home/runner/.cache/sccache
@@ -31,7 +31,7 @@ jobs:
       # Label used to access the service container
       secret:
         # Docker Hub image
-        image: enigmampc/secret-network-sw-dev:v1.2.2-1
+        image: ghcr.io/scrtlabs/localsecret
         ports:
           # Opens tcp port
           - 5000:5000

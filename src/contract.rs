@@ -32,9 +32,7 @@ use crate::{
     vk::{
         viewing_key::{VIEWING_KEY_SIZE, ViewingKey,},
         rand::sha_256,
-    }, 
-    // expiration::Expiration,
-    
+    },     
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -852,7 +850,7 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
         return Err(StdError::generic_err("token_id already exists. Try a different id String"))
     }
 
-    // check: token_id is an NFT => cannot create more than one
+    // check: token_id is an NFT => cannot create more than one 
     if initial_token.token_info.is_nft {
         if initial_token.balances.len() > 1 {
             return Err(StdError::generic_err(format!(
@@ -863,8 +861,17 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
             return Err(StdError::generic_err(format!(
                 "token_id {} is an NFT; there can only be one NFT. Balances.amount must == 1",
                 initial_token.token_info.token_id
-            )))
+            )))           
         }
+    }
+    // check: token_id is fungible token => cannot have private metadata (note it is OPTIONAL in 
+    // additional specifications to have fungible tokens with private metadata)
+    if !initial_token.token_info.is_nft && initial_token.token_info.private_metadata.is_some() {
+        return Err(StdError::generic_err(format!(
+            "fungible tokens cannot have private metadata in the base specifications. Token id {} has private metadata {:?}",
+            initial_token.token_info.token_id,
+            initial_token.token_info.private_metadata.unwrap(),
+        ))) 
     }
 
     // Check name, symbol, decimals
@@ -1079,8 +1086,8 @@ fn exec_change_balance<S: Storage>(
         balances_w(storage, token_id)
         .save(to_binary(&from)?.as_slice(), &Uint128(from_new_amount_op.unwrap()))?;
 
-        // if nft, the ownership history remains. Any existing viewing permissions will remain too
-        // ...
+        // NOTE: if nft, the ownership history remains in storage. Any existing viewing permissions of last owner 
+        // will remain too
     }
 
     // add balance
@@ -1209,7 +1216,7 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
     match query {
         QueryWithPermit::Balance { token_id } => query_balance(deps, &HumanAddr(account), token_id),
         QueryWithPermit::TransactionHistory { page, page_size 
-        } => query_transfers(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
+        } => query_transactions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
             if account != owner.as_str() && account != allowed_address.as_str() {
                 return Err(StdError::generic_err(format!(
@@ -1249,7 +1256,7 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
                     page,
                     page_size,
                     ..
-                } => query_transfers(deps, &address, page.unwrap_or(0), page_size),
+                } => query_transactions(deps, &address, page.unwrap_or(0), page_size),
                 QueryMsg::Permission { owner, allowed_address, token_id, .. } => query_permission(deps, token_id, owner, allowed_address),
                 QueryMsg::AllPermissions { page, page_size, .. } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
                 QueryMsg::TokenIdPrivateInfo { address, token_id, .. } => query_token_id_private_info(deps, address, token_id),
@@ -1317,7 +1324,10 @@ fn query_token_id_private_info<S: Storage, A: Api, Q: Querier>(
     let mut owner: Option<HumanAddr>;
     match tkn_info.is_nft {
         true => owner = Some(get_current_owner(&deps.storage, &token_id)?),
-        false => owner = None,
+        false => {
+            // owner = None,
+            return Err(StdError::generic_err("token_id private info only applies to nfts"))
+        },
     }    
 
     // If owner, can view `owner` and `private_metadata`. Otherwise check viewership permissions. 
@@ -1380,14 +1390,14 @@ fn query_balance<S: Storage, A: Api, Q: Querier>(
     to_binary(&response)
 }
 
-fn query_transfers<S: Storage, A: Api, Q: Querier>(
+fn query_transactions<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     account: &HumanAddr,
     page: u32,
     page_size: u32,
 ) -> StdResult<Binary> {
     let address = deps.api.canonical_address(account)?;
-    let (txs, total) = get_txs(&deps.storage, &address, page, page_size)?;
+    let (txs, total) = get_txs(&deps.api, &deps.storage, &address, page, page_size)?;
 
     let response = QueryAnswer::TransactionHistory {
         txs,

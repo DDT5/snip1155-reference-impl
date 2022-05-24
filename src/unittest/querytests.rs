@@ -138,3 +138,23 @@ fn test_q_permission() -> StdResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_query_tokenid_private_info() -> StdResult<()> {
+    // init addresses
+    let addr0 = HumanAddr("addr0".to_string());
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // generate viewing keys
+    let env = mock_env("addr0", &[]);
+    let vks = generate_viewing_keys(&mut deps, &env, vec![addr0.clone()])?;
+
+    // view private info of fungible token
+    let msg = QueryMsg::TokenIdPrivateInfo { address: addr0.clone(), key: vks[0].clone(), token_id: "0".to_string() };
+    let q_result = query(&deps, msg);
+    assert!(extract_error_msg(&q_result).contains("token_id private info only applies to nfts"));
+
+    Ok(())
+}

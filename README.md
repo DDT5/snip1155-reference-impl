@@ -5,9 +5,9 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
 
 
 ## Table of contents <!-- omit in toc --> 
+- [Abstract](#abstract)
+- [Terms](#terms)
 - [Base specifications](#base-specifications)
-  - [Abstract](#abstract)
-  - [Terms](#terms)
   - [Token hierarchy](#token-hierarchy)
   - [Instantiation](#instantiation)
   - [The admin role](#the-admin-role)
@@ -45,8 +45,6 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
     - [Snip1155Receive](#snip1155receive)
   - [Miscellaneous](#miscellaneous)
 - [Additional specifications](#additional-specifications)
-  - [Royalty](#royalty)
-  - [Sealed metadata and Reveal](#sealed-metadata-and-reveal)
 - [Design decisions](#design-decisions)
   - [Reference implementation goals](#reference-implementation-goals)
   - [Starting from a blank slate](#starting-from-a-blank-slate)
@@ -56,19 +54,17 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
 
 
 
-# Base specifications
-
-## Abstract
+# Abstract
 
 This SNIP1155 specification ("spec" or "specs") outlines the functionality and interface of a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can manage multiple token types. The specifications are loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract.
 
 SNIP1155 allows a single contract to create and manage multiple tokens, which can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. Fungible and non-fungible tokens are mostly treated equally; the key difference is that NFTs have total_supply of 1 and can only be minted once. Unlike CW1155 where approvals must cover the entire set of tokens, users interacting with SNIP1155 contracts are able to control which tokens fall in scope for a given approval. This is a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761). 
 
-The ability to hold multiple token types provides new functionality (such as batch transferring multiple token types), as well as improved developer and user experience. For example, using a SNIP1155 contract instead of multiple SNIP20 and SNIP721 contracts can reduce the required number of approval transactions, inter-contract messages, and factory contracts. These translate to better user experiences, simpler application development, and lower gas fees.
+The ability to hold multiple token types can provide new functionality (such as batch transferring multiple token types), improve developer and user experience, and reduce gas fees. For example, using a SNIP1155 contract instead of multiple SNIP20 and SNIP721 contracts can reduce the required number of approval transactions, inter-contract messages, and factory contracts.
 
 See [design decisions](#design-decisions) for more details.
 
-## Terms
+# Terms
 *The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).*
 
 This memo uses the terms defined below:
@@ -77,6 +73,8 @@ This memo uses the terms defined below:
 * Cosmos Message Sender - the account found under the sender field in a standard Cosmos SDK message. This is also the signer of the message.
 * Native Asset - a coin which is defined and managed by the blockchain infrastructure, not a Secret contract.
 
+
+# Base specifications
 
 ## Token hierarchy
 
@@ -134,7 +132,9 @@ A minter mints tokens. Minters can also change the public and private metadata i
 Details of functions accessible to minters are described [here](#mint-batchmint).
 
 ## NFT vs fungible tokens
-Public metadata and and private metadata (together "metadata") can be optionally set for both NFTs and fungible tokens. An NFT owner SHOULD be able to change the metadata if the configuration allows it to; fungible token metadata cannot be changed in the standard implementation[^1] but is OPTIONAL within this standards. The rules that govern how fungible metadata is changed is left to application developers to decide.
+Public metadata and and private metadata can be optionally set for NFTs. Fungible tokens can only set public metadata, but it is [OPTIONAL](#additional-specifications) to allow private metadata. An NFT owner SHOULD be able to change the metadata if the configuration allows it to.
+
+Fungible token metadata cannot be changed in the standard implementation[^1] but is OPTIONAL. The rules that govern how fungible metadata is changed is left to application developers to decide.
 
 Private metadata of an NFT MUST NOT be viewable by any address, other than the owner address or addresses that have been given permission to[^2]. The standard implementation allows any owner of a fungible token to view private metadata of the fungible `token_id`, but different rules MAY be implemented by application developers.  
 
@@ -171,7 +171,7 @@ Similar to SNIP20 and SNIP721; allows an address revoke a query permit that it m
 * view private metadata 
 * transfer tokens up to a specified allowance
 
-It is OPTIONAL to include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces. These are optional because their functionalities can be performed with `SetWhitelistApproval`. 
+It is OPTIONAL to include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces. These are optional because their functionalities can be performed with `GivePermission`. 
 
 ### RevokePermission
 An operator with existing permissions (not to be confused with Query Permits) can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
@@ -297,11 +297,14 @@ Note that all amounts are represented as numerical strings (the Uint128 type). H
 
 # Additional specifications
 
-## Royalty
-
-
-## Sealed metadata and Reveal
-
+Additional specifications include:
+* Royalty for NFTs
+* Private metadata for fungible tokens
+* Ability for owners to give other addresses permission to burn their tokens 
+* Ability to view nft ownership history, including configuration on whether this should be public. In the base standard reference implementation, this information is already being saved, but not accessible through queries.
+* Ability for an address to view list of all permissions that it has been granted by others (currently only granter can view comprehensive list of its permissions)
+* Sealed metadata and Reveal functionality that mirrors SNIP721
+* Ability for admin to restrict certain types of transactions (as seen in SNIP20 and SNIP721). A design decision was made on SNIP1155 NOT to include this functionality in the base specifications, in order to encourage more permissionless contract designs.
 
 
 # Design decisions

@@ -124,3 +124,25 @@ pub fn extract_cosmos_msg<U: DeserializeOwned>(message: &CosmosMsg) -> StdResult
     let decoded_msg: U = from_binary(&msg).unwrap();
     Ok((decoded_msg, receiver_addr, receiver_hash))
 }
+
+/// generates an array of viewing keys (as Strings)
+pub fn generate_viewing_keys<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: &Env,
+    addresses: Vec<HumanAddr>
+) -> StdResult<Vec<String>> {
+    let mut vks: Vec<String> = vec![];
+    let mut env = env.clone();
+    for address in addresses {
+        env.message.sender = address;
+        let msg = HandleMsg::CreateViewingKey { entropy: "askdjlm".to_string(), padding: None };
+        let response = handle(deps, env.clone(), msg)?;
+        let vk = from_binary::<HandleAnswer>(&response.data.unwrap())?;
+        if let HandleAnswer::CreateViewingKey { key } = vk {
+            vks.push(key.to_string())
+        } else { 
+            return Err(StdError::generic_err("no viewing key generated"))
+        }
+    }
+    Ok(vks)
+}
