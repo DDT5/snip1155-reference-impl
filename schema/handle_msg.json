@@ -5,33 +5,1174 @@
     {
       "type": "object",
       "required": [
-        "increment"
+        "mint_token_ids"
       ],
       "properties": {
-        "increment": {
-          "type": "object"
+        "mint_token_ids": {
+          "type": "object",
+          "required": [
+            "initial_tokens"
+          ],
+          "properties": {
+            "initial_tokens": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/MintTokenId"
+              }
+            },
+            "memo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       }
     },
     {
       "type": "object",
       "required": [
-        "reset"
+        "mint_tokens"
       ],
       "properties": {
-        "reset": {
+        "mint_tokens": {
           "type": "object",
           "required": [
-            "count"
+            "mint_tokens"
           ],
           "properties": {
-            "count": {
-              "type": "integer",
-              "format": "int32"
+            "memo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "mint_tokens": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TokenAmount"
+              }
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "burn_tokens"
+      ],
+      "properties": {
+        "burn_tokens": {
+          "type": "object",
+          "required": [
+            "burn_tokens"
+          ],
+          "properties": {
+            "burn_tokens": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TokenAmount"
+              }
+            },
+            "memo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "allows minter or owner to change metadata if allowed by token_id configuration.",
+      "type": "object",
+      "required": [
+        "change_metadata"
+      ],
+      "properties": {
+        "change_metadata": {
+          "type": "object",
+          "required": [
+            "token_id"
+          ],
+          "properties": {
+            "private_metadata": {
+              "description": "does not attempt to change if left blank. Can effectively remove metadata by setting metadata to `Some(Metadata {token_uri: None, extension: None})` used Box<T> to reduce the total size of the enum variant, to decrease size difference between variants. Not strictly necessary.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Metadata"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "public_metadata": {
+              "description": "does not attempt to change if left blank. Can effectively remove metadata by setting metadata to `Some(Metadata {token_uri: None, extension: None})` used Box<T> to reduce the total size of the enum variant, to decrease size difference between variants. Not strictly necessary.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Metadata"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "transfer"
+      ],
+      "properties": {
+        "transfer": {
+          "type": "object",
+          "required": [
+            "amount",
+            "from",
+            "recipient",
+            "token_id"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "from": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "memo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recipient": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "batch_transfer"
+      ],
+      "properties": {
+        "batch_transfer": {
+          "type": "object",
+          "required": [
+            "actions"
+          ],
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TransferAction"
+              }
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "send"
+      ],
+      "properties": {
+        "send": {
+          "type": "object",
+          "required": [
+            "amount",
+            "from",
+            "recipient",
+            "token_id"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            },
+            "from": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "memo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "msg": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Binary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "recipient": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "recipient_code_hash": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "batch_send"
+      ],
+      "properties": {
+        "batch_send": {
+          "type": "object",
+          "required": [
+            "actions"
+          ],
+          "properties": {
+            "actions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SendAction"
+              }
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "give_permission"
+      ],
+      "properties": {
+        "give_permission": {
+          "type": "object",
+          "required": [
+            "allowed_address",
+            "token_id"
+          ],
+          "properties": {
+            "allowed_address": {
+              "description": "address being granted/revoked permission",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              ]
+            },
+            "padding": {
+              "description": "optional message length padding",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token_id": {
+              "description": "token id to apply approval/revocation to. Additional Spec feature: if == None, perform action for all owner's `token_id`s",
+              "type": "string"
+            },
+            "transfer": {
+              "description": "set allowance by for transfer approvals. If ignored, leaves current permission settings",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "transfer_expiry": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Expiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "view_balance": {
+              "description": "optional permission level for viewing balance. If ignored, leaves current permission settings",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "view_balance_expiry": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Expiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "view_private_metadata": {
+              "description": "optional permission level for viewing private metadata. If ignored, leaves current permission settings",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "view_private_metadata_expiry": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Expiration"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Removes all permissions that a specific owner has granted to a specific address, for a specific token_id",
+      "type": "object",
+      "required": [
+        "revoke_permission"
+      ],
+      "properties": {
+        "revoke_permission": {
+          "type": "object",
+          "required": [
+            "allowed_address",
+            "owner",
+            "token_id"
+          ],
+          "properties": {
+            "allowed_address": {
+              "description": "address which has permission",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              ]
+            },
+            "owner": {
+              "description": "token owner",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              ]
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "register_receive"
+      ],
+      "properties": {
+        "register_receive": {
+          "type": "object",
+          "required": [
+            "code_hash"
+          ],
+          "properties": {
+            "code_hash": {
+              "type": "string"
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "create_viewing_key"
+      ],
+      "properties": {
+        "create_viewing_key": {
+          "type": "object",
+          "required": [
+            "entropy"
+          ],
+          "properties": {
+            "entropy": {
+              "type": "string"
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_viewing_key"
+      ],
+      "properties": {
+        "set_viewing_key": {
+          "type": "object",
+          "required": [
+            "key"
+          ],
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "add_minters"
+      ],
+      "properties": {
+        "add_minters": {
+          "type": "object",
+          "required": [
+            "add_minters"
+          ],
+          "properties": {
+            "add_minters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HumanAddr"
+              }
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "remove_minters"
+      ],
+      "properties": {
+        "remove_minters": {
+          "type": "object",
+          "required": [
+            "remove_minters"
+          ],
+          "properties": {
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "remove_minters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HumanAddr"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "change_admin"
+      ],
+      "properties": {
+        "change_admin": {
+          "type": "object",
+          "required": [
+            "new_admin"
+          ],
+          "properties": {
+            "new_admin": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "Permanently breaks admin keys for this contract. No admin function can be called after this action. Any existing minters will remain as minters; no new minters can be added and no current minter can be removed.\n\nRequires caller to input current admin address and contract address. These inputs are not strictly necessary, but as a safety precaution to reduce the chances of accidentally calling this function.",
+      "type": "object",
+      "required": [
+        "break_admin_key"
+      ],
+      "properties": {
+        "break_admin_key": {
+          "type": "object",
+          "required": [
+            "contract_address",
+            "current_admin"
+          ],
+          "properties": {
+            "contract_address": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "current_admin": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "disallow the use of a permit",
+      "type": "object",
+      "required": [
+        "revoke_permit"
+      ],
+      "properties": {
+        "revoke_permit": {
+          "type": "object",
+          "required": [
+            "permit_name"
+          ],
+          "properties": {
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permit_name": {
+              "type": "string"
             }
           }
         }
       }
     }
-  ]
+  ],
+  "definitions": {
+    "Authentication": {
+      "description": "media file authentication",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "either a decryption key for encrypted files or a password for basic authentication",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user": {
+          "description": "username used in basic authentication",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Balance": {
+      "type": "object",
+      "required": [
+        "address",
+        "amount"
+      ],
+      "properties": {
+        "address": {
+          "description": "For BurnToken, `address` needs to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HumanAddr"
+            }
+          ]
+        },
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        }
+      }
+    },
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>",
+      "type": "string"
+    },
+    "Expiration": {
+      "description": "at the given point in time and after, Expiration will be considered expired",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "never"
+          ]
+        },
+        {
+          "description": "expires at this block height",
+          "type": "object",
+          "required": [
+            "at_height"
+          ],
+          "properties": {
+            "at_height": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        {
+          "description": "expires at the time in seconds since 01/01/1970",
+          "type": "object",
+          "required": [
+            "at_time"
+          ],
+          "properties": {
+            "at_time": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
+    },
+    "Extension": {
+      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on https://docs.opensea.io/docs/metadata-standards and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+      "type": "object",
+      "properties": {
+        "animation_url": {
+          "description": "url to a multimedia attachment",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attributes": {
+          "description": "item attributes",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Trait"
+          }
+        },
+        "background_color": {
+          "description": "background color represented as a six-character hexadecimal without a pre-pended #",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "item description",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "external_url": {
+          "description": "url to allow users to view the item on your site",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "url to the image",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_data": {
+          "description": "raw SVG image data (not recommended). Only use this if you're not including the image parameter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "media": {
+          "description": "media files as specified on Stashh that allows for basic authenticatiion and decryption keys. Most of the above is used for bridging public eth NFT metadata easily, whereas `media` will be used when minting NFTs on Stashh",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/MediaFile"
+          }
+        },
+        "name": {
+          "description": "name of the item",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protected_attributes": {
+          "description": "a select list of trait_types that are in the private metadata.  This will only ever be used in public metadata",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "token_subtype": {
+          "description": "token subtypes used by Stashh for display groupings (primarily used for badges)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "youtube_url": {
+          "description": "url to a YouTube video",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HumanAddr": {
+      "type": "string"
+    },
+    "MediaFile": {
+      "description": "media file",
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "authentication": {
+          "description": "authentication information",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Authentication"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extension": {
+          "description": "file extension",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_type": {
+          "description": "file type Stashh currently uses: \"image\", \"video\", \"audio\", \"text\", \"font\", \"application\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "url to the file.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+          "type": "string"
+        }
+      }
+    },
+    "Metadata": {
+      "description": "token metadata",
+      "type": "object",
+      "properties": {
+        "extension": {
+          "description": "optional on-chain metadata.  Only use this if you are not using `token_uri`",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Extension"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token_uri": {
+          "description": "optional uri for off-chain metadata.  This should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`.  Only use this if you are not using `extension`",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "MintTokenId": {
+      "type": "object",
+      "required": [
+        "balances",
+        "token_info"
+      ],
+      "properties": {
+        "balances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Balance"
+          }
+        },
+        "token_info": {
+          "$ref": "#/definitions/TknInfo"
+        }
+      }
+    },
+    "SendAction": {
+      "type": "object",
+      "required": [
+        "amount",
+        "from",
+        "recipient",
+        "token_id"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "from": {
+          "$ref": "#/definitions/HumanAddr"
+        },
+        "memo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "msg": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recipient": {
+          "$ref": "#/definitions/HumanAddr"
+        },
+        "recipient_code_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "TknConf": {
+      "anyOf": [
+        {
+          "description": "no `owner_may_update_metadata`because there can be multiple owners",
+          "type": "object",
+          "required": [
+            "fungible"
+          ],
+          "properties": {
+            "fungible": {
+              "type": "object",
+              "required": [
+                "decimals",
+                "enable_burn",
+                "enable_mint",
+                "minter_may_update_metadata",
+                "public_total_supply"
+              ],
+              "properties": {
+                "decimals": {
+                  "description": "applications should ignore decimals if `is_nft` == true. Decimals play no part in the contract logic of the base specification of SNIP1155, as there are no `deposit` and `redeem` features as seen in SNIP20",
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "enable_burn": {
+                  "type": "boolean"
+                },
+                "enable_mint": {
+                  "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "public_total_supply": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "no `enable_mint` option because NFT can be minted only once using `MintTokenIds`",
+          "type": "object",
+          "required": [
+            "nft"
+          ],
+          "properties": {
+            "nft": {
+              "type": "object",
+              "required": [
+                "enable_burn",
+                "minter_may_update_metadata",
+                "owner_is_public",
+                "owner_may_update_metadata",
+                "public_total_supply"
+              ],
+              "properties": {
+                "enable_burn": {
+                  "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "owner_is_public": {
+                  "type": "boolean"
+                },
+                "owner_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "public_total_supply": {
+                  "description": "total supply can be zero if the token has been burnt",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "TknInfo": {
+      "description": "information for a specific `token_id`",
+      "type": "object",
+      "required": [
+        "name",
+        "symbol",
+        "token_config",
+        "token_id"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "private_metadata": {
+          "description": "private metadata can only be set for nfts in the base specification. It is OPTIONAL in additional specifications to allow fungible tokens to have private metadata",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Metadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "public_metadata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Metadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "token_config": {
+          "$ref": "#/definitions/TknConf"
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "TokenAmount": {
+      "description": "used for MintToken and BurnToken in the base specifications",
+      "type": "object",
+      "required": [
+        "balances",
+        "token_id"
+      ],
+      "properties": {
+        "balances": {
+          "description": "For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Balance"
+          }
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "Trait": {
+      "description": "attribute trait",
+      "type": "object",
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "display_type": {
+          "description": "indicates how a trait should be displayed",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_value": {
+          "description": "optional max value for numerical traits",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trait_type": {
+          "description": "name of the trait",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "trait value",
+          "type": "string"
+        }
+      }
+    },
+    "TransferAction": {
+      "type": "object",
+      "required": [
+        "amount",
+        "from",
+        "recipient",
+        "token_id"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "from": {
+          "$ref": "#/definitions/HumanAddr"
+        },
+        "memo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipient": {
+          "$ref": "#/definitions/HumanAddr"
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "Uint128": {
+      "type": "string"
+    }
+  }
 }

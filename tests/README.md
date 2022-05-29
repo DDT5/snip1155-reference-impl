@@ -1,14 +1,5 @@
 # Secret Contract Integration Tests
 
-To run tests
-```sh
-npm --prefix tests/ install
-```
-or 
-```sh
-cd tests; npm install
-```
-
 Install node.js. I suggest using `nvm`: https://github.com/nvm-sh/nvm. Then:
 ```sh
 nvm install node 
@@ -23,7 +14,7 @@ make start-server
 ```sh
 make integration-test
 ```
-Note that sometimes it throws an error if done too quicky in succession (exit without headers). Just run `make integration-test` again.
+Note that sometimes it throws an error if done too quicky in succession (response closed without headers). Just run `make integration-test` again.
 
 To run using the js debug terminal (on VS Code):
 1. Press `ctrl+shift+p`
@@ -42,7 +33,7 @@ make stop-server
 docker ps    # to check if the container is still running
 ```
 
-To add tsconfig.json file (although not strictly necessary to run the tests), go the `./tests` directory, then:
+To add tsconfig.json file, go the `./tests` directory, then:
 ```sh
 npx tsc --init 
 ```

@@ -13,7 +13,7 @@ jobs:
         rust: [stable]
         make:
           - name: Run integration tests # Integration tests
-            task: "sleep 30; npx ts-node tests/integration.ts"
+            task: "npx ts-node tests/integration.ts"
         include:
           - os: ubuntu-latest
             sccache-path: /home/runner/.cache/sccache

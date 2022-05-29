@@ -20,6 +20,7 @@ integration-test: build _integration-test
 _integration-test:
 	@# this line below doesn't work, but the point is you need to use npm v16
 	@#. ${HOME}/.nvm/nvm.sh && nvm use 16
+	npm --prefix tests/ install
 	npx ts-node ./tests/integration.ts
 
 # This is a local build with debug-prints activated. Debug prints only show up
@@ -59,7 +60,8 @@ schema:
 # Ctrl-C to exit terminal, but does not stop the server
 .PHONY: start-server
 start-server:
-	docker start -a localsecret
+	docker start -a localsecret || true 
+	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
 
 .PHONY: stop-server
 stop-server:

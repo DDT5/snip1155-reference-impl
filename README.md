@@ -1,7 +1,7 @@
 SNIP1155 Reference Implementation: Private Multitokens  <!-- omit in toc --> 
 ==============
 
-This is the standard reference implementation of the [SNIP1155 Standard Specifications](#base-specifications).
+This repository contains the [SNIP1155 Standard Specifications](#base-specifications) and the standard reference implementation.
 
 
 ## Table of contents <!-- omit in toc --> 
@@ -44,6 +44,7 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
     - [RegisterReceive](#registerreceive)
     - [Snip1155Receive](#snip1155receive)
   - [Miscellaneous](#miscellaneous)
+  - [Schema](#schema)
 - [Additional specifications](#additional-specifications)
 - [Design decisions](#design-decisions)
   - [Reference implementation goals](#reference-implementation-goals)
@@ -58,9 +59,9 @@ This is the standard reference implementation of the [SNIP1155 Standard Specific
 
 This SNIP1155 specification ("spec" or "specs") outlines the functionality and interface of a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can manage multiple token types. The specifications are loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract.
 
-SNIP1155 allows a single contract to create and manage multiple tokens, which can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. Fungible and non-fungible tokens are mostly treated equally; the key difference is that NFTs have total_supply of 1 and can only be minted once. Unlike CW1155 where approvals must cover the entire set of tokens, users interacting with SNIP1155 contracts are able to control which tokens fall in scope for a given approval. This is a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761). 
+SNIP1155 allows a single contract instance to create and manage multiple tokens, which can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. Fungible and non-fungible tokens are often treated equally, but each has a different set of available token configurations which define their possible behaviors (for example, NFTs cannot be minted more than once). Unlike CW1155 where approvals must cover the entire set of tokens, SNIP1155 contracts allow users to control which tokens fall in scope for a given approval. This is a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761). In addition, SNIP1155 users can control whether approvals are for token transfers, balance viewership (in the case of an NFT, to verify ownership), or private metadata viewership; the latter two being unique features arising from Secret Network's privacy layer. 
 
-The ability to hold multiple token types can provide new functionality (such as batch transferring multiple token types), improve developer and user experience, and reduce gas fees. For example, using a SNIP1155 contract instead of multiple SNIP20 and SNIP721 contracts can reduce the required number of approval transactions, inter-contract messages, and factory contracts.
+The ability to hold multiple token types can provide new functionality (such as batch transferring multiple token types), improve developer and user experience (by decreasing inter-contract messages, the need for factory contracts, and the required number of approval transactions), and reduce gas fees.
 
 See [design decisions](#design-decisions) for more details.
 
@@ -77,24 +78,38 @@ This memo uses the terms defined below:
 # Base specifications
 
 ## Token hierarchy
+The SNIP1155 token hierarchy has three layers: (A) SNIP1155 contract > (B) token_id > (C) token(s). 
 
-SNIP1155 contract > token_id > token(s)
-
-At the highest level, all tokens of a given SNIP1155 contract MUST share:
+(A) At the highest level, all tokens of a given SNIP1155 contract MUST share:
 * admin (if enabled)
 * minter(s)
 
-A SNIP1155 contract SHOULD have the ability to hold multiple `tokens_id`s, each of which MUST have their own:
+(B) A SNIP1155 contract MUST have the ability to hold multiple `tokens_id`s, each of which MUST have their own:
 * token_id
 * name
 * symbol
-* total supply
-* is_nft
-* token_config
+* token_config*
 * public metadata
 * private metadata
 
-Each `token_id` can have 1 or more `tokens`, which are indistinguishable from one another (hence fungible).
+(C) Each `token_id` can have 1 or more `tokens`, which are indistinguishable from one another (hence fungible). Non-fungible `token_id`s MUST have a total supply of 1, and MUST only be minted once. 
+
+For example, a given SNIP1155 contract may have the following token hierarchy:
+```
+SNIP1155 contract
+├── token_id 0 (total supply = 2)
+│   ├── fungible token
+│   └── fungible token
+├── token_id 1 (total supply = 3)
+│   ├── fungible token
+│   ├── fungible token
+│   └── fungible token
+└── token_id 2 (total supply = 1)
+    └── non-fungible token
+```
+
+
+The table below describes each variable in more detail: 
 
 | Variable         | Type           | Description                                             | Optional |
 | ---------------- | -------------- | ------------------------------------------------------- | -------- |
@@ -103,11 +118,40 @@ Each `token_id` can have 1 or more `tokens`, which are indistinguishable from on
 | token_id         | String         | Unique identifier                                       | No       |
 | name             | String         | Name of fungible tokens or NFT                          | No       |
 | symbol           | String         | Symbol of fungible tokens or NFT                        | No       |
-| (total_supply)   | Uint128        | Total tokens of a given token_id. MUST be == 1 for NFTs | No       |
-| is_nft           | bool           | Determines if token_id is an NFT                        | No       |
 | token_config     | TokenConfig    | Includes enable burn, enable additional minting. etc    | No       |
 | public metadata  | Metadata       | Publicly viewable `uri` and `extension`                 | No       |
 | private metadata | Metadata       | Non-publicly viewable `uri` and `extension`             | No       |
+
+`Token_config` is MUST be an enum with at least these two variants:
+
+```rust
+{
+  fungible: {
+    decimals: u8,
+    public_total_supply: bool,
+    enable_mint: bool,
+    enable_burn: bool,
+    minter_may_update_metadata: bool,
+  }
+}
+{
+  nft: {
+    public_total_supply: bool,
+    owner_is_public: bool,
+    enable_burn: bool,
+    minter_may_update_metadata: bool,
+    owner_may_update_metadata: bool,
+  }
+}
+```
+
+Metadata:
+```rust
+{
+  token_uri: Option<String>,
+  extension: Option<Extension>,
+}
+```
 
 Application developers MAY change `extension` within `public metadata` and `private metadata` to any `struct` that fits their use case.
 
@@ -295,6 +339,36 @@ While errors during execution of contract functions should usually result in a p
 Note that all amounts are represented as numerical strings (the Uint128 type). Handling decimals is left to the UI.
 
 
+## Schema
+
+Instantiation message:
+```js
+{
+  has_admin: boolean,
+  admin?: string,
+  minters: string[],
+  initial_tokens: [{
+    token_info: [{
+      token_id: string, 
+      name: string, 
+      symbol: string, 
+      token_config: "<token_config variant>",
+      public_metadata: "<metadata>",
+      private_metadata: "<metadata>",
+    }],
+    balances: [{
+      address: string,
+      amount: string,
+    }]
+  }],
+  entropy: string,
+} 
+```
+
+
+
+
+
 # Additional specifications
 
 Additional specifications include:
@@ -305,6 +379,8 @@ Additional specifications include:
 * Ability for an address to view list of all permissions that it has been granted by others (currently only granter can view comprehensive list of its permissions)
 * Sealed metadata and Reveal functionality that mirrors SNIP721
 * Ability for admin to restrict certain types of transactions (as seen in SNIP20 and SNIP721). A design decision was made on SNIP1155 NOT to include this functionality in the base specifications, in order to encourage more permissionless contract designs.
+* Ability for an owner to give another address batch permission that covers all its token_ids. 
+* Ability for query permits to selectively allow access to other query functions (in the base specifications, selective viewership permissions cover balances and private metadata only)
 
 
 # Design decisions

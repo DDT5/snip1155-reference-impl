@@ -22,6 +22,35 @@ use cosmwasm_std::{
 // Helper functions
 /////////////////////////////////////////////////////////////////////////////////
 
+pub struct Addrs {
+    addrs: Vec<HumanAddr>,
+}
+
+impl Addrs {
+    pub fn a(&self) -> HumanAddr {
+        self.addrs[0].clone()
+    }
+    pub fn b(&self) -> HumanAddr {
+        self.addrs[1].clone()
+    }
+    pub fn c(&self) -> HumanAddr {
+        self.addrs[2].clone()
+    }
+    pub fn all(&self) -> Vec<HumanAddr> {
+        self.addrs.clone()
+    }
+}
+
+/// inits 3 addresses
+pub fn init_addrs() -> Addrs {
+    let addr_strs = vec!["addr0", "addr1", "addr2"];
+    let mut addrs: Vec<HumanAddr> = vec![];
+    for addr in addr_strs {
+        addrs.push(HumanAddr(addr.to_string()));
+    }
+    Addrs { addrs }
+}
+
 /// inits contract, with initial balances:
 /// * 1000 token_id 0 to addr0
 pub fn init_helper_default() -> (
@@ -43,16 +72,26 @@ pub fn init_helper_default() -> (
 }
 
 /// mints 
+/// * 800 fungible token_id 0a to addr0,
 /// * 500 fungible token_id 1 to addr1,
 /// * 1 NFT token_id 2 to addr2
-/// * 1 NFT token_id 3 to addr2
+/// * 1 NFT token_id 2a to addr2
 pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: &Env,
 ) -> StdResult<()> {
     // init addtl addresses
+    let addr0 = HumanAddr("addr0".to_string());
     let addr1 = HumanAddr("addr1".to_string());
     let addr2 = HumanAddr("addr2".to_string());
+
+    // fungible token_id "0a"
+    let mut mint0a = MintTokenId::default();
+    mint0a.token_info.token_id = "0a".to_string();
+    mint0a.token_info.name = "token0a".to_string();
+    mint0a.token_info.symbol = "TKNO".to_string();
+    mint0a.balances[0].address = addr0.clone();
+    mint0a.balances[0].amount = Uint128(800);
 
     // fungible token_id "1"
     let mut mint1 = MintTokenId::default();
@@ -67,19 +106,19 @@ pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     mint2.token_info.token_id = "2".to_string();
     mint2.token_info.name = "token2".to_string();
     mint2.token_info.symbol = "TKNB".to_string();
-    mint2.token_info.is_nft = true;
+    mint2.token_info.token_config = TknConf::default_nft();
     mint2.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
     
-    // NFT "3"
-    let mut mint3 = MintTokenId::default();
-    mint3.token_info.token_id = "3".to_string();
-    mint3.token_info.name = "token3".to_string();
-    mint3.token_info.symbol = "TKNC".to_string();
-    mint3.token_info.is_nft = true;
-    mint3.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
+    // NFT "2a"
+    let mut mint2a = MintTokenId::default();
+    mint2a.token_info.token_id = "2a".to_string();
+    mint2a.token_info.name = "token2a".to_string();
+    mint2a.token_info.symbol = "TKNBA".to_string();
+    mint2a.token_info.token_config = TknConf::default_nft();
+    mint2a.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
 
-    // batch mint token_id "1", NFT "2" and NFT "3"
-    let msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint1, mint2, mint3], memo: None, padding: None };
+    // batch mint token_id "0a", "1", NFT "2" and NFT "3"
+    let msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint0a, mint1, mint2, mint2a], memo: None, padding: None };
     handle(deps, env.to_owned(), msg)?;
     
     Ok(())
@@ -130,7 +169,7 @@ pub fn generate_viewing_keys<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: &Env,
     addresses: Vec<HumanAddr>
-) -> StdResult<Vec<String>> {
+) -> StdResult<Vks> {
     let mut vks: Vec<String> = vec![];
     let mut env = env.clone();
     for address in addresses {
@@ -144,5 +183,21 @@ pub fn generate_viewing_keys<S: Storage, A: Api, Q: Querier>(
             return Err(StdError::generic_err("no viewing key generated"))
         }
     }
-    Ok(vks)
+    Ok(Vks {vks})
+}
+
+pub struct Vks {
+    vks: Vec<String>
+}
+
+impl Vks {
+    pub fn a(&self) -> String {
+        self.vks[0].clone()
+    }
+    pub fn b(&self) -> String {
+        self.vks[1].clone()
+    }
+    pub fn c(&self) -> String {
+        self.vks[2].clone()
+    }
 }

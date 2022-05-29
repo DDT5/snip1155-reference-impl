@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TknConf",
+  "anyOf": [
+    {
+      "description": "no `owner_may_update_metadata`because there can be multiple owners",
+      "type": "object",
+      "required": [
+        "fungible"
+      ],
+      "properties": {
+        "fungible": {
+          "type": "object",
+          "required": [
+            "decimals",
+            "enable_burn",
+            "enable_mint",
+            "minter_may_update_metadata",
+            "public_total_supply"
+          ],
+          "properties": {
+            "decimals": {
+              "description": "applications should ignore decimals if `is_nft` == true. Decimals play no part in the contract logic of the base specification of SNIP1155, as there are no `deposit` and `redeem` features as seen in SNIP20",
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            },
+            "enable_burn": {
+              "type": "boolean"
+            },
+            "enable_mint": {
+              "type": "boolean"
+            },
+            "minter_may_update_metadata": {
+              "type": "boolean"
+            },
+            "public_total_supply": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "no `enable_mint` option because NFT can be minted only once using `MintTokenIds`",
+      "type": "object",
+      "required": [
+        "nft"
+      ],
+      "properties": {
+        "nft": {
+          "type": "object",
+          "required": [
+            "enable_burn",
+            "minter_may_update_metadata",
+            "owner_is_public",
+            "owner_may_update_metadata",
+            "public_total_supply"
+          ],
+          "properties": {
+            "enable_burn": {
+              "type": "boolean"
+            },
+            "minter_may_update_metadata": {
+              "type": "boolean"
+            },
+            "owner_is_public": {
+              "type": "boolean"
+            },
+            "owner_may_update_metadata": {
+              "type": "boolean"
+            },
+            "public_total_supply": {
+              "description": "total supply can be zero if the token has been burnt",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -26,11 +26,22 @@ type Balance = {
 //   private_metadata?: unknown,
 // }
 
-type TknConf = {
-    public_total_supply: boolean,
-    enable_mint: boolean, 
-    enable_burn: boolean, 
-};
+type TknConf = TknConfFungible | TknConfNft;
+
+interface TknConfFungible { "fungible": {
+  decimals: number,
+  public_total_supply: boolean,
+  enable_mint: boolean, 
+  enable_burn: boolean, 
+  minter_may_update_metadata: boolean,
+}}
+
+interface TknConfNft { "nft": {
+  public_total_supply: boolean,
+  enable_burn: boolean, 
+  minter_may_update_metadata: boolean,
+  owner_may_update_metadata: boolean,
+}}
 
 type Permission = {
   view_owner_perm: boolean,
@@ -142,7 +153,7 @@ async function initDefault(): Promise<jsEnv> {
     }
   };
 
-  const defaultInitMsg = { 
+  const initMsgDefault = { 
     has_admin: true,
     minters: [accounts[0].address],
     initial_tokens: [
@@ -151,13 +162,15 @@ async function initDefault(): Promise<jsEnv> {
           token_id: "0", 
           name: "token0", 
           symbol: "TKN", 
-          decimals: 6,
-          is_nft: false, 
-          token_config: {
+          token_config: { fungible: {
+              decimals: 6,  
               public_total_supply: true,
               enable_mint: true, 
               enable_burn: true, 
-          },
+              minter_may_update_metadata: true,
+          }},
+          public_metadata,
+          private_metadata,
         }, 
         balances: [{ 
             address: accounts[0].address, 
@@ -169,13 +182,13 @@ async function initDefault(): Promise<jsEnv> {
           token_id: "1", 
           name: "token1", 
           symbol: "TKNA", 
-          decimals: 6,
-          is_nft: false, 
-          token_config: {
+          token_config: { fungible: {
+              decimals: 6,   
               public_total_supply: false,
               enable_mint: false, 
               enable_burn: false, 
-          },
+              minter_may_update_metadata: true,
+          }},
         }, 
         balances: [{ 
             address: accounts[0].address, 
@@ -187,13 +200,13 @@ async function initDefault(): Promise<jsEnv> {
           token_id: "2", 
           name: "nftname", 
           symbol: "NFT", 
-          decimals: 6,
-          is_nft: true, 
-          token_config: {
+          token_config: { nft: {
               public_total_supply: true,
-              enable_mint: true, 
+              owner_is_public: true,
               enable_burn: true, 
-          },
+              minter_may_update_metadata: true,
+              owner_may_update_metadata: true,
+          }},
           public_metadata,
           private_metadata,
         }, 
@@ -209,7 +222,7 @@ async function initDefault(): Promise<jsEnv> {
   const [contractHash, contractAddress] = await initializeContract(
     secretjs,
     "contract.wasm",
-    defaultInitMsg,
+    initMsgDefault,
   );
 
   const contract: ContractInfo = {
@@ -279,6 +292,7 @@ async function execHandle(
   return tx
 }
 
+/** @param token_config overrides `is_nft` */
 async function mintTokenIds(
   sender: Account,
   contract: ContractInfo,
@@ -290,15 +304,25 @@ async function mintTokenIds(
   mint_amount: string,
   token_config?: TknConf,
 ) {
-  let tkn_conf: TknConf;
+  let tkn_conf = token_config;
   if (token_config === undefined) {
-    tkn_conf = {
-      public_total_supply: true,
-      enable_mint: true, 
-      enable_burn: true, 
-    } as TknConf;
-  } else {
-    tkn_conf = token_config
+    if (is_nft == false) {
+      tkn_conf = { fungible: {
+        decimals: 6,
+        public_total_supply: true,
+        enable_mint: true, 
+        enable_burn: true, 
+        minter_may_update_metadata: true
+      }} as TknConfFungible;
+    } else if (is_nft === true) {
+      tkn_conf = { nft: {
+        public_total_supply: true,
+        owner_is_public: true,
+        enable_burn: true, 
+        minter_may_update_metadata: true,
+        owner_may_update_metadata: true,
+      }} as TknConfNft;
+    } 
   }
 
   const msg = {
@@ -308,8 +332,6 @@ async function mintTokenIds(
           token_id, 
           name: token_name, 
           symbol: token_symbol, 
-          decimals: 0,
-          is_nft, 
           token_config: tkn_conf,
         }, 
         balances: [{ 
@@ -441,17 +463,23 @@ async function givePermission(
   contract: ContractInfo,
   allowed_address: Account,
   token_id: string,
-  view_owner?: boolean,
+  view_balance?: boolean,
+  view_balance_expiry?: object,
   view_private_metadata?: boolean,
+  view_private_metadata_expiry?: object,
   transfer?: string,
+  transfer_expiry?: object,
 ): Promise<Tx> {
   const msg = {
     give_permission: { 
       allowed_address: allowed_address.address,
       token_id,
-      view_owner,
+      view_balance,
+      view_balance_expiry,
       view_private_metadata,
+      view_private_metadata_expiry,
       transfer,
+      transfer_expiry,
     },
   };
   const tx = await execHandle(sender, contract, msg, "givePermission");
@@ -502,18 +530,40 @@ async function queryContractInfo(
 async function queryBalance(
   sender: Account,
   contract: ContractInfo,
+  owner: string,
   key: string,
   token_id: string,
 ): Promise<string> {
   type QueryResponse = { balance: { amount: string }};
 
   const msg = { balance: {
-      address: sender.address,
+      owner,
+      viewer: sender.address,
       key: key,
       token_id: token_id,
   } };
   const response = await execQuery(sender, contract, msg) as QueryResponse;
   return response.balance.amount;
+}
+
+async function queryBalanceQPermit(
+  sender: Account,
+  contract: ContractInfo,
+  owner: string,
+  token_id: string,
+) {
+  // type QueryResponse = { balance: { amount: string }};
+  let permit: Permit = await generatePermit(sender, contract);
+
+  const msg = { with_permit: { 
+    permit,
+    query: { balance: {
+      owner,
+      token_id: token_id,
+    }}
+  }};
+  const response = await execQuery(sender, contract, msg);// as QueryResponse;
+  return response;
 }
 
 async function queryTransactionHistory(
@@ -531,6 +581,28 @@ async function queryTransactionHistory(
     page,
     page_size,
    }};
+  const response = await execQuery(account, contract, msg); // as QueryResponse;
+  return response;
+}
+
+async function queryTransactionHistoryQPermit(
+  account: Account,
+  contract: ContractInfo,
+  page_size: number,
+  page?: number,
+) {
+  const permit: Permit = await generatePermit(account, contract);
+  // type QueryResponse = { };
+  const msg = { with_permit: {
+    permit,
+    query: {
+      transaction_history: { 
+        page,
+        page_size,
+      }
+    }
+  }}; 
+    
   const response = await execQuery(account, contract, msg); // as QueryResponse;
   return response;
 }
@@ -722,7 +794,7 @@ async function receiverRegister(
   );
 
   //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
-  console.log(`Fail [receiver contract] used ${tx.gasUsed} gas`);
+  console.log(`Register [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
 
@@ -838,21 +910,21 @@ async function testIntializationSanity(
 
   await setViewingKey(acc0, contract, "vkey");
   const initBalance0: string = await queryBalance(
-    acc0, contract, "vkey", "0"
+    acc0, contract, acc0.address, "vkey", "0"
   );
   assert(
     initBalance0 === "1000",
     `Initial balance expected to be "1000" instead of ${initBalance0}`
   );
   const initBalance1: string = await queryBalance(
-    acc0, contract, "vkey", "1"
+    acc0, contract, acc0.address, "vkey", "1"
   );
   assert(
     initBalance1 === "1000",
     `Initial balance expected to be "1000" instead of ${initBalance1}`
   );
   const initBalance2: string = await queryBalance(
-    acc0, contract, "vkey", "2"
+    acc0, contract, acc0.address, "vkey", "2"
   );
   assert(
     initBalance2 === "1",
@@ -863,21 +935,21 @@ async function testIntializationSanity(
   const tknId0 = await queryTokenIdPublicInfo(acc0, contract, "0"); 
   const tknId0String = JSON.stringify(tknId0);
   assert(tknId0String.includes('"token_id":"0"'));
-  assert(tknId0String.includes('"is_nft":false'));
+  assert(tknId0String.includes('"token_config":{"fungible"'));
   assert(tknId0String.includes('"public_total_supply":true'));
   assert(tknId0String.includes('"total_supply":"1000"'));
 
   const tknId1 = await queryTokenIdPublicInfo(acc0, contract, "1"); 
   const tknId1String = JSON.stringify(tknId1);
   assert(tknId1String.includes('"token_id":"1"'));
-  assert(tknId1String.includes('"is_nft":false'));
+  assert(tknId1String.includes('"token_config":{"fungible"'));
   assert(tknId1String.includes('"public_total_supply":false'));
   assert(tknId1String.includes('"total_supply":null'));
 
   const tknId2 = await await queryTokenIdPublicInfo(acc0, contract, "2"); 
   const tknId2String = JSON.stringify(tknId2);
   assert(tknId2String.includes('"token_id":"2"'));
-  assert(tknId2String.includes('"is_nft":true'));
+  assert(tknId2String.includes('"token_config":{"nft"'));
   assert(tknId2String.includes('"public_total_supply":true'));
   assert(tknId2String.includes('"total_supply":"1"'));
 }
@@ -893,19 +965,19 @@ async function testMintTokenIds(
 
   tx = await setViewingKey(minter, contract, "vkey");
   assert(tx.code === 0);
-  let bal: string = await queryBalance(minter, contract, "vkey", "test0");
+  let bal: string = await queryBalance(minter, contract, minter.address, "vkey", "test0");
   assert(bal === "1000");
 
   // cannot mint token_id with same name
   tx = await mintTokenIds(minter, contract, "test0", "tokentest0a", "TKNTA", false, minter.address, "123");
   assert(tx.rawLog.includes("token_id already exists. Try a different id String"));
-  bal = await queryBalance(minter, contract, "vkey", "test0");
+  bal = await queryBalance(minter, contract, minter.address, "vkey", "test0");
   assert(bal === "1000");
 
   // can mint NFT
   tx = await mintTokenIds(minter, contract, "test1", "a new nft", "NFT", true, minter.address, "1");
   assert(tx.code === 0);
-  bal = await queryBalance(minter, contract, "vkey", "test1");
+  bal = await queryBalance(minter, contract, minter.address, "vkey", "test1");
   assert(bal === "1");
 
   // cannot mint NFT with amount != 1
@@ -913,8 +985,8 @@ async function testMintTokenIds(
   assert(tx.rawLog.includes("token_id test2a is an NFT; there can only be one NFT. Balances.amount must == 1"));
   tx = await mintTokenIds(minter, contract, "test2b", "a new nft", "NFTA", true, minter.address, "2");
   assert(tx.rawLog.includes("token_id test2b is an NFT; there can only be one NFT. Balances.amount must == 1"));
-  bal = await queryBalance(minter, contract, "vkey", "test2a"); assert(bal === "0");
-  bal = await queryBalance(minter, contract, "vkey", "test2b"); assert(bal === "0");  
+  bal = await queryBalance(minter, contract, minter.address, "vkey", "test2a"); assert(bal === "0");
+  bal = await queryBalance(minter, contract, minter.address, "vkey", "test2b"); assert(bal === "0");  
 }
 
 async function testMintBurnTokens(
@@ -941,7 +1013,7 @@ async function testMintBurnTokens(
 
   // cannot mint NFT
   tx = await mintTokens(env.accounts[0], contract, "2", [Bal]);
-  assert(tx.rawLog.includes('{"generic_err":{"msg":"NFTs can only be minted once using `mint_token_ids`"}}'));
+  assert(tx.rawLog.includes('minting is not enabled for this token_id'));
 
   // cannot mint if enable_mint == false
   tx = await mintTokens(env.accounts[0], contract, "1", [Bal]);
@@ -956,8 +1028,8 @@ async function testMintBurnTokens(
   assert(tx.code === 0);
 
   await setViewingKeyAll(env);
-  let balance0: string = await queryBalance(env.accounts[0], contract, "vkey0", "0");
-  let balance1: string = await queryBalance(env.accounts[1], contract, "vkey1", "0");
+  let balance0: string = await queryBalance(env.accounts[0], contract, env.accounts[0].address, "vkey0", "0");
+  let balance1: string = await queryBalance(env.accounts[1], contract, env.accounts[1].address, "vkey1", "0");
   assert(balance0 === "1002");
   assert(balance1 === "100");
 
@@ -985,8 +1057,8 @@ async function testMintBurnTokens(
   // fails if one of the attempted burn actions is invalid
   tx = await burnTokens(env.accounts[0], contract, "0", [Bal, Bal, Bal1]);
   assert(tx.rawLog.includes(`you do not have permission to burn 100 tokens from address ${env.accounts[1].address}`));
-  balance0 = await queryBalance(env.accounts[0], contract, "vkey0", "0");
-  balance1 = await queryBalance(env.accounts[1], contract, "vkey1", "0");
+  balance0 = await queryBalance(env.accounts[0], contract, env.accounts[0].address, "vkey0", "0");
+  balance1 = await queryBalance(env.accounts[1], contract, env.accounts[1].address, "vkey1", "0");
   assert(balance0 === "999");
   assert(balance1 === "100");
 }
@@ -1000,16 +1072,16 @@ async function testTransferTokens(
   const addr2 = env.accounts[2];
 
   await setViewingKeyAll(env);
-  let balance0: string = await queryBalance(from, contract, "vkey0", "0");
-  let balance1: string = await queryBalance(to, contract, "vkey1", "0");
+  let balance0: string = await queryBalance(from, contract, from.address, "vkey0", "0");
+  let balance1: string = await queryBalance(to, contract, to.address, "vkey1", "0");
   assert(balance0 === "1000");
   assert(balance1 === "0");
 
   // can transfer own tokens
   let tx = await transfer(from, contract, "0", from, to, "200");
   assert(tx.code === 0);
-  balance0 = await queryBalance(from, contract, "vkey0", "0");
-  balance1 = await queryBalance(to, contract, "vkey1", "0");
+  balance0 = await queryBalance(from, contract, from.address, "vkey0", "0");
+  balance1 = await queryBalance(to, contract, to.address, "vkey1", "0");
   assert(balance0 === "800");
   assert(balance1 === "200");
 
@@ -1018,12 +1090,12 @@ async function testTransferTokens(
   assert(tx.rawLog.includes("These tokens do not exist or you have no permission to transfer"));
 
   // cannot transfer if not enough transfer allowance
-  await givePermission(from, contract, addr2, "0", undefined, undefined, "100");
+  await givePermission(from, contract, addr2, "0", undefined, undefined, undefined, undefined, "100", undefined);
   tx = await transfer(addr2, contract, "0", from, to, "200");
   assert(tx.rawLog.includes("Insufficient transfer allowance: "));
 
   // transfer successful with enough transfer allowance
-  await givePermission(from, contract, addr2, "0", undefined, undefined, "300");
+  await givePermission(from, contract, addr2, "0", undefined, undefined, undefined, undefined, "300", undefined);
   tx = await transfer(addr2, contract, "0", from, to, "200");
   assert(fromUtf8(tx.data[0]).includes(`{"transfer":{"status":"success"}}`));
 
@@ -1034,8 +1106,8 @@ async function testTransferTokens(
   // can use remaining allowance
   tx = await transfer(addr2, contract, "0", from, to, "100");
   assert(fromUtf8(tx.data[0]).includes(`{"transfer":{"status":"success"}}`));
-  balance0 = await queryBalance(from, contract, "vkey0", "0");
-  balance1 = await queryBalance(to, contract, "vkey1", "0");
+  balance0 = await queryBalance(from, contract, from.address, "vkey0", "0");
+  balance1 = await queryBalance(to, contract, to.address, "vkey1", "0");
   assert(balance0 === "500");
   assert(balance1 === "500");
 }
@@ -1091,7 +1163,7 @@ async function testRegreceiveSend(
   tx = await send(account, snip1155, "0", account, receiver, "10", msg_bin)
   assert(tx.code === 0);
   await setViewingKey(account, snip1155, "vkey");
-  let bal = await queryBalance(account, snip1155, "vkey", "0"); assert(bal === "990");
+  let bal = await queryBalance(account, snip1155, account.address, "vkey", "0"); assert(bal === "990");
   let count = await queryRecieverGetCount(account, receiver); assert(count === 11); 
 }
 
@@ -1104,11 +1176,11 @@ async function testQueries(
   const snip1155 = env.contracts[0];
   const receiver = env.contracts[1];
 
-  let tx = await givePermission(acc0, snip1155, acc1, "0", true, true, "100");
+  let tx = await givePermission(acc0, snip1155, acc1, "0", true, undefined, true, undefined, "100", undefined);
   assert(tx.code === 0);
-  tx = await givePermission(acc0, snip1155, acc1, "1", true, true, "10");
+  tx = await givePermission(acc0, snip1155, acc1, "1", true, undefined, true, undefined, "10", undefined);
   assert(tx.code === 0);
-  tx = await givePermission(acc0, snip1155, acc2, "0", true, true, "200");
+  tx = await givePermission(acc0, snip1155, acc2, "0", true, undefined, true, undefined, "200", undefined);
   assert(tx.code === 0);
 
   await setViewingKeyAll(env);
@@ -1117,8 +1189,8 @@ async function testQueries(
   let q_perm = await queryPermission(acc0, snip1155, acc0.address, acc1.address, "vkey0", "0")
   const expPerm = {
     permission: {
-      view_owner_perm: true,
-      view_owner_exp: 'never',
+      view_balance_perm: true,
+      view_balance_exp: 'never',
       view_pr_metadata_perm: true,
       view_pr_metadata_exp: 'never',
       trfer_allowance_perm: '100',
@@ -1154,13 +1226,16 @@ async function testQueries(
   tx = await transfer(acc0, snip1155, "0", acc0, acc1, "50");
   assert(tx.code === 0);
 
-  // can view own tx history
+  // can view own tx history + check that permit query results == viewing key query results
   let q = await queryTransactionHistory(acc0, snip1155, acc0.address, "vkey0", 10);
-  // console.log(JSON.stringify(q, null, 2));
+  let qp = await queryTransactionHistoryQPermit(acc0, snip1155, 10);
   assert(JSON.stringify(q).includes('"total":4'));
+  assert(JSON.stringify(q) === JSON.stringify(qp));
   q = await queryTransactionHistory(acc1, snip1155, acc1.address, "vkey1", 10);
+  qp = await queryTransactionHistoryQPermit(acc1, snip1155, 10);
   assert(JSON.stringify(q).includes('"total":1'));
-
+  assert(JSON.stringify(q) === JSON.stringify(qp));
+  
   // cannot view another account's history
   q = await queryTransactionHistory(acc1, snip1155, acc0.address, "vkey1", 10);
   assert(JSON.stringify(q).includes("Wrong viewing key for this address or viewing key not set"))
@@ -1169,24 +1244,24 @@ async function testQueries(
   q = await queryAllPermissionsQPermit(acc0, snip1155, 5);
   const expPerms = [
     {
-      view_owner_perm: true,
-      view_owner_exp: "never",
+      view_balance_perm: true,
+      view_balance_exp: "never",
       view_pr_metadata_perm: true,
       view_pr_metadata_exp: "never",
       trfer_allowance_perm: "200",
       trfer_allowance_exp: "never"
     },
     {
-      view_owner_perm: true,
-      view_owner_exp: "never",
+      view_balance_perm: true,
+      view_balance_exp: "never",
       view_pr_metadata_perm: true,
       view_pr_metadata_exp: "never",
       trfer_allowance_perm: "10",
       trfer_allowance_exp: "never"
     },
     {
-      view_owner_perm: true,
-      view_owner_exp: "never",
+      view_balance_perm: true,
+      view_balance_exp: "never",
       view_pr_metadata_perm: true,
       view_pr_metadata_exp: "never",
       trfer_allowance_perm: "100",
@@ -1207,12 +1282,14 @@ async function testQueries(
         token_id: "2",
         name: "nftname",
         symbol: "NFT",
-        decimals: 6,
-        is_nft: true,
         token_config: {
-          public_total_supply: true,
-          enable_mint: true,
-          enable_burn: true
+          nft: {
+            public_total_supply: true,
+            owner_is_public: true,
+            enable_burn: true,
+            minter_may_update_metadata: true,
+            owner_may_update_metadata: true,
+          }
         },
         public_metadata: {
           token_uri: "public_token_uri",
@@ -1249,44 +1326,60 @@ async function testQueries(
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes("you do have have permission to view private token info"));
 
-  // if granted WRONG permission, can see public token info, but not private info (owner and private metadata)
-  tx = await givePermission(acc0, snip1155, acc1, "2", undefined, undefined, "100");
-  assert(tx.code === 0); 
-  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
-  assert(JSON.stringify(q).includes('"private_metadata":null'));
-  assert(JSON.stringify(q).includes('"owner":null'));
-
-  // can view owner ONLY, if granted that permission only
-  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, "0");
+  // if granted WRONG permission, 
+  // i) can see public token info, but not private info (private metadata). owner viewable because it is configured as public info
+  // ii) cannot see balance
+  tx = await givePermission(acc0, snip1155, acc1, "2", undefined, undefined, undefined, undefined, "100", undefined);
   assert(tx.code === 0); 
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('"private_metadata":null'));
   assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
+  assert(JSON.stringify(q).includes("you do have have permission to view balance"));
+
+  // can view balance ONLY, has no effect on the TokenIdPrivateInfo query
+  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, undefined, undefined, "0", undefined,);
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
+  assert(JSON.stringify(q).includes('"private_metadata":null'));
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
+  assert(JSON.stringify(q).includes('"amount":"1"'));
 
   // can view only private metadata if granted only that permission
-  tx = await givePermission(acc0, snip1155, acc1, "2", false, true, "0");
+  tx = await givePermission(acc0, snip1155, acc1, "2", false, undefined, true, undefined, "0", undefined);
   assert(tx.code === 0); 
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
-  assert(JSON.stringify(q).includes('"owner":null'));
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
+  assert(JSON.stringify(q).includes("you do have have permission to view balance"));
 
   // can view private info if granted all permissions -- checks that leaving a field blank
   // (ie: priv_metadata viewership is undefined, or `None` in Rust), leaves setting unchanged
-  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, "0");
+  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, undefined, undefined, "0", undefined);
   assert(tx.code === 0); 
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
   assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
+  assert(JSON.stringify(q).includes('"amount":"1"'));
 
-  // error when try to query token_info private info on fungible tokens (per base specification)
+  // can query token_id private info on fungible tokens, if owner
   q = await queryTokenIdPrivateInfoQPermit(acc0, snip1155, "0");
-  assert(JSON.stringify(q).includes('{"generic_err":{"msg":"token_id private info only applies to nfts"}}'));
+  assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
+
+  // cannot query token_id private info on fungible tokens, even if given permission by owner, because it has no `owner`
+  tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, true, undefined, "10", undefined);
+  assert(tx.code === 0); 
+  q = await queryTokenIdPrivateInfoQPermit(acc2, snip1155, "0");
+  assert(JSON.stringify(q).includes('{"generic_err":{"msg":"you do have have permission to view private token info"}}'));
 
   // registeredcodehash query --------------------------------
   let q_hash = await queryRegisteredCodeHash(acc0, snip1155, receiver.address);
   assert(q_hash.registered_code_hash.code_hash === null);
-  tx = await receiverRegister(acc0, receiver, snip1155.address, snip1155.hash);
 
+  tx = await receiverRegister(acc0, receiver, snip1155.address, snip1155.hash);
   q_hash = await queryRegisteredCodeHash(acc0, snip1155, receiver.address);
   assert(q_hash.registered_code_hash.code_hash === receiver.hash);
 }

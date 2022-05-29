@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     state::{MintTokenId, TokenAmount, Tx, PermissionKey, Permission, TknInfo, }, 
-    vk::viewing_key::ViewingKey, 
-    // expiration::Expiration
+    vk::viewing_key::ViewingKey,
+    metadata::Metadata, expiration::Expiration,
 };
 
 use secret_toolkit::permit::Permit;
@@ -46,6 +46,20 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
+    /// allows minter or owner to change metadata if allowed by token_id configuration.
+    ChangeMetadata {
+        token_id: String,
+        /// does not attempt to change if left blank. Can effectively remove metadata by setting 
+        /// metadata to `Some(Metadata {token_uri: None, extension: None})`
+        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference 
+        /// between variants. Not strictly necessary.
+        public_metadata: Box<Option<Metadata>>,
+        /// does not attempt to change if left blank. Can effectively remove metadata by setting 
+        /// metadata to `Some(Metadata {token_uri: None, extension: None})`
+        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference 
+        /// between variants. Not strictly necessary.
+        private_metadata: Box<Option<Metadata>>,
+    },
     Transfer {
         token_id: String,
         // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
@@ -80,12 +94,15 @@ pub enum HandleMsg {
         /// token id to apply approval/revocation to.
         /// Additional Spec feature: if == None, perform action for all owner's `token_id`s
         token_id: String,
-        /// optional permission level for viewing the owner. If ignored, leaves current permission settings
-        view_owner: Option<bool>,
+        /// optional permission level for viewing balance. If ignored, leaves current permission settings
+        view_balance: Option<bool>,
+        view_balance_expiry: Option<Expiration>,
         /// optional permission level for viewing private metadata. If ignored, leaves current permission settings
         view_private_metadata: Option<bool>,
+        view_private_metadata_expiry: Option<Expiration>,
         /// set allowance by for transfer approvals. If ignored, leaves current permission settings
         transfer: Option<Uint128>,
+        transfer_expiry: Option<Expiration>,
         /// optional message length padding
         padding: Option<String>,
     },
@@ -146,6 +163,7 @@ pub enum HandleAnswer {
     MintTokenIds { status: ResponseStatus },
     MintTokens { status: ResponseStatus },
     BurnTokens { status: ResponseStatus },
+    ChangeMetadata {status: ResponseStatus },
     Transfer { status: ResponseStatus },
     BatchTransfer { status: ResponseStatus },
     Send { status: ResponseStatus },
@@ -173,7 +191,8 @@ pub enum HandleAnswer {
 pub enum QueryMsg {
     ContractInfo {  },
     Balance {
-        address: HumanAddr,
+        owner: HumanAddr,
+        viewer: HumanAddr,
         key: String,
         token_id: String,
     },
@@ -215,7 +234,7 @@ pub enum QueryMsg {
 impl QueryMsg {
     pub fn get_validation_params(&self) -> (Vec<&HumanAddr>, ViewingKey) {
         match self {
-            Self::Balance { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::Balance { owner, viewer, key, .. } => (vec![owner, viewer], ViewingKey(key.clone())),
             Self::TransactionHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
             Self::Permission {
                 owner,
@@ -233,7 +252,10 @@ impl QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryWithPermit {
-    Balance { token_id: String },
+    Balance { 
+        owner: HumanAddr, 
+        token_id: String 
+    },
     TransactionHistory {
         page: Option<u32>,
         page_size: u32,
@@ -267,7 +289,7 @@ pub enum QueryAnswer {
         txs: Vec<Tx>,
         total: Option<u64>,
     },
-    Permission(Permission),
+    Permission(Option<Permission>),
     AllPermissions{
         permission_keys: Vec<PermissionKey>,
         permissions: Vec<Permission>,
@@ -278,11 +300,14 @@ pub enum QueryAnswer {
         token_id_info: TknInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
+        /// if owner_is_public == false, total_supply = None
+        owner: Option<HumanAddr>
     },
     TokenIdPrivateInfo {
         token_id_info: TknInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
+        /// if owner_is_public == false, total_supply = None
         owner: Option<HumanAddr>
     },
     /// returns None if contract has not registered with SNIP1155 contract

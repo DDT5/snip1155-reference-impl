@@ -63,25 +63,29 @@ fn mint_token_id_sanity() -> StdResult<()> {
     
     // check balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr0).unwrap(), Uint128(800));
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(500));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
-    assert_eq!(chk_bal(&deps.storage, "3", &addr2).unwrap(), Uint128(1));
-    // 1 initial balance, 3 mint_token_id 
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 4u64);
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128(1));
+    // 1 initial balance, 4 mint_token_id 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     // initial balance comprehensive check 
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1), None); 
     assert_eq!(chk_bal(&deps.storage, "0", &addr2), None);
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr0).unwrap(), Uint128(800));
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr1), None); 
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr2), None);
     assert_eq!(chk_bal(&deps.storage, "1", &addr0), None);
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(500));
     assert_eq!(chk_bal(&deps.storage, "1", &addr2), None);
     assert_eq!(chk_bal(&deps.storage, "2", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "2", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
-    assert_eq!(chk_bal(&deps.storage, "3", &addr1), None);
-    assert_eq!(chk_bal(&deps.storage, "3", &addr1), None);
-    assert_eq!(chk_bal(&deps.storage, "3", &addr2).unwrap(), Uint128(1));
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr1), None);
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr1), None);
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128(1));
 
     Ok(())
 }
@@ -102,8 +106,8 @@ fn test_mint_token_id() -> StdResult<()> {
     
     // cannot mint more than 1 nft; address != 1
     let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "4".to_string();
-    mint.token_info.is_nft = true;
+    mint.token_info.token_id = "testa".to_string();
+    mint.token_info.token_config = TknConf::default_nft();
     mint.balances = vec![
         Balance { address: addr0.clone(), amount: Uint128(1) },
         Balance { address: addr1.clone(), amount: Uint128(1) },
@@ -114,8 +118,8 @@ fn test_mint_token_id() -> StdResult<()> {
 
     // cannot mint more than 1 nft; amount != 1
     let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "5".to_string();
-    mint.token_info.is_nft = true;
+    mint.token_info.token_id = "testb".to_string();
+    mint.token_info.token_config = TknConf::default_nft();
     mint.balances[0].amount = Uint128(2);
     msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     result = handle(&mut deps, env.clone(), msg);
@@ -124,7 +128,7 @@ fn test_mint_token_id() -> StdResult<()> {
     // non-minter cannot mint
     env.message.sender = addr1.clone();
     let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "6".to_string();
+    mint.token_info.token_id = "testc".to_string();
     msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
     result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("Only minters are allowed to mint"));
@@ -133,12 +137,12 @@ fn test_mint_token_id() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(500));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
-    assert_eq!(chk_bal(&deps.storage, "3", &addr2).unwrap(), Uint128(1));
-    assert_eq!(chk_bal(&deps.storage, "4", &addr0), None); assert_eq!(chk_bal(&deps.storage, "4", &addr1), None);
-    assert_eq!(chk_bal(&deps.storage, "5", &addr0), None);
-    assert_eq!(chk_bal(&deps.storage, "6", &addr0), None);
-    // 1 initial balance, 3 mint_token_id, 0 additional
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 4u64);
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128(1));
+    assert_eq!(chk_bal(&deps.storage, "testa", &addr0), None); assert_eq!(chk_bal(&deps.storage, "4", &addr1), None);
+    assert_eq!(chk_bal(&deps.storage, "testb", &addr0), None);
+    assert_eq!(chk_bal(&deps.storage, "testc", &addr0), None);
+    // 1 initial balance, 4 mint_token_id, 0 additional
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     Ok(())
 }
@@ -168,8 +172,8 @@ fn test_mint_tokens() -> StdResult<()> {
     handle(&mut deps, env.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(10));
-    // 1 initial balance, 3 mint_token_id, 2 mint_token 
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 6u64);
+    // 1 initial balance, 4 mint_token_id, 2 mint_token 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     // non-minter cannot mint
     env.message.sender = addr1;
@@ -184,10 +188,10 @@ fn test_mint_tokens() -> StdResult<()> {
     };
     let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     let result = handle(&mut deps, env, msg);
-    assert!(extract_error_msg(&result).contains("NFTs can only be minted once using `mint_token_ids`"));
+    assert!(extract_error_msg(&result).contains("minting is not enabled for this token_id"));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
-    // 1 initial balance, 3 mint_token_id, 2 mint_token 
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 6u64);
+    // 1 initial balance, 4 mint_token_id, 2 mint_token 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
     
     Ok(())
 }
@@ -250,8 +254,8 @@ fn test_burn() -> StdResult<()> {
     handle(&mut deps, env.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(0));
 
-    // 1 initial balance, 3 mint_token_id, 2 burns 
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 6u64);
+    // 1 initial balance, 4 mint_token_id, 2 burns 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
 }
@@ -320,8 +324,8 @@ fn test_transfer() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "2", &addr1).unwrap(), Uint128(1));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(200));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(800));
-    // 1 initial balance, 3 mint_token_id, 2 transfers 
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 6u64);
+    // 1 initial balance, 4 mint_token_id, 2 transfers 
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
 }
@@ -399,9 +403,10 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     let msg0_perm_1 = HandleMsg::GivePermission { 
         allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
-        view_owner: None, view_private_metadata: None, 
-        transfer: Some(Uint128(9)), 
-        padding: None, 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(9)), transfer_expiry: None,
+        padding: None,
     };  
     handle(&mut deps, env.clone(), msg0_perm_1)?;
 
@@ -414,8 +419,9 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     let msg0_perm_2 = HandleMsg::GivePermission { 
         allowed_address: addr2.clone(), 
         token_id: "0".to_string(), 
-        view_owner: None, view_private_metadata: None, 
-        transfer: Some(Uint128(15)), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(15)), transfer_expiry: None,
         padding: None, 
     };  
     handle(&mut deps, env.clone(), msg0_perm_2)?;
@@ -429,8 +435,9 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     let msg1_perm_1 = HandleMsg::GivePermission { 
         allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
-        view_owner: None, view_private_metadata: None, 
-        transfer: Some(Uint128(10)), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(10)), transfer_expiry: None,
         padding: None, 
     };  
     handle(&mut deps, env.clone(), msg1_perm_1)?;
@@ -497,8 +504,9 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     let msg2_perm_1 = HandleMsg::GivePermission { 
         allowed_address: addr1.clone(), 
         token_id: "2".to_string(), 
-        view_owner: None, view_private_metadata: None, 
-        transfer: Some(Uint128(1)), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(10)), transfer_expiry: None,
         padding: None, 
     };  
     handle(&mut deps, env.clone(), msg2_perm_1)?;
@@ -509,51 +517,52 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(0));
     assert_eq!(chk_bal(&deps.storage, "2", &addr0).unwrap(), Uint128(1));
 
-    // cannot transfer again: insufficient balance
+    // cannot transfer again: insufficient funds
     result = handle(&mut deps, env.clone(), msg1_trnsf_0);
-    assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: 0"));
+    assert!(extract_error_msg(&result).contains("insufficient funds"));
     // balance is unchanged
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(0));
     assert_eq!(chk_bal(&deps.storage, "2", &addr0).unwrap(), Uint128(1));
 
-    // give permission to transfern token 3
+    // give permission to transfern token 2a
     env.message.sender = addr2.clone();
     let msg2_perm_1 = HandleMsg::GivePermission { 
         allowed_address: addr1.clone(), 
-        token_id: "3".to_string(), 
-        view_owner: None, view_private_metadata: None, 
-        transfer: Some(Uint128(1)), 
+        token_id: "2a".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(1)), transfer_expiry: None,
         padding: None, 
     };  
     handle(&mut deps, env.clone(), msg2_perm_1)?;
-    // double check that addr1 has permission to transfer token 3
+    // double check that addr1 has permission to transfer token 2a
     assert_eq!(
-        perm_r(&deps.storage, &addr2, "3").load(addr1_u8)?, 
+        perm_r(&deps.storage, &addr2, "2a").load(addr1_u8)?, 
         Permission { 
-            view_owner_perm: false, view_owner_exp: Expiration::default(), 
+            view_balance_perm: false, view_balance_exp: Expiration::default(), 
             view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
             trfer_allowance_perm: Uint128(1), trfer_allowance_exp: Expiration::default(), 
         } 
     );
     
-    // addr2 transfers away token 3
+    // addr2 transfers away token 2a
     env.message.sender = addr2.clone();
     let msg = HandleMsg::Transfer {
-        token_id: "3".to_string(),
+        token_id: "2a".to_string(),
         from: addr2.clone(),
         recipient: addr0.clone(),
         amount: Uint128(1),
         memo: None, padding: None,
     };  
     handle(&mut deps, env.clone(), msg)?;
-    assert_eq!(chk_bal(&deps.storage, "3", &addr2).unwrap(), Uint128(0));
-    assert_eq!(chk_bal(&deps.storage, "3", &addr0).unwrap(), Uint128(1));
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128(0));
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr0).unwrap(), Uint128(1));
 
     // user1 cannot transfer nft (now owned by user0), even though it previously had allowance 
     // when it was owned by user2
     env.message.sender = addr1.clone();
     let msg = HandleMsg::Transfer {
-        token_id: "3".to_string(),
+        token_id: "2a".to_string(),
         from: addr0.clone(),
         recipient: addr1.clone(),
         amount: Uint128(1),
@@ -561,8 +570,8 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     };  
     result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
-    assert_eq!(chk_bal(&deps.storage, "3", &addr1), None);
-    assert_eq!(chk_bal(&deps.storage, "3", &addr0).unwrap(), Uint128(1));
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr1), None);
+    assert_eq!(chk_bal(&deps.storage, "2a", &addr0).unwrap(), Uint128(1));
 
     Ok(())
 }

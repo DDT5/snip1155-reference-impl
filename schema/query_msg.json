@@ -5,13 +5,472 @@
     {
       "type": "object",
       "required": [
-        "get_count"
+        "contract_info"
       ],
       "properties": {
-        "get_count": {
+        "contract_info": {
           "type": "object"
         }
       }
+    },
+    {
+      "type": "object",
+      "required": [
+        "balance"
+      ],
+      "properties": {
+        "balance": {
+          "type": "object",
+          "required": [
+            "key",
+            "owner",
+            "token_id",
+            "viewer"
+          ],
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "owner": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "token_id": {
+              "type": "string"
+            },
+            "viewer": {
+              "$ref": "#/definitions/HumanAddr"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "transaction_history"
+      ],
+      "properties": {
+        "transaction_history": {
+          "type": "object",
+          "required": [
+            "address",
+            "key",
+            "page_size"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "key": {
+              "type": "string"
+            },
+            "page": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "page_size": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "permission"
+      ],
+      "properties": {
+        "permission": {
+          "type": "object",
+          "required": [
+            "allowed_address",
+            "key",
+            "owner",
+            "token_id"
+          ],
+          "properties": {
+            "allowed_address": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "key": {
+              "type": "string"
+            },
+            "owner": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "displays all permissions that a given address has granted",
+      "type": "object",
+      "required": [
+        "all_permissions"
+      ],
+      "properties": {
+        "all_permissions": {
+          "type": "object",
+          "required": [
+            "address",
+            "key",
+            "page_size"
+          ],
+          "properties": {
+            "address": {
+              "description": "address that has granted permissions to others",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              ]
+            },
+            "key": {
+              "type": "string"
+            },
+            "page": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "page_size": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "token_id_public_info"
+      ],
+      "properties": {
+        "token_id_public_info": {
+          "type": "object",
+          "required": [
+            "token_id"
+          ],
+          "properties": {
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "token_id_private_info"
+      ],
+      "properties": {
+        "token_id_private_info": {
+          "type": "object",
+          "required": [
+            "address",
+            "key",
+            "token_id"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "key": {
+              "type": "string"
+            },
+            "token_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "registered_code_hash"
+      ],
+      "properties": {
+        "registered_code_hash": {
+          "type": "object",
+          "required": [
+            "contract"
+          ],
+          "properties": {
+            "contract": {
+              "$ref": "#/definitions/HumanAddr"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "with_permit"
+      ],
+      "properties": {
+        "with_permit": {
+          "type": "object",
+          "required": [
+            "permit",
+            "query"
+          ],
+          "properties": {
+            "permit": {
+              "$ref": "#/definitions/Permit_for_TokenPermissions"
+            },
+            "query": {
+              "$ref": "#/definitions/QueryWithPermit"
+            }
+          }
+        }
+      }
     }
-  ]
+  ],
+  "definitions": {
+    "Binary": {
+      "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>",
+      "type": "string"
+    },
+    "HumanAddr": {
+      "type": "string"
+    },
+    "PermitParams_for_TokenPermissions": {
+      "type": "object",
+      "required": [
+        "allowed_tokens",
+        "chain_id",
+        "permissions",
+        "permit_name"
+      ],
+      "properties": {
+        "allowed_tokens": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/HumanAddr"
+          }
+        },
+        "chain_id": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TokenPermissions"
+          }
+        },
+        "permit_name": {
+          "type": "string"
+        }
+      }
+    },
+    "PermitSignature": {
+      "type": "object",
+      "required": [
+        "pub_key",
+        "signature"
+      ],
+      "properties": {
+        "pub_key": {
+          "$ref": "#/definitions/PubKey"
+        },
+        "signature": {
+          "$ref": "#/definitions/Binary"
+        }
+      }
+    },
+    "Permit_for_TokenPermissions": {
+      "type": "object",
+      "required": [
+        "params",
+        "signature"
+      ],
+      "properties": {
+        "params": {
+          "$ref": "#/definitions/PermitParams_for_TokenPermissions"
+        },
+        "signature": {
+          "$ref": "#/definitions/PermitSignature"
+        }
+      }
+    },
+    "PubKey": {
+      "type": "object",
+      "required": [
+        "type",
+        "value"
+      ],
+      "properties": {
+        "type": {
+          "description": "ignored, but must be \"tendermint/PubKeySecp256k1\" otherwise the verification will fail",
+          "type": "string"
+        },
+        "value": {
+          "description": "Secp256k1 PubKey",
+          "allOf": [
+            {
+              "$ref": "#/definitions/Binary"
+            }
+          ]
+        }
+      }
+    },
+    "QueryWithPermit": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "balance"
+          ],
+          "properties": {
+            "balance": {
+              "type": "object",
+              "required": [
+                "owner",
+                "token_id"
+              ],
+              "properties": {
+                "owner": {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                "token_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "transaction_history"
+          ],
+          "properties": {
+            "transaction_history": {
+              "type": "object",
+              "required": [
+                "page_size"
+              ],
+              "properties": {
+                "page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "page_size": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "permission"
+          ],
+          "properties": {
+            "permission": {
+              "type": "object",
+              "required": [
+                "allowed_address",
+                "owner",
+                "token_id"
+              ],
+              "properties": {
+                "allowed_address": {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                "owner": {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                "token_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "all_permissions"
+          ],
+          "properties": {
+            "all_permissions": {
+              "type": "object",
+              "required": [
+                "page_size"
+              ],
+              "properties": {
+                "page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "page_size": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0.0
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "token_id_private_info"
+          ],
+          "properties": {
+            "token_id_private_info": {
+              "type": "object",
+              "required": [
+                "token_id"
+              ],
+              "properties": {
+                "token_id": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "TokenPermissions": {
+      "type": "string",
+      "enum": [
+        "allowance",
+        "balance",
+        "history",
+        "owner"
+      ]
+    }
+  }
 }

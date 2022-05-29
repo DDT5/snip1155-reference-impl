@@ -21,18 +21,19 @@ use crate::{
         RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS, 
         ContrConf, TknInfo, MintTokenId, TokenAmount, PermissionKey, Permission,
         contr_conf_r, contr_conf_w, tkn_info_r, 
-        tkn_info_w, balances_w, balances_r, append_new_owner, get_current_owner, 
+        tkn_info_w, balances_w, balances_r, append_new_owner, may_get_current_owner, 
         tkn_tot_supply_w, tkn_tot_supply_r,
         store_transfer, store_mint, store_burn,
         set_receiver_hash, get_receiver_hash, write_viewing_key, read_viewing_key, get_txs,
-        new_permission, update_permission, may_load_permission, list_owner_permission_keys,
+        new_permission, update_permission, may_load_any_permission,  
+        list_owner_permission_keys,
         json_save, json_may_load,
     },
     receiver::{Snip1155ReceiveMsg}, 
     vk::{
         viewing_key::{VIEWING_KEY_SIZE, ViewingKey,},
         rand::sha_256,
-    },     
+    }, metadata::Metadata, expiration::Expiration,     
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -129,6 +130,17 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             burn_tokens, 
             memo
         ),
+        HandleMsg::ChangeMetadata { 
+            token_id,
+            public_metadata, 
+            private_metadata 
+        } => try_change_metadata(
+            deps,
+            env,
+            token_id,
+            *public_metadata,
+            *private_metadata,
+        ),
         HandleMsg::Transfer { 
             token_id,
             from,
@@ -182,18 +194,24 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::GivePermission {
             allowed_address,
             token_id,
-            view_owner,
+            view_balance,
+            view_balance_expiry,
             view_private_metadata,
+            view_private_metadata_expiry,
             transfer,
+            transfer_expiry,
             padding: _,
         } => try_give_permission(
             deps,
             env,
             allowed_address,
             token_id,
-            view_owner,
+            view_balance,
+            view_balance_expiry,
             view_private_metadata,
+            view_private_metadata_expiry,
             transfer,
+            transfer_expiry,
             ),
         HandleMsg::RevokePermission { 
             token_id, 
@@ -319,7 +337,7 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
             ))
         }
 
-        if !token_info_op.clone().unwrap().token_config.enable_mint {
+        if !token_info_op.clone().unwrap().token_config.flatten().enable_mint {
             return Err(StdError::generic_err(
                 "minting is not enabled for this token_id"
             ))
@@ -380,7 +398,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
 
         let token_info = token_info_op.clone().unwrap();
 
-        if !token_info.token_config.enable_burn {
+        if !token_info.token_config.flatten().enable_burn {
             return Err(StdError::generic_err(
                 "burning is not enabled for this token_id"
             ))
@@ -426,6 +444,54 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
         messages: vec![],
         log: vec![],
         data: Some(to_binary(&HandleAnswer::BurnTokens { status: Success })?)
+    })
+}
+
+fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    token_id: String,
+    public_metadata: Option<Metadata>,
+    private_metadata: Option<Metadata>,
+) -> StdResult<HandleResponse> {
+    let contr_conf = contr_conf_r(&deps.storage).load()?;
+    let tkn_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    let tkn_conf = match tkn_info_op.clone() {
+        None => return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))),
+        Some(i) => i.token_config.flatten(),
+    };
+    
+    // define variables for control flow
+    let owner = may_get_current_owner(&deps.storage, &token_id)?;
+    let is_owner = owner.unwrap_or_default() == env.message.sender;
+    let is_minter = verify_minter(&contr_conf, &env).is_ok();
+
+    // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not 
+    let allow_update = is_owner && tkn_conf.owner_may_update_metadata || is_minter && tkn_conf.minter_may_update_metadata;
+
+    // control flow on whether i) sender wants to change metadata, ii) whether it is allowed based on `allow_update`
+    match (&public_metadata, &private_metadata) {
+        (None, None) => (),
+        _ => {
+            match allow_update {
+                false => return Err(StdError::generic_err(format!(
+                    "unable to change the metadata for token_id {}",
+                    token_id
+                ))),
+                true => {
+                    let mut tkn_info = tkn_info_op.unwrap();
+                    tkn_info.public_metadata = public_metadata;
+                    tkn_info.private_metadata = private_metadata;
+                    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &tkn_info)?;
+                }
+            }
+        }
+    }
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::ChangeMetadata { status: Success })?),
     })
 }
 
@@ -527,46 +593,72 @@ fn try_batch_send<S: Storage, A:Api, Q:Querier>(
 
 /// does not check if `token_id` exists so attacker cannot easily figure out if
 /// a `token_id` has been created 
+#[allow(clippy::too_many_arguments)]
 pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     allowed_address: HumanAddr,
     token_id: String,
-    view_owner: Option<bool>,
+    view_balance: Option<bool>,
+    view_balance_expiry: Option<Expiration>,
     view_private_metadata: Option<bool>,
-    transfer: Option<Uint128>, 
+    view_private_metadata_expiry: Option<Expiration>,
+    transfer: Option<Uint128>,
+    transfer_expiry: Option<Expiration>,
 ) -> StdResult<HandleResponse> {
     // may_load current permission
-    let permission_op = may_load_permission(
+    let permission_op = may_load_any_permission(
         &deps.storage,
         &env.message.sender,
         &token_id,
         &allowed_address,
     )?;
     
-    // create action that modifies permission
-    let action = | 
-        permission: &mut Permission,
-        view_owner: Option<bool>, 
-        view_private_metadata: Option<bool>, 
-        transfer: Option<Uint128> 
-    | -> StdResult<()> { 
-        if let Some(i) = view_owner { permission.view_owner_perm = i };
-        if let Some(i) = view_private_metadata { permission.view_pr_metadata_perm = i };
-        if let Some(i) = transfer { permission.trfer_allowance_perm = i };
-        Ok(())
+    let action = |
+        old_perm: Permission,
+        view_balance: Option<bool>,
+        view_balance_expiry: Option<Expiration>,
+        view_private_metadata: Option<bool>,
+        view_private_metadata_expiry: Option<Expiration>,
+        transfer: Option<Uint128>,
+        transfer_expiry: Option<Expiration>,
+    | -> Permission {
+        Permission {
+            view_balance_perm: match view_balance { Some(i) => i, None => old_perm.view_balance_perm}, 
+            view_balance_exp: match view_balance_expiry { Some(i) => i, None => old_perm.view_balance_exp}, 
+            view_pr_metadata_perm: match view_private_metadata { Some(i) => i, None => old_perm.view_pr_metadata_perm}, 
+            view_pr_metadata_exp: match view_private_metadata_expiry { Some(i) => i, None => old_perm.view_pr_metadata_exp}, 
+            trfer_allowance_perm: match transfer { Some(i) => i, None => old_perm.trfer_allowance_perm}, 
+            trfer_allowance_exp: match transfer_expiry { Some(i) => i, None => old_perm.trfer_allowance_exp}, 
+        }
     };
 
     // create new permission if not created yet, otherwise update existing permission
     match permission_op {
-        Some(mut permission) => {
-            action(&mut permission, view_owner, view_private_metadata, transfer)?;
-            update_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &permission)?;
+        Some(old_perm) => {
+            let updated_permission = action(
+                old_perm, 
+                view_balance,
+                view_balance_expiry,
+                view_private_metadata,
+                view_private_metadata_expiry,
+                transfer,
+                transfer_expiry,
+            );     
+            update_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &updated_permission)?;
         },
         None => {
-            let mut permission = Permission::default();
-            action(&mut permission, view_owner, view_private_metadata, transfer)?;
-            new_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &permission)?;
+            let default_permission = Permission::default();
+            let updated_permission = action(
+                default_permission, 
+                view_balance,
+                view_balance_expiry,
+                view_private_metadata,
+                view_private_metadata_expiry,
+                transfer,
+                transfer_expiry,
+            ); 
+            new_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &updated_permission)?;
         }
     };
 
@@ -851,7 +943,7 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
     }
 
     // check: token_id is an NFT => cannot create more than one 
-    if initial_token.token_info.is_nft {
+    if initial_token.token_info.token_config.flatten().is_nft {
         if initial_token.balances.len() > 1 {
             return Err(StdError::generic_err(format!(
                 "token_id {} is an NFT; there can only be one NFT. Balances should only have one address",
@@ -864,16 +956,7 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
             )))           
         }
     }
-    // check: token_id is fungible token => cannot have private metadata (note it is OPTIONAL in 
-    // additional specifications to have fungible tokens with private metadata)
-    if !initial_token.token_info.is_nft && initial_token.token_info.private_metadata.is_some() {
-        return Err(StdError::generic_err(format!(
-            "fungible tokens cannot have private metadata in the base specifications. Token id {} has private metadata {:?}",
-            initial_token.token_info.token_id,
-            initial_token.token_info.private_metadata.unwrap(),
-        ))) 
-    }
-
+    
     // Check name, symbol, decimals
     if !is_valid_name(&initial_token.token_info.name) {
         return Err(StdError::generic_err(
@@ -885,13 +968,13 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
             "Ticker symbol is not in expected format [A-Z]{3,6}",
         ));
     }
-    if initial_token.token_info.decimals > 18 {
+    if initial_token.token_info.token_config.flatten().decimals > 18 {
         return Err(StdError::generic_err("Decimals must not exceed 18"));
     }
 
 
     // create and save new token info
-    tkn_info_w(&mut deps.storage).save(&initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
+    tkn_info_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
 
     // set initial balances and store mint history
     for balance in initial_token.balances {
@@ -899,11 +982,11 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
         balances_w(&mut deps.storage, &initial_token.token_info.token_id)
         .save(to_binary(&balance.address)?.as_slice(), &balance.amount)?;
         // if is_nft == true, store owner of NFT
-        if initial_token.token_info.is_nft {
+        if initial_token.token_info.token_config.flatten().is_nft {
             append_new_owner(&mut deps.storage, &initial_token.token_info.token_id, &balance.address)?;
         }
         // initiate total token supply
-        tkn_tot_supply_w(&mut deps.storage).save(&initial_token.token_info.token_id.as_bytes(), &balance.amount)?;
+        tkn_tot_supply_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &balance.amount)?;
 
         // store mint_token_id
         store_mint(
@@ -982,11 +1065,13 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
     memo: Option<String>,
 ) -> StdResult<()> {
     // check if `from` == message sender || has enough allowance to send tokens
-    let permission_op = may_load_permission(&deps.storage, from, token_id, &env.message.sender)?;
-
     // perform allowance check, and may reduce allowance 
     let mut throw_err = false;
     if from != &env.message.sender {
+        // may_load_active_permission() or may_load_any_permission() both work. The former performs redundancy checks, which are
+        // more relevant for authenticated queries (because transfer simply won't work if there is no balance)
+        let permission_op = may_load_any_permission(&deps.storage, from, token_id, &env.message.sender)?;
+
         match permission_op {
             // no permission given
             None => throw_err = true,
@@ -1066,13 +1151,15 @@ fn exec_change_balance<S: Storage>(
     amount: &Uint128,
     token_info: &TknInfo,
 ) -> StdResult<()> {
-    // check whether token_id is an NFT => cannot mint
-    if token_info.is_nft && remove_from == None {
+    // check whether token_id is an NFT => cannot mint. This should not be reachable in standard implementation, 
+    // as the calling function would have checked that enable_mint == false, which needs to be true for NFTs.
+    // This is a redundancy check to make sure
+    if token_info.token_config.flatten().is_nft && remove_from == None {
         return Err(StdError::generic_err("NFTs can only be minted once using `mint_token_ids`"))
     }
 
     // check whether token_id is an NFT => assert!(amount == 1). 
-    if token_info.is_nft && amount != &Uint128(1) {
+    if token_info.token_config.flatten().is_nft && amount != &Uint128(1) {
         return Err(StdError::generic_err("NFT amount must == 1"))
     }
 
@@ -1108,8 +1195,8 @@ fn exec_change_balance<S: Storage>(
         .save(to_binary(&to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
 
         // if is_nft == true, store new owner of NFT
-        if token_info.is_nft {
-        append_new_owner(storage, &token_info.token_id, &to)?;
+        if token_info.token_config.flatten().is_nft {
+        append_new_owner(storage, &token_info.token_id, to)?;
         }
     }
 
@@ -1118,22 +1205,22 @@ fn exec_change_balance<S: Storage>(
         (None, None) => (),
         (Some(_), Some(_)) => (),
         (None, Some(_)) => {
-            let old_amount = tkn_tot_supply_r(storage).load(&token_info.token_id.as_bytes())?;
+            let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.u128().checked_add(amount.u128());
             let new_amount = match new_amount_op {
                 Some(i) => Uint128(i),
                 None => return Err(StdError::generic_err("total supply exceeds max allowed of 2^128")),
             };
-            tkn_tot_supply_w(storage).save(&token_info.token_id.as_bytes(), &new_amount)?;
+            tkn_tot_supply_w(storage).save(token_info.token_id.as_bytes(), &new_amount)?;
         },
         (Some(_), None) => {
-            let old_amount = tkn_tot_supply_r(storage).load(&token_info.token_id.as_bytes())?;
+            let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.u128().checked_sub(amount.u128());
             let new_amount = match new_amount_op {
                 Some(i) => Uint128(i),
                 None => return Err(StdError::generic_err("total supply drops below zero")),
             };
-            tkn_tot_supply_w(storage).save(&token_info.token_id.as_bytes(), &new_amount)?;
+            tkn_tot_supply_w(storage).save(token_info.token_id.as_bytes(), &new_amount)?;
         },
     }
 
@@ -1214,7 +1301,8 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
 
     // Permit validated! We can now execute the query.
     match query {
-        QueryWithPermit::Balance { token_id } => query_balance(deps, &HumanAddr(account), token_id),
+        QueryWithPermit::Balance { owner, token_id 
+        } => query_balance(deps, &owner, &HumanAddr(account), token_id),
         QueryWithPermit::TransactionHistory { page, page_size 
         } => query_transactions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
@@ -1230,7 +1318,7 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
         QueryWithPermit::AllPermissions { page, page_size 
         } => query_all_permissions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::TokenIdPrivateInfo { token_id 
-        } => query_token_id_private_info(deps, HumanAddr(account), token_id)
+        } => query_token_id_private_info(deps, &HumanAddr(account), token_id)
     }
 }
 
@@ -1251,15 +1339,19 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
             key.check_viewing_key(&[0u8; VIEWING_KEY_SIZE]);
         } else if key.check_viewing_key(expected_key.unwrap().as_slice()) {
             return match msg {
-                QueryMsg::Balance { address, token_id, .. } => query_balance(deps, &address, token_id),
+                QueryMsg::Balance { owner, viewer, token_id, .. 
+                } => query_balance(deps, &owner, &viewer, token_id),
                 QueryMsg::TransactionHistory {
                     page,
                     page_size,
                     ..
-                } => query_transactions(deps, &address, page.unwrap_or(0), page_size),
-                QueryMsg::Permission { owner, allowed_address, token_id, .. } => query_permission(deps, token_id, owner, allowed_address),
-                QueryMsg::AllPermissions { page, page_size, .. } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
-                QueryMsg::TokenIdPrivateInfo { address, token_id, .. } => query_token_id_private_info(deps, address, token_id),
+                } => query_transactions(deps, address, page.unwrap_or(0), page_size),
+                QueryMsg::Permission { owner, allowed_address, token_id, .. 
+                } => query_permission(deps, token_id, owner, allowed_address),
+                QueryMsg::AllPermissions { page, page_size, .. 
+                } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
+                QueryMsg::TokenIdPrivateInfo { address, token_id, .. 
+                } => query_token_id_private_info(deps, &address, token_id),
                 _ => panic!("This query type does not require authentication"),
             };
         }
@@ -1286,22 +1378,28 @@ fn query_token_id_public_info<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     token_id: String,
 ) -> StdResult<Binary> {
-    let tkn_info_op= tkn_info_r(&deps.storage).may_load(&token_id.as_bytes())?;
+    let tkn_info_op= tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
     match tkn_info_op {
         None => return Err(StdError::generic_err(format!(
             "token_id {} does not exist",
             token_id
         ))),
         Some(mut tkn_info) => {
+            // add owner if owner_is_public == true
+            let owner: Option<HumanAddr> = if tkn_info.token_config.flatten().owner_is_public {
+                may_get_current_owner(&deps.storage, &token_id)?
+            } else {
+                None
+            };
+
             // add public supply if public_total_supply == true 
-            let total_supply: Option<Uint128>;
-            if tkn_info.token_config.public_total_supply { 
-                total_supply = Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
-            } else { total_supply = None }
+            let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply { 
+                Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
+            } else { None };
 
             // private_metadata always == None for public info query 
             tkn_info.private_metadata = None;
-            let response = QueryAnswer::TokenIdPublicInfo { token_id_info: tkn_info, total_supply };
+            let response = QueryAnswer::TokenIdPublicInfo { token_id_info: tkn_info, total_supply, owner };
             to_binary(&response) 
         },
     }
@@ -1309,11 +1407,11 @@ fn query_token_id_public_info<S: Storage, A: Api, Q: Querier>(
 
 fn query_token_id_private_info<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
-    requester: HumanAddr,
+    viewer: &HumanAddr,
     token_id: String
 ) -> StdResult<Binary> {
-    let tkn_info_op= tkn_info_r(&deps.storage).may_load(&token_id.as_bytes())?;
-    if let None = tkn_info_op {
+    let tkn_info_op= tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    if tkn_info_op.is_none() {
         return Err(StdError::generic_err(format!(
             "token_id {} does not exist",
             token_id
@@ -1321,18 +1419,33 @@ fn query_token_id_private_info<S: Storage, A: Api, Q: Querier>(
     }
 
     let mut tkn_info = tkn_info_op.unwrap();
-    let mut owner: Option<HumanAddr>;
-    match tkn_info.is_nft {
-        true => owner = Some(get_current_owner(&deps.storage, &token_id)?),
-        false => {
-            // owner = None,
-            return Err(StdError::generic_err("token_id private info only applies to nfts"))
-        },
-    }    
+    
+    // add owner if owner_is_public == true
+    let owner: Option<HumanAddr> =  if tkn_info.token_config.flatten().owner_is_public {
+        may_get_current_owner(&deps.storage, &token_id)?
+    } else {
+        None
+    };
 
-    // If owner, can view `owner` and `private_metadata`. Otherwise check viewership permissions. 
-    if owner.as_ref().unwrap() != &requester {
-        let permission_op = may_load_permission(&deps.storage, owner.as_ref().unwrap(), &token_id, &requester)?; 
+    // private metadata is viewable if viewer owns at least 1 token
+    let viewer_owns_some_tokens = match balances_r(&deps.storage, &token_id)
+        .may_load(to_binary(&viewer)?.as_slice())? {
+            None => false,
+            Some(i) if i == Uint128(0) => false,
+            Some(i) if i > Uint128(0) => true,
+            Some(_) => unreachable!("should not reach here")
+        };
+
+    // If request owns at least 1 token, can view `private_metadata`. Otherwise check viewership permissions (permission only applicable to nfts, as
+    // fungible tokens have no current `owner`). 
+    if !viewer_owns_some_tokens {
+        let permission_op = may_load_any_permission(
+            &deps.storage, 
+            // if no owner, = "" ie blank string => will not have any permission
+            owner.as_ref().unwrap_or(&HumanAddr("".to_string())), 
+            &token_id, 
+            viewer
+        )?; 
         match permission_op {
             None => return Err(StdError::generic_err("you do have have permission to view private token info")),
             Some(perm) => {
@@ -1341,17 +1454,15 @@ fn query_token_id_private_info<S: Storage, A: Api, Q: Querier>(
                     time: 1,
                     chain_id: "not used".to_string(),
                 });
-                if !perm.view_owner_perm || perm.view_owner_exp.is_expired(&block) { owner = None };
-                if !perm.view_pr_metadata_perm || perm.view_pr_metadata_exp.is_expired(&block) { tkn_info.private_metadata = None };
+                if !perm.check_view_pr_metadata_perm(&block) { tkn_info.private_metadata = None };
             },       
         }
     }
 
     // add public supply if public_total_supply == true
-    let total_supply: Option<Uint128>;
-    if tkn_info.token_config.public_total_supply { 
-        total_supply = Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
-    } else { total_supply = None }
+    let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply { 
+        Some(tkn_tot_supply_r(&deps.storage).load(token_id.as_bytes())?)
+    } else { None };
     
     let response = QueryAnswer::TokenIdPrivateInfo { token_id_info: tkn_info, total_supply, owner };
     to_binary(&response)
@@ -1362,26 +1473,47 @@ fn query_registered_code_hash<S: Storage, A: Api, Q: Querier>(
     contract: HumanAddr,
 ) -> StdResult<Binary> {
     let may_hash_res = get_receiver_hash(&deps.storage, &contract);
-    let response: QueryAnswer;
-    match may_hash_res {
+    let response: QueryAnswer = match may_hash_res {
         Some(hash_res) => {
-            response = QueryAnswer::RegisteredCodeHash { code_hash: Some(hash_res?) };
+            QueryAnswer::RegisteredCodeHash { code_hash: Some(hash_res?) }
         }
-        None => { response = QueryAnswer::RegisteredCodeHash { code_hash: None }},
-    } 
+        None => { QueryAnswer::RegisteredCodeHash { code_hash: None }},
+    };
 
     to_binary(&response)
 }
 
 fn query_balance<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
-    account: &HumanAddr,
+    owner: &HumanAddr,
+    viewer: &HumanAddr,
     token_id: String,
 ) -> StdResult<Binary> {
-    let address = deps.api.canonical_address(account)?;
+    if owner != viewer {
+        let permission_op = may_load_any_permission(
+            &deps.storage, 
+            owner, 
+            &token_id, 
+            viewer,
+        )?;
+        match permission_op {
+            None => return Err(StdError::generic_err("you do have have permission to view balance")),
+            Some(perm) => {
+                let block: BlockInfo = json_may_load(&deps.storage, BLOCK_KEY)?.unwrap_or_else(|| BlockInfo {
+                    height: 1,
+                    time: 1,
+                    chain_id: "not used".to_string(),
+                });
+                if !perm.check_view_balance_perm(&block) {
+                    return Err(StdError::generic_err("you do have have permission to view balance"))
+                } else {  }
+            },
+        }
+    }
 
+    let owner_canon = deps.api.canonical_address(owner)?;
     let amount_op = balances_r(&deps.storage, &token_id)
-        .may_load(to_binary(&deps.api.human_address(&address)?)?.as_slice())?;
+        .may_load(to_binary(&deps.api.human_address(&owner_canon)?)?.as_slice())?;
     let amount = match amount_op {
         Some(i) => i,
         None => Uint128(0),
@@ -1412,8 +1544,7 @@ fn query_permission<S: Storage, A: Api, Q: Querier>(
     owner: HumanAddr,
     allowed_addr: HumanAddr,
 ) -> StdResult<Binary> {
-    let permission = may_load_permission(&deps.storage, &owner, &token_id, &allowed_addr)?
-        .unwrap_or_default();
+    let permission = may_load_any_permission(&deps.storage, &owner, &token_id, &allowed_addr)?;
 
     let response = QueryAnswer::Permission(permission);
     to_binary(&response)
@@ -1429,9 +1560,9 @@ fn query_all_permissions<S: Storage, A: Api, Q: Querier>(
     let mut permissions: Vec<Permission> = vec![];
     let mut valid_pkeys: Vec<PermissionKey> = vec![]; 
     for pkey in permission_keys {
-        let permission = may_load_permission(
+        let permission = may_load_any_permission(
             &deps.storage, 
-            &account,
+            account,
             &pkey.token_id,
             &pkey.allowed_addr,
         )?;

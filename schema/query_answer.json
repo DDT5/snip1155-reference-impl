@@ -1,0 +1,878 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "QueryAnswer",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "contract_info"
+      ],
+      "properties": {
+        "contract_info": {
+          "type": "object",
+          "required": [
+            "all_token_ids",
+            "minters"
+          ],
+          "properties": {
+            "admin": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "all_token_ids": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "minters": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/HumanAddr"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "balance"
+      ],
+      "properties": {
+        "balance": {
+          "type": "object",
+          "required": [
+            "amount"
+          ],
+          "properties": {
+            "amount": {
+              "$ref": "#/definitions/Uint128"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "transaction_history"
+      ],
+      "properties": {
+        "transaction_history": {
+          "type": "object",
+          "required": [
+            "txs"
+          ],
+          "properties": {
+            "total": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "txs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Tx"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "permission"
+      ],
+      "properties": {
+        "permission": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Permission"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "all_permissions"
+      ],
+      "properties": {
+        "all_permissions": {
+          "type": "object",
+          "required": [
+            "permission_keys",
+            "permissions",
+            "total"
+          ],
+          "properties": {
+            "permission_keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/PermissionKey"
+              }
+            },
+            "permissions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Permission"
+              }
+            },
+            "total": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "token_id_public_info"
+      ],
+      "properties": {
+        "token_id_public_info": {
+          "type": "object",
+          "required": [
+            "token_id_info"
+          ],
+          "properties": {
+            "owner": {
+              "description": "if owner_is_public == false, total_supply = None",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "token_id_info": {
+              "description": "token_id_info.private_metadata will = None",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/TknInfo"
+                }
+              ]
+            },
+            "total_supply": {
+              "description": "if public_total_supply == false, total_supply = None",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "token_id_private_info"
+      ],
+      "properties": {
+        "token_id_private_info": {
+          "type": "object",
+          "required": [
+            "token_id_info"
+          ],
+          "properties": {
+            "owner": {
+              "description": "if owner_is_public == false, total_supply = None",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "token_id_info": {
+              "$ref": "#/definitions/TknInfo"
+            },
+            "total_supply": {
+              "description": "if public_total_supply == false, total_supply = None",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Uint128"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "returns None if contract has not registered with SNIP1155 contract",
+      "type": "object",
+      "required": [
+        "registered_code_hash"
+      ],
+      "properties": {
+        "registered_code_hash": {
+          "type": "object",
+          "properties": {
+            "code_hash": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "viewing_key_error"
+      ],
+      "properties": {
+        "viewing_key_error": {
+          "type": "object",
+          "required": [
+            "msg"
+          ],
+          "properties": {
+            "msg": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "Authentication": {
+      "description": "media file authentication",
+      "type": "object",
+      "properties": {
+        "key": {
+          "description": "either a decryption key for encrypted files or a password for basic authentication",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "user": {
+          "description": "username used in basic authentication",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Expiration": {
+      "description": "at the given point in time and after, Expiration will be considered expired",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "never"
+          ]
+        },
+        {
+          "description": "expires at this block height",
+          "type": "object",
+          "required": [
+            "at_height"
+          ],
+          "properties": {
+            "at_height": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        },
+        {
+          "description": "expires at the time in seconds since 01/01/1970",
+          "type": "object",
+          "required": [
+            "at_time"
+          ],
+          "properties": {
+            "at_time": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      ]
+    },
+    "Extension": {
+      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on https://docs.opensea.io/docs/metadata-standards and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+      "type": "object",
+      "properties": {
+        "animation_url": {
+          "description": "url to a multimedia attachment",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attributes": {
+          "description": "item attributes",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/Trait"
+          }
+        },
+        "background_color": {
+          "description": "background color represented as a six-character hexadecimal without a pre-pended #",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "item description",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "external_url": {
+          "description": "url to allow users to view the item on your site",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "url to the image",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image_data": {
+          "description": "raw SVG image data (not recommended). Only use this if you're not including the image parameter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "media": {
+          "description": "media files as specified on Stashh that allows for basic authenticatiion and decryption keys. Most of the above is used for bridging public eth NFT metadata easily, whereas `media` will be used when minting NFTs on Stashh",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/definitions/MediaFile"
+          }
+        },
+        "name": {
+          "description": "name of the item",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protected_attributes": {
+          "description": "a select list of trait_types that are in the private metadata.  This will only ever be used in public metadata",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "token_subtype": {
+          "description": "token subtypes used by Stashh for display groupings (primarily used for badges)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "youtube_url": {
+          "description": "url to a YouTube video",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "HumanAddr": {
+      "type": "string"
+    },
+    "MediaFile": {
+      "description": "media file",
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "authentication": {
+          "description": "authentication information",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Authentication"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extension": {
+          "description": "file extension",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file_type": {
+          "description": "file type Stashh currently uses: \"image\", \"video\", \"audio\", \"text\", \"font\", \"application\"",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "url to the file.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+          "type": "string"
+        }
+      }
+    },
+    "Metadata": {
+      "description": "token metadata",
+      "type": "object",
+      "properties": {
+        "extension": {
+          "description": "optional on-chain metadata.  Only use this if you are not using `token_uri`",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Extension"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "token_uri": {
+          "description": "optional uri for off-chain metadata.  This should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`.  Only use this if you are not using `extension`",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Permission": {
+      "description": "struct to store permission for a `[token_id, owner, allowed_addr]` combination",
+      "type": "object",
+      "required": [
+        "trfer_allowance_exp",
+        "trfer_allowance_perm",
+        "view_balance_exp",
+        "view_balance_perm",
+        "view_pr_metadata_exp",
+        "view_pr_metadata_perm"
+      ],
+      "properties": {
+        "trfer_allowance_exp": {
+          "$ref": "#/definitions/Expiration"
+        },
+        "trfer_allowance_perm": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "view_balance_exp": {
+          "$ref": "#/definitions/Expiration"
+        },
+        "view_balance_perm": {
+          "type": "boolean"
+        },
+        "view_pr_metadata_exp": {
+          "$ref": "#/definitions/Expiration"
+        },
+        "view_pr_metadata_perm": {
+          "type": "boolean"
+        }
+      }
+    },
+    "PermissionKey": {
+      "description": "to store all keys to access all permissions for a given `owner`",
+      "type": "object",
+      "required": [
+        "allowed_addr",
+        "token_id"
+      ],
+      "properties": {
+        "allowed_addr": {
+          "$ref": "#/definitions/HumanAddr"
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "TknConf": {
+      "anyOf": [
+        {
+          "description": "no `owner_may_update_metadata`because there can be multiple owners",
+          "type": "object",
+          "required": [
+            "fungible"
+          ],
+          "properties": {
+            "fungible": {
+              "type": "object",
+              "required": [
+                "decimals",
+                "enable_burn",
+                "enable_mint",
+                "minter_may_update_metadata",
+                "public_total_supply"
+              ],
+              "properties": {
+                "decimals": {
+                  "description": "applications should ignore decimals if `is_nft` == true. Decimals play no part in the contract logic of the base specification of SNIP1155, as there are no `deposit` and `redeem` features as seen in SNIP20",
+                  "type": "integer",
+                  "format": "uint8",
+                  "minimum": 0.0
+                },
+                "enable_burn": {
+                  "type": "boolean"
+                },
+                "enable_mint": {
+                  "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "public_total_supply": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "no `enable_mint` option because NFT can be minted only once using `MintTokenIds`",
+          "type": "object",
+          "required": [
+            "nft"
+          ],
+          "properties": {
+            "nft": {
+              "type": "object",
+              "required": [
+                "enable_burn",
+                "minter_may_update_metadata",
+                "owner_is_public",
+                "owner_may_update_metadata",
+                "public_total_supply"
+              ],
+              "properties": {
+                "enable_burn": {
+                  "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "owner_is_public": {
+                  "type": "boolean"
+                },
+                "owner_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "public_total_supply": {
+                  "description": "total supply can be zero if the token has been burnt",
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "TknInfo": {
+      "description": "information for a specific `token_id`",
+      "type": "object",
+      "required": [
+        "name",
+        "symbol",
+        "token_config",
+        "token_id"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "private_metadata": {
+          "description": "private metadata can only be set for nfts in the base specification. It is OPTIONAL in additional specifications to allow fungible tokens to have private metadata",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Metadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "public_metadata": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Metadata"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "token_config": {
+          "$ref": "#/definitions/TknConf"
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
+    "Trait": {
+      "description": "attribute trait",
+      "type": "object",
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "display_type": {
+          "description": "indicates how a trait should be displayed",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_value": {
+          "description": "optional max value for numerical traits",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trait_type": {
+          "description": "name of the trait",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "trait value",
+          "type": "string"
+        }
+      }
+    },
+    "Tx": {
+      "description": "tx in storage",
+      "type": "object",
+      "required": [
+        "action",
+        "block_height",
+        "block_time",
+        "token_id",
+        "tx_id"
+      ],
+      "properties": {
+        "action": {
+          "description": "tx type and specifics",
+          "allOf": [
+            {
+              "$ref": "#/definitions/TxAction"
+            }
+          ]
+        },
+        "block_height": {
+          "description": "the block containing this tx",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "block_time": {
+          "description": "the time (in seconds since 01/01/1970) of the block containing this tx",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "memo": {
+          "description": "optional memo",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token_id": {
+          "description": "token id",
+          "type": "string"
+        },
+        "tx_id": {
+          "description": "tx id",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "TxAction": {
+      "description": "tx type and specifics for storage with HumanAddr",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "mint"
+          ],
+          "properties": {
+            "mint": {
+              "type": "object",
+              "required": [
+                "amount",
+                "minter",
+                "recipient"
+              ],
+              "properties": {
+                "amount": {
+                  "$ref": "#/definitions/Uint128"
+                },
+                "minter": {
+                  "$ref": "#/definitions/HumanAddr"
+                },
+                "recipient": {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "burn"
+          ],
+          "properties": {
+            "burn": {
+              "type": "object",
+              "required": [
+                "amount",
+                "owner"
+              ],
+              "properties": {
+                "amount": {
+                  "$ref": "#/definitions/Uint128"
+                },
+                "burner": {
+                  "description": "in the base specification, the burner MUST be the owner. In the additional specifications, it is OPTIONAL to allow other addresses to burn tokens.",
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "owner": {
+                  "$ref": "#/definitions/HumanAddr"
+                }
+              }
+            }
+          }
+        },
+        {
+          "description": "`transfer` or `send` txs",
+          "type": "object",
+          "required": [
+            "transfer"
+          ],
+          "properties": {
+            "transfer": {
+              "type": "object",
+              "required": [
+                "amount",
+                "from",
+                "recipient"
+              ],
+              "properties": {
+                "amount": {
+                  "description": "amount of tokens transferred",
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/Uint128"
+                    }
+                  ]
+                },
+                "from": {
+                  "description": "previous owner",
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    }
+                  ]
+                },
+                "recipient": {
+                  "description": "new owner",
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    }
+                  ]
+                },
+                "sender": {
+                  "description": "optional sender if not owner",
+                  "anyOf": [
+                    {
+                      "$ref": "#/definitions/HumanAddr"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Uint128": {
+      "type": "string"
+    }
+  }
+}
