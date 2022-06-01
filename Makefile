@@ -1,3 +1,9 @@
+# runs schema, unit-test and clippy. Doesn't do integration test or mainnet-build 
+.PHONY: prep
+prep: schema test _clippy-test
+_clippy-test:
+	cargo clippy --tests
+
 .PHONY: check
 check:
 	cargo check

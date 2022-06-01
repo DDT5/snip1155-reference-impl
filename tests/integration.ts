@@ -15,20 +15,10 @@ type Balance = {
   amount: string,
 };
 
-// type TknInfo = {
-//   token_id: string,
-//   name: string,
-//   symbol: string,
-//   decimals: number,
-//   is_nft: boolean, 
-//   token_config: TknConf,
-//   public_metadata?: unknown,
-//   private_metadata?: unknown,
-// }
-
 type TknConf = TknConfFungible | TknConfNft;
 
 interface TknConfFungible { "fungible": {
+  minters: string[],
   decimals: number,
   public_total_supply: boolean,
   enable_mint: boolean, 
@@ -39,7 +29,6 @@ interface TknConfFungible { "fungible": {
 interface TknConfNft { "nft": {
   public_total_supply: boolean,
   enable_burn: boolean, 
-  minter_may_update_metadata: boolean,
   owner_may_update_metadata: boolean,
 }}
 
@@ -51,11 +40,6 @@ type Permission = {
   trfer_allowance_perm: string,
   trfer_allowance_exp: string
 }
-
-// type PermissionKey = {
-//   token_id: string,
-//   allowed_addr: string,
-// };
 
 // type GenErr = { generic_err: { msg: string }};
 
@@ -155,7 +139,7 @@ async function initDefault(): Promise<jsEnv> {
 
   const initMsgDefault = { 
     has_admin: true,
-    minters: [accounts[0].address],
+    curators: [accounts[0].address],
     initial_tokens: [
       {
         token_info: { 
@@ -163,6 +147,7 @@ async function initDefault(): Promise<jsEnv> {
           name: "token0", 
           symbol: "TKN", 
           token_config: { fungible: {
+              minters: [accounts[0].address],
               decimals: 6,  
               public_total_supply: true,
               enable_mint: true, 
@@ -183,6 +168,7 @@ async function initDefault(): Promise<jsEnv> {
           name: "token1", 
           symbol: "TKNA", 
           token_config: { fungible: {
+              minters: [accounts[0].address],
               decimals: 6,   
               public_total_supply: false,
               enable_mint: false, 
@@ -204,7 +190,6 @@ async function initDefault(): Promise<jsEnv> {
               public_total_supply: true,
               owner_is_public: true,
               enable_burn: true, 
-              minter_may_update_metadata: true,
               owner_may_update_metadata: true,
           }},
           public_metadata,
@@ -293,21 +278,23 @@ async function execHandle(
 }
 
 /** @param token_config overrides `is_nft` */
-async function mintTokenIds(
+async function curateTokenIds(
   sender: Account,
   contract: ContractInfo,
   token_id: string,
   token_name: string,
   token_symbol: string,
   is_nft: boolean,
-  mint_to_address: string,
-  mint_amount: string,
+  init_mint_to_address: string,
+  init_mint_amount: string,
+  minters: string[],
   token_config?: TknConf,
 ) {
   let tkn_conf = token_config;
   if (token_config === undefined) {
     if (is_nft == false) {
       tkn_conf = { fungible: {
+        minters,
         decimals: 6,
         public_total_supply: true,
         enable_mint: true, 
@@ -319,14 +306,13 @@ async function mintTokenIds(
         public_total_supply: true,
         owner_is_public: true,
         enable_burn: true, 
-        minter_may_update_metadata: true,
         owner_may_update_metadata: true,
       }} as TknConfNft;
     } 
   }
 
   const msg = {
-    mint_token_ids: { 
+    curate_token_ids: { 
       initial_tokens: [{
         token_info: { 
           token_id, 
@@ -335,14 +321,14 @@ async function mintTokenIds(
           token_config: tkn_conf,
         }, 
         balances: [{ 
-            address: mint_to_address, 
-            amount: mint_amount 
+            address: init_mint_to_address, 
+            amount: init_mint_amount 
         }]
       }]
     },
   }
 
-  const tx = await execHandle(sender, contract, msg, "mintTokenIds");
+  const tx = await execHandle(sender, contract, msg, "curateTokenIds");
   return tx
 }
 
@@ -517,7 +503,7 @@ async function queryContractInfo(
   const { secretjs } = sender;
   type QueryResponse = { contract_info: { 
     admin: string,
-    minters: string[],
+    curators: string[],
     all_token_ids: string[],
   }};
 
@@ -900,7 +886,7 @@ async function testIntializationSanity(
   );
   const exp_contract_info = {
     admin: acc0.address,
-    minters: [acc0.address],
+    curators: [acc0.address],
     all_token_ids: ["0","1","2"],
   };
   assert(
@@ -954,14 +940,14 @@ async function testIntializationSanity(
   assert(tknId2String.includes('"total_supply":"1"'));
 }
 
-async function testMintTokenIds(
+async function testCurateTokenIds(
   env: jsEnv,
 ) {
   const minter = env.accounts[0];
   const contract = env.contracts[0];
 
-  let tx = await mintTokenIds(minter, contract, "test0", "tokentest0", "TKNT", false, minter.address, "1000");
-  assert(fromUtf8(tx.data[0]).includes(`{"mint_token_ids":{"status":"success"}}`));
+  let tx = await curateTokenIds(minter, contract, "test0", "tokentest0", "TKNT", false, minter.address, "1000", []);
+  assert(fromUtf8(tx.data[0]).includes(`{"curate_token_ids":{"status":"success"}}`));
 
   tx = await setViewingKey(minter, contract, "vkey");
   assert(tx.code === 0);
@@ -969,21 +955,21 @@ async function testMintTokenIds(
   assert(bal === "1000");
 
   // cannot mint token_id with same name
-  tx = await mintTokenIds(minter, contract, "test0", "tokentest0a", "TKNTA", false, minter.address, "123");
+  tx = await curateTokenIds(minter, contract, "test0", "tokentest0a", "TKNTA", false, minter.address, "123", []);
   assert(tx.rawLog.includes("token_id already exists. Try a different id String"));
   bal = await queryBalance(minter, contract, minter.address, "vkey", "test0");
   assert(bal === "1000");
 
   // can mint NFT
-  tx = await mintTokenIds(minter, contract, "test1", "a new nft", "NFT", true, minter.address, "1");
+  tx = await curateTokenIds(minter, contract, "test1", "a new nft", "NFT", true, minter.address, "1", []);
   assert(tx.code === 0);
   bal = await queryBalance(minter, contract, minter.address, "vkey", "test1");
   assert(bal === "1");
 
   // cannot mint NFT with amount != 1
-  tx = await mintTokenIds(minter, contract, "test2a", "a new nft", "NFTA", true, minter.address, "0");
+  tx = await curateTokenIds(minter, contract, "test2a", "a new nft", "NFTA", true, minter.address, "0", []);
   assert(tx.rawLog.includes("token_id test2a is an NFT; there can only be one NFT. Balances.amount must == 1"));
-  tx = await mintTokenIds(minter, contract, "test2b", "a new nft", "NFTA", true, minter.address, "2");
+  tx = await curateTokenIds(minter, contract, "test2b", "a new nft", "NFTA", true, minter.address, "2", []);
   assert(tx.rawLog.includes("token_id test2b is an NFT; there can only be one NFT. Balances.amount must == 1"));
   bal = await queryBalance(minter, contract, minter.address, "vkey", "test2a"); assert(bal === "0");
   bal = await queryBalance(minter, contract, minter.address, "vkey", "test2b"); assert(bal === "0");  
@@ -1009,7 +995,7 @@ async function testMintBurnTokens(
   
   // cannot mint non-existent token_ids
   tx = await mintTokens(env.accounts[0], contract, "na", [Bal]);
-  assert(tx.rawLog.includes("token_id does not exist. Cannot mint non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"));
+  assert(tx.rawLog.includes("token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"));
 
   // cannot mint NFT
   tx = await mintTokens(env.accounts[0], contract, "2", [Bal]);
@@ -1040,7 +1026,7 @@ async function testMintBurnTokens(
 
   // cannot burn non-existent token_ids
   tx = await burnTokens(env.accounts[0], contract, "na", [Bal]);
-  assert(tx.rawLog.includes("token_id does not exist. Cannot burn non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"));
+  assert(tx.rawLog.includes("token_id does not exist. Cannot burn non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"));
 
   // cannot burn if enable_burn == false
   tx = await burnTokens(env.accounts[0], contract, "1", [Bal]);
@@ -1287,7 +1273,6 @@ async function testQueries(
             public_total_supply: true,
             owner_is_public: true,
             enable_burn: true,
-            minter_may_update_metadata: true,
             owner_may_update_metadata: true,
           }
         },
@@ -1313,7 +1298,8 @@ async function testQueries(
             ],
             token_subtype: null
           }
-        }
+        },
+        curator: acc0.address,
       },
       total_supply: "1",
       owner: acc0.address,
@@ -1409,7 +1395,7 @@ async function runTest(
   await runTest(testReceiverSanity, env);
 
   env = await initDefault();
-  await runTest(testMintTokenIds, env);
+  await runTest(testCurateTokenIds, env);
 
   env = await initDefault();
   await runTest(testMintBurnTokens, env);

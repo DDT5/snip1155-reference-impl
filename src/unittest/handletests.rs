@@ -8,6 +8,7 @@ use super::super::{
     state::*,
     receiver::{Snip1155ReceiveMsg, ReceiverHandleMsg},
     expiration::Expiration,
+    metadata::{Metadata, Extension},
 };
 
 use cosmwasm_std::{
@@ -15,7 +16,7 @@ use cosmwasm_std::{
     StdResult, 
     InitResponse, 
     HumanAddr, Uint128, 
-    to_binary, 
+    to_binary, from_binary, 
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -34,7 +35,7 @@ fn init_sanity() -> StdResult<()> {
     // check contract config
     let contr_conf = contr_conf_r(&deps.storage).load()?;
     assert_eq!(contr_conf.admin.unwrap(), addr0);
-    assert_eq!(contr_conf.minters, vec![addr0.clone()]);
+    assert_eq!(contr_conf.curators, vec![addr0.clone()]);
     // 1 minting could have happened, so tx_cnt should == 1:
     assert_eq!(contr_conf.tx_cnt, 1u64);
     let token_id = "0".to_string();
@@ -48,7 +49,7 @@ fn init_sanity() -> StdResult<()> {
 
 
 #[test]
-fn mint_token_id_sanity() -> StdResult<()> {
+fn curate_token_id_sanity() -> StdResult<()> {
     // init addresses
     let addr0 = HumanAddr("addr0".to_string());
     let addr1 = HumanAddr("addr1".to_string());
@@ -57,9 +58,9 @@ fn mint_token_id_sanity() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // mint additional token_ids
+    // curate additional token_ids
     let env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
     
     // check balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
@@ -67,7 +68,7 @@ fn mint_token_id_sanity() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(500));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
     assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128(1));
-    // 1 initial balance, 4 mint_token_id 
+    // 1 initial balance, 4 curate_token_id 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     // initial balance comprehensive check 
@@ -91,7 +92,7 @@ fn mint_token_id_sanity() -> StdResult<()> {
 }
 
 #[test]
-fn test_mint_token_id() -> StdResult<()> {
+fn test_curate_token_id() -> StdResult<()> {
     // init addresses
     let addr0 = HumanAddr("addr0".to_string());
     let addr1 = HumanAddr("addr1".to_string());
@@ -100,38 +101,38 @@ fn test_mint_token_id() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // mint additional token_ids
+    // curate additional token_ids
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
     
     // cannot mint more than 1 nft; address != 1
-    let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "testa".to_string();
-    mint.token_info.token_config = TknConf::default_nft();
-    mint.balances = vec![
+    let mut curate = CurateTokenId::default();
+    curate.token_info.token_id = "testa".to_string();
+    curate.token_info.token_config = TknConfig::default_nft();
+    curate.balances = vec![
         Balance { address: addr0.clone(), amount: Uint128(1) },
         Balance { address: addr1.clone(), amount: Uint128(1) },
         ];
-    let mut msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
+    let mut msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate], memo: None, padding: None };
     let mut result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("is an NFT; there can only be one NFT. Balances should only have one address"));
 
     // cannot mint more than 1 nft; amount != 1
-    let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "testb".to_string();
-    mint.token_info.token_config = TknConf::default_nft();
-    mint.balances[0].amount = Uint128(2);
-    msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
+    let mut curate = CurateTokenId::default();
+    curate.token_info.token_id = "testb".to_string();
+    curate.token_info.token_config = TknConfig::default_nft();
+    curate.balances[0].amount = Uint128(2);
+    msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate], memo: None, padding: None };
     result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("is an NFT; there can only be one NFT. Balances.amount must == 1"));
 
-    // non-minter cannot mint
+    // non-curator cannot curate
     env.message.sender = addr1.clone();
-    let mut mint = MintTokenId::default();
-    mint.token_info.token_id = "testc".to_string();
-    msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint], memo: None, padding: None };
+    let mut curate = CurateTokenId::default();
+    curate.token_info.token_id = "testc".to_string();
+    msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate], memo: None, padding: None };
     result = handle(&mut deps, env, msg);
-    assert!(extract_error_msg(&result).contains("Only minters are allowed to mint"));
+    assert!(extract_error_msg(&result).contains("Only curators are allowed to curate"));
 
     // check balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
@@ -141,7 +142,7 @@ fn test_mint_token_id() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "testa", &addr0), None); assert_eq!(chk_bal(&deps.storage, "4", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "testb", &addr0), None);
     assert_eq!(chk_bal(&deps.storage, "testc", &addr0), None);
-    // 1 initial balance, 4 mint_token_id, 0 additional
+    // 1 initial balance, 4 curate_token_id, 0 additional
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
     Ok(())
@@ -156,9 +157,9 @@ fn test_mint_tokens() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // mint additional token_ids
+    // curate additional token_ids
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
 
     // mint more fungible tokens to multiple addresses
     let mint = TokenAmount { 
@@ -172,7 +173,7 @@ fn test_mint_tokens() -> StdResult<()> {
     handle(&mut deps, env.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(10));
-    // 1 initial balance, 4 mint_token_id, 2 mint_token 
+    // 1 initial balance, 4 curate_token_id, 2 mint_token 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     // non-minter cannot mint
@@ -190,7 +191,7 @@ fn test_mint_tokens() -> StdResult<()> {
     let result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("minting is not enabled for this token_id"));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
-    // 1 initial balance, 4 mint_token_id, 2 mint_token 
+    // 1 initial balance, 4 curate_token_id, 2 mint_token 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
     
     Ok(())
@@ -208,7 +209,7 @@ fn test_burn() -> StdResult<()> {
 
     // mint additional token_ids
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
 
     // initial balance check 
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
@@ -228,7 +229,7 @@ fn test_burn() -> StdResult<()> {
 
     // burn more tokens than available => should fail
     env.message.sender = addr1.clone();
-    result = handle(&mut deps, env.clone(), msg.clone());
+    result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("insufficient funds"));
 
     // burn fungible tokens should work
@@ -239,7 +240,7 @@ fn test_burn() -> StdResult<()> {
         ],
     };
     let msg = HandleMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
-    handle(&mut deps, env.clone(), msg.clone())?;
+    handle(&mut deps, env.clone(), msg)?;
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128(200));
     
     // burn nft should work
@@ -251,10 +252,10 @@ fn test_burn() -> StdResult<()> {
         ],
     };
     let msg = HandleMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
-    handle(&mut deps, env.clone(), msg.clone())?;
+    handle(&mut deps, env.clone(), msg)?;
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(0));
 
-    // 1 initial balance, 4 mint_token_id, 2 burns 
+    // 1 initial balance, 4 curate_token_id, 2 burns 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
@@ -272,7 +273,7 @@ fn test_transfer() -> StdResult<()> {
 
     // mint additional token_ids
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
 
     // initial balance check 
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128(1));
@@ -324,7 +325,7 @@ fn test_transfer() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "2", &addr1).unwrap(), Uint128(1));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(200));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(800));
-    // 1 initial balance, 4 mint_token_id, 2 transfers 
+    // 1 initial balance, 4 curate_token_id, 2 transfers 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
@@ -445,7 +446,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: "));
 
     // can transfer with enough allowance: addr2 has enough allowance
-    env.message.sender = addr2.clone();
+    env.message.sender = addr2;
     handle(&mut deps, env.clone(), msg_trnsf_0.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(990));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(10));
@@ -461,7 +462,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
 
     // owner can transfer regardless of allowance
     env.message.sender = addr0.clone();
-    handle(&mut deps, env.clone(), msg_trnsf_0.clone())?; handle(&mut deps, env.clone(), msg_trnsf_0.clone())?;
+    handle(&mut deps, env.clone(), msg_trnsf_0.clone())?; handle(&mut deps, env, msg_trnsf_0)?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(970));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(30));
     // 1 initial balance, 3 transfers 
@@ -480,9 +481,9 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // mint additional token_ids
+    // curate additional token_ids
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
 
     // cannot transfer: no permission 
     env.message.sender = addr1.clone();
@@ -572,6 +573,272 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
     assert_eq!(chk_bal(&deps.storage, "2a", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "2a", &addr0).unwrap(), Uint128(1));
+
+    Ok(())
+}
+
+#[test]
+fn test_add_remove_curators() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+    
+    // non-curator cannot curate new token_ids
+    let mut env = mock_env("addr1", &[]);
+    let mut curate0 = CurateTokenId::default();
+    curate0.token_info.token_id = "test0".to_string();
+    let msg_curate = HandleMsg::CurateTokenIds { 
+        initial_tokens: vec![curate0],
+        memo: None,
+        padding: None 
+    };
+    let mut result = handle(&mut deps, env.clone(), msg_curate.clone());
+    assert!(extract_error_msg(&result).contains("Only curators are allowed to curate token_ids"));
+
+    // admin adds 2 curators...
+    env.message.sender = addr.a();
+    let msg_add_curators = HandleMsg::AddCurators { add_curators: vec![addr.b(), addr.c()], padding: None };
+    handle(&mut deps, env.clone(), msg_add_curators.clone())?;
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), None);
+
+    // ...then new curator addr.b can curate new token_id
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_curate)?;
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), Some(Uint128(1000)));
+
+    // addr.b is curator, but because not admin => cannot add curators
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_add_curators.clone());
+    assert!(extract_error_msg(&result).contains("This is an admin function"));
+
+    // admin can remove curator addr.b with just one operation, even though addr.b was added as curator multiple times
+    // admin can also remove itself as curator
+    // i) add addr.b (and addr.c) as curator a few more times
+    env.message.sender = addr.a();
+    for _ in 0..2 {
+        handle(&mut deps, env.clone(), msg_add_curators.clone())?;
+    }
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::ContractInfo {  })?)?;
+    match q_answer {
+        QueryAnswer::ContractInfo { curators, .. } => {
+            assert_eq!(curators, vec![addr.a(), addr.b(), addr.c(), addr.b(), addr.c(), addr.b(), addr.c()])
+        }
+        _ => panic!("query error")
+    }
+
+    // ii) remove addr.a and addr.b as curators
+    let msg_remove_curators = HandleMsg::RemoveCurators { remove_curators: vec![addr.a(), addr.b()], padding: None };
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_remove_curators)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::ContractInfo {  })?)?;
+    match q_answer {
+        QueryAnswer::ContractInfo { curators, .. } => {
+            assert_eq!(curators, vec![addr.c(), addr.c(), addr.c()])
+        }
+        _ => panic!("query error")
+    }
+    
+    // now curator addr.b cannot curate new tokens anymore
+    let mut curate1 = CurateTokenId::default();
+    curate1.token_info.token_id = "test1".to_string();
+    let msg_curate_1 = HandleMsg::CurateTokenIds { 
+        initial_tokens: vec![curate1],
+        memo: None,
+        padding: None 
+    };
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_curate_1.clone());
+    assert!(extract_error_msg(&result).contains("Only curators are allowed to curate token_ids"));
+    assert_eq!(chk_bal(&deps.storage, "test1", &addr.a()), None);
+
+    // addr.a (which is admin) cannot curate new tokens either, since it is no longer a curator
+    env.message.sender = addr.a();
+    result = handle(&mut deps, env.clone(), msg_curate_1.clone());
+    assert!(extract_error_msg(&result).contains("Only curators are allowed to curate token_ids"));
+    assert_eq!(chk_bal(&deps.storage, "test1", &addr.a()), None);
+
+    // addr.c (still a curator), can still curate new tokens
+    env.message.sender = addr.c();
+    handle(&mut deps, env, msg_curate_1)?;
+    assert_eq!(chk_bal(&deps.storage, "test1", &addr.a()), Some(Uint128(1000)));
+    
+    Ok(())
+}
+
+#[test]
+fn test_add_remove_minters() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+    
+    // admin adds 2 curators, addr.b and addr.c ...
+    let mut env = mock_env("addr0", &[]);
+    let msg_add_curators = HandleMsg::AddCurators { add_curators: vec![addr.b(), addr.c()], padding: None };
+    handle(&mut deps, env.clone(), msg_add_curators)?;
+    
+    // ...then new curator (addr.b) curates new token_id
+    let mut curate0 = CurateTokenId::default();
+    curate0.token_info.token_id = "test0".to_string();
+    let msg_curate = HandleMsg::CurateTokenIds { 
+        initial_tokens: vec![curate0],
+        memo: None,
+        padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_curate)?;
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), Some(Uint128(1000)));
+    
+    // addr.b cannot mint new tokens because it is not a minter despite creating the token_id
+    let msg_mint = HandleMsg::MintTokens { 
+        mint_tokens: vec![TokenAmount { 
+            token_id: "test0".to_string(), 
+            balances: vec![Balance { address: addr.a(), amount: Uint128(100) }] 
+        }], 
+        memo: None, padding: None 
+    };
+    let mut result = handle(&mut deps, env.clone(), msg_mint.clone());
+    assert!(extract_error_msg(&result).contains("Only minters are allowed to mint additional tokens for token_id test0"));
+
+    // addr.c, is curator, but not token_id "test0"'s curator, so cannot add minters
+    let msg_add_minter_c = HandleMsg::AddMinters { 
+        token_id: "test0".to_string(), 
+        add_minters: vec![addr.c()], 
+        padding: None
+    };
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_add_minter_c.clone());
+    assert!(extract_error_msg(&result).contains("You need to be either the admin or address that created token_id test0 to perform this function"));
+
+    // addr.b, as token_id's curator, can add minter addr.c
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_add_minter_c)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
+            assert_eq!(token_id_info.curator, addr.b());
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c()]);
+        }
+        _ => panic!("query error")
+    }
+
+    // admin addr.a can also add minter addr.d
+    let msg_add_minter_d = HandleMsg::AddMinters { 
+        token_id: "test0".to_string(), 
+        add_minters: vec![addr.d()], 
+        padding: None
+    };
+    env.message.sender = addr.a();
+    // add minter d twice -- for test later
+    for _ in 0..2 {
+        handle(&mut deps, env.clone(), msg_add_minter_d.clone())?;
+    }
+    let mut q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c(), addr.d(), addr.d()]);
+        }
+        _ => panic!("query error")
+    }
+
+    // admin addr.a cannot add minters for a non-existent token_id
+    let msg_add_minter_nonexistent = HandleMsg::AddMinters { 
+        token_id: "test-na".to_string(), 
+        add_minters: vec![addr.d()], 
+        padding: None
+    };
+    env.message.sender = addr.a();
+    result = handle(&mut deps, env.clone(), msg_add_minter_nonexistent);
+    assert!(extract_error_msg(&result).contains("token_id test-na does not exist"));
+    
+    // both minters addr.c and addr.d can mint new tokens
+    env.message.sender = addr.c();
+    handle(&mut deps, env.clone(), msg_mint.clone())?;
+    env.message.sender = addr.d();
+    handle(&mut deps, env.clone(), msg_mint.clone())?;
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), Some(Uint128(1200)));
+
+    // minters cannot burn tokens
+    let msg_burn = HandleMsg::BurnTokens { 
+        burn_tokens: vec![TokenAmount {
+            token_id: "test0".to_string(),
+            balances: vec![Balance {
+                address: addr.a(),
+                amount: Uint128(500),
+            }],
+        }], 
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_burn);
+    assert!(extract_error_msg(&result).contains(
+        "you do not have permission to burn 500 tokens from address addr0",
+    ));
+
+    // minters can change metadata (because of config allows)
+    let msg_change_metadata = HandleMsg::ChangeMetadata { 
+        token_id: "test0".to_string(), 
+        public_metadata: Box::new(Some(Metadata {
+            token_uri: Some("new public uri".to_string()),
+            extension: Some(Extension::default()),
+        })),  
+        private_metadata: Box::new(None), 
+    };
+    env.message.sender = addr.c();
+    handle(&mut deps, env.clone(), msg_change_metadata)?;
+    q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
+            assert_eq!(token_id_info.public_metadata.unwrap().token_uri, Some("new public uri".to_string()))
+        },
+        _ => panic!("query error")
+    }
+
+    // minter cannot change metadata (when config doesn't allow) --> do as separate test?
+    // ...
+
+    // curator addr.c cannot remove minters [addr.a, addr.c] because addr.c is not the curator that created this token_id
+    let msg_remove_minter_ac = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.c()], padding: None };
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_remove_minter_ac.clone());
+    assert!(extract_error_msg(&result).contains("You need to be either the admin or address that created token_id test0 to perform this function"));
+
+    // token_id curator addr.b can remove minter [addr.a, addr.c]
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_remove_minter_ac)?;
+    q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.d(), addr.d()]);
+        }
+        _ => panic!("query error")
+    }
+
+    // admin can remove minter too: minter addr.d; although added twice, just need one remove
+    // addr.a (as admin) can also remove itself as minter
+    let msg_remove_minter_d = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.a(), addr.d()], padding: None };
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_remove_minter_d)?;
+    q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![]);
+        }
+        _ => panic!("query error")
+    }
+
+    // check no one can mint tokens now
+    // admin (addr.a) not a minter anymore
+    // sanityaddr.b (curator of the token_id) was never a minter
+    // (addr.c and addr.d) no longer minters
+    for address in addr.all() {
+        env.message.sender = address;
+        result = handle(&mut deps, env.clone(), msg_mint.clone());
+        assert!(extract_error_msg(&result).contains("Only minters are allowed to mint additional tokens for token_id test0"));
+    }
 
     Ok(())
 }

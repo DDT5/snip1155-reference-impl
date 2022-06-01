@@ -3,10 +3,10 @@
   "title": "InitMsg",
   "type": "object",
   "required": [
+    "curators",
     "entropy",
     "has_admin",
-    "initial_tokens",
-    "minters"
+    "initial_tokens"
   ],
   "properties": {
     "admin": {
@@ -19,6 +19,12 @@
         }
       ]
     },
+    "curators": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/HumanAddr"
+      }
+    },
     "entropy": {
       "type": "string"
     },
@@ -28,13 +34,7 @@
     "initial_tokens": {
       "type": "array",
       "items": {
-        "$ref": "#/definitions/MintTokenId"
-      }
-    },
-    "minters": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/HumanAddr"
+        "$ref": "#/definitions/CurateTokenId"
       }
     }
   },
@@ -76,6 +76,24 @@
         },
         "amount": {
           "$ref": "#/definitions/Uint128"
+        }
+      }
+    },
+    "CurateTokenId": {
+      "type": "object",
+      "required": [
+        "balances",
+        "token_info"
+      ],
+      "properties": {
+        "balances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Balance"
+          }
+        },
+        "token_info": {
+          "$ref": "#/definitions/TokenInfoMsg"
         }
       }
     },
@@ -243,25 +261,7 @@
         }
       }
     },
-    "MintTokenId": {
-      "type": "object",
-      "required": [
-        "balances",
-        "token_info"
-      ],
-      "properties": {
-        "balances": {
-          "type": "array",
-          "items": {
-            "$ref": "#/definitions/Balance"
-          }
-        },
-        "token_info": {
-          "$ref": "#/definitions/TknInfo"
-        }
-      }
-    },
-    "TknConf": {
+    "TknConfig": {
       "anyOf": [
         {
           "description": "no `owner_may_update_metadata`because there can be multiple owners",
@@ -277,11 +277,12 @@
                 "enable_burn",
                 "enable_mint",
                 "minter_may_update_metadata",
+                "minters",
                 "public_total_supply"
               ],
               "properties": {
                 "decimals": {
-                  "description": "applications should ignore decimals if `is_nft` == true. Decimals play no part in the contract logic of the base specification of SNIP1155, as there are no `deposit` and `redeem` features as seen in SNIP20",
+                  "description": "Decimals play no part in the contract logic of the base specification of SNIP1155, as there are no `deposit` and `redeem` features as seen in SNIP20. The UI application has discretion in handling decimals",
                   "type": "integer",
                   "format": "uint8",
                   "minimum": 0.0
@@ -295,6 +296,12 @@
                 "minter_may_update_metadata": {
                   "type": "boolean"
                 },
+                "minters": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/HumanAddr"
+                  }
+                },
                 "public_total_supply": {
                   "type": "boolean"
                 }
@@ -303,7 +310,7 @@
           }
         },
         {
-          "description": "no `enable_mint` option because NFT can be minted only once using `MintTokenIds`",
+          "description": "no `enable_mint` option because NFT can be minted only once using `CurateTokenIds`",
           "type": "object",
           "required": [
             "nft"
@@ -313,16 +320,12 @@
               "type": "object",
               "required": [
                 "enable_burn",
-                "minter_may_update_metadata",
                 "owner_is_public",
                 "owner_may_update_metadata",
                 "public_total_supply"
               ],
               "properties": {
                 "enable_burn": {
-                  "type": "boolean"
-                },
-                "minter_may_update_metadata": {
                   "type": "boolean"
                 },
                 "owner_is_public": {
@@ -341,8 +344,8 @@
         }
       ]
     },
-    "TknInfo": {
-      "description": "information for a specific `token_id`",
+    "TokenInfoMsg": {
+      "description": "message sent my instantiator and curators for a specific `token_id`'s token info",
       "type": "object",
       "required": [
         "name",
@@ -379,7 +382,7 @@
           "type": "string"
         },
         "token_config": {
-          "$ref": "#/definitions/TknConf"
+          "$ref": "#/definitions/TknConfig"
         },
         "token_id": {
           "type": "string"

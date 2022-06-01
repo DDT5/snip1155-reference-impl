@@ -19,7 +19,7 @@ use crate::{
     },
     state::{
         RESPONSE_BLOCK_SIZE, BLOCK_KEY, PREFIX_REVOKED_PERMITS, 
-        ContrConf, TknInfo, MintTokenId, TokenAmount, PermissionKey, Permission,
+        ContractConfig, StoredTokenInfo, CurateTokenId, TokenAmount, PermissionKey, Permission,
         contr_conf_r, contr_conf_w, tkn_info_r, 
         tkn_info_w, balances_w, balances_r, append_new_owner, may_get_current_owner, 
         tkn_tot_supply_w, tkn_tot_supply_r,
@@ -60,9 +60,9 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     
     // create contract config -- save later
     let prng_seed: Vec<u8> = sha_256(base64::encode(msg.entropy).as_bytes()).to_vec();
-    let mut config = ContrConf { 
+    let mut config = ContractConfig { 
         admin, 
-        minters: msg.minters,
+        curators: msg.curators,
         token_id_list: vec![],
         tx_cnt: 0u64,
         prng_seed,
@@ -71,7 +71,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
 
     // set initial balances
     for initial_token in msg.initial_tokens {
-        exec_mint_token_id(
+        exec_curate_token_id(
             deps, 
             &env,
             &mut config,
@@ -100,11 +100,11 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
     json_save(&mut deps.storage, BLOCK_KEY, &env.block)?;
 
     let response = match msg {
-        HandleMsg::MintTokenIds {
+        HandleMsg::CurateTokenIds {
             initial_tokens,
             memo,
             padding: _,
-         } => try_mint_token_ids(
+         } => try_curate_token_ids(
             deps,
             env,
             initial_tokens,
@@ -236,7 +236,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::CreateViewingKey { 
             entropy, 
             padding: _ 
-        } => try_create_key(
+        } => try_create_viewing_key(
             deps, 
             env, 
             entropy
@@ -244,21 +244,35 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         HandleMsg::SetViewingKey { 
             key, 
             padding: _ 
-        } => try_set_key(
+        } => try_set_viewing_key(
             deps, 
             env, 
             key
         ),
-        HandleMsg::AddMinters { add_minters, padding: _ 
+        HandleMsg::AddCurators { add_curators, padding: _ 
+        } => try_add_curators(
+            deps,
+            env,
+            add_curators,
+        ),
+        HandleMsg::RemoveCurators { remove_curators, padding: _ 
+        } => try_remove_curators(
+            deps,
+            env,
+            remove_curators,
+        ),
+        HandleMsg::AddMinters { token_id, add_minters, padding: _ 
         } => try_add_minters(
             deps,
             env,
+            token_id, 
             add_minters,
         ),
-        HandleMsg::RemoveMinters { remove_minters, padding: _ 
+        HandleMsg::RemoveMinters { token_id, remove_minters, padding: _ 
         } => try_remove_minters(
             deps,
             env,
+            token_id, 
             remove_minters,
         ),
         HandleMsg::ChangeAdmin { new_admin, padding: _ 
@@ -267,11 +281,11 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             env,
             new_admin,
         ),
-        HandleMsg::BreakAdminKey { 
+        HandleMsg::RemoveAdmin { 
             current_admin, 
             contract_address, 
             padding: _ 
-        } => try_break_admin_key(
+        } => try_remove_admin(
             deps,
             env,
             current_admin,
@@ -286,19 +300,19 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
     pad_response(response)
 }
 
-fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
+fn try_curate_token_ids<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    initial_tokens: Vec<MintTokenId>,
+    initial_tokens: Vec<CurateTokenId>,
     memo: Option<String>,
 ) -> StdResult<HandleResponse> {
     let mut config = contr_conf_r(&deps.storage).load()?;
-    // check if sender is a minter
-    verify_minter(&config, &env)?;
+    // check if sender is a curator
+    verify_curator(&config, &env)?;
 
-    // mint new token_ids
+    // curate new token_ids
     for initial_token in initial_tokens {
-        exec_mint_token_id(
+        exec_curate_token_id(
             deps, 
             &env,
             &mut config,
@@ -312,7 +326,7 @@ fn try_mint_token_ids<S: Storage, A: Api, Q: Querier>(
     Ok(HandleResponse {
         messages: vec![],
         log: vec![],
-        data: Some(to_binary(&HandleAnswer::MintTokenIds { status: Success })?)
+        data: Some(to_binary(&HandleAnswer::CurateTokenIds { status: Success })?)
     })
 }
 
@@ -324,24 +338,26 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
 ) -> StdResult<HandleResponse> {
     let mut config = contr_conf_r(&deps.storage).load()?;
 
-    // check if sender is a minter
-    verify_minter(&config, &env)?;
-
     // mint tokens
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
         
+        // check if token_id exists
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
-                "token_id does not exist. Cannot mint non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"
+                "token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
             ))
         }
 
+        // check if enable_mint == true
         if !token_info_op.clone().unwrap().token_config.flatten().enable_mint {
             return Err(StdError::generic_err(
                 "minting is not enabled for this token_id"
             ))
         }
+
+        // check if sender is a minter
+        verify_minter(token_info_op.as_ref().unwrap(), &env)?;
 
         // add balances
         for add_balance in mint_token.balances {
@@ -392,7 +408,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
     
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
-                "token_id does not exist. Cannot burn non-existent `token_ids`. Use `mint_token_ids` to create tokens on new `token_ids`"
+                "token_id does not exist. Cannot burn non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
             ))
         }
 
@@ -454,7 +470,6 @@ fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
     public_metadata: Option<Metadata>,
     private_metadata: Option<Metadata>,
 ) -> StdResult<HandleResponse> {
-    let contr_conf = contr_conf_r(&deps.storage).load()?;
     let tkn_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
     let tkn_conf = match tkn_info_op.clone() {
         None => return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))),
@@ -464,7 +479,7 @@ fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
     // define variables for control flow
     let owner = may_get_current_owner(&deps.storage, &token_id)?;
     let is_owner = owner.unwrap_or_default() == env.message.sender;
-    let is_minter = verify_minter(&contr_conf, &env).is_ok();
+    let is_minter = verify_minter(tkn_info_op.as_ref().unwrap(), &env).is_ok();
 
     // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not 
     let allow_update = is_owner && tkn_conf.owner_may_update_metadata || is_minter && tkn_conf.minter_may_update_metadata;
@@ -572,7 +587,7 @@ fn try_batch_send<S: Storage, A:Api, Q:Querier>(
     env: Env,
     actions: Vec<SendAction>,
 ) -> StdResult<HandleResponse> {
-    // set up cosmos messages
+    // declare vector for cosmos messages
     let mut messages = vec![];
 
     for action in actions {
@@ -669,21 +684,84 @@ pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-fn try_add_minters<S: Storage, A: Api, Q: Querier>(
+fn try_add_curators<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
-    add_minters: Vec<HumanAddr>,
+    add_curators: Vec<HumanAddr>,
 ) -> StdResult<HandleResponse> {
     let mut config = contr_conf_r(&deps.storage).load()?;
 
     // verify admin
     verify_admin(&config, &env)?;
 
-    // add minters
-    for minter in add_minters {
-        config.minters.push(minter);
+    // add curators
+    for curator in add_curators {
+        config.curators.push(curator);
     }
     contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::AddCurators { status: Success })?)
+    })
+}
+
+fn try_remove_curators<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    remove_curators: Vec<HumanAddr>,
+) -> StdResult<HandleResponse> {
+    let mut config = contr_conf_r(&deps.storage).load()?;
+
+    // verify admin
+    verify_admin(&config, &env)?;
+
+    // remove curators
+    for curator in remove_curators {
+        config.curators.retain(|x| x != &curator);
+    }
+    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RemoveCurators { status: Success })?)
+    })
+}
+
+fn try_add_minters<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    token_id: String,
+    add_minters: Vec<HumanAddr>,
+) -> StdResult<HandleResponse> {
+    let contract_config = contr_conf_r(&deps.storage).load()?;
+    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    if token_info_op.is_none() { return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))) };
+    let mut token_info = token_info_op.unwrap();
+
+    // check if either admin or curator
+    let admin_result = verify_admin(&contract_config, &env);
+    let curator_result = verify_curator_of_token_id(&token_info, &env);
+
+    let verified = admin_result.is_ok() || curator_result.is_ok();
+    if !verified {
+        return Err(StdError::generic_err(format!(
+            "You need to be either the admin or address that created token_id {} to perform this function",
+            token_id
+        )));
+    }
+
+    // add minters
+    let mut flattened_token_config = token_info.token_config.flatten();
+    for minter in add_minters {
+        flattened_token_config.minters.push(minter)
+    }
+
+    // save token info with new minters
+    token_info.token_config = flattened_token_config.to_enum();  
+    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &token_info)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -695,18 +773,35 @@ fn try_add_minters<S: Storage, A: Api, Q: Querier>(
 fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
+    token_id: String,
     remove_minters: Vec<HumanAddr>,
 ) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    let contract_config = contr_conf_r(&deps.storage).load()?;
+    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    if token_info_op.is_none() { return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))) };
+    let mut token_info = token_info_op.unwrap();
 
-    // verify admin
-    verify_admin(&config, &env)?;
+    // check if either admin or curator
+    let admin_result = verify_admin(&contract_config, &env);
+    let curator_result = verify_curator_of_token_id(&token_info, &env);
 
-    // add minters
-    for minter in remove_minters {
-        config.minters.retain(|x| x != &minter);
+    let verified = admin_result.is_ok() || curator_result.is_ok();
+    if !verified {
+        return Err(StdError::generic_err(format!(
+            "You need to be either the admin or address that created token_id {} to perform this function",
+            token_id
+        )));
     }
-    contr_conf_w(&mut deps.storage).save(&config)?;
+
+    // remove minters
+    let mut flattened_token_config = token_info.token_config.flatten();
+    for minter in remove_minters {
+        flattened_token_config.minters.retain(|x| x != &minter);
+    }
+    
+    // save token info with new minters
+    token_info.token_config = flattened_token_config.to_enum();  
+    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &token_info)?;
 
     Ok(HandleResponse {
         messages: vec![],
@@ -714,6 +809,7 @@ fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
         data: Some(to_binary(&HandleAnswer::RemoveMinters { status: Success })?)
     })
 }
+
 
 fn try_change_admin<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
@@ -736,7 +832,7 @@ fn try_change_admin<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-fn try_break_admin_key<S: Storage, A: Api, Q: Querier>(
+fn try_remove_admin<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     current_admin: HumanAddr,
@@ -760,12 +856,12 @@ fn try_break_admin_key<S: Storage, A: Api, Q: Querier>(
     Ok(HandleResponse {
         messages: vec![],
         log: vec![],
-        data: Some(to_binary(&HandleAnswer::BreakAdminKey { status: Success })?)
+        data: Some(to_binary(&HandleAnswer::RemoveAdmin { status: Success })?)
     })
 }
 
 /// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
-/// entry in storage, because itis unecessarily in most use cases, but will require also removing 
+/// entry in storage, because it is unecessarily in most use cases, but will require also removing 
 /// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
 /// If permission does not exist, message will return an error. 
 fn try_revoke_permission<S: Storage, A: Api, Q: Querier>(
@@ -807,7 +903,7 @@ fn try_register_receive<S: Storage, A: Api, Q: Querier>(
     Ok(res)
 }
 
-fn try_create_key<S: Storage, A: Api, Q: Querier>(
+fn try_create_viewing_key<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     entropy: String,
@@ -828,7 +924,7 @@ fn try_create_key<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-fn try_set_key<S: Storage, A: Api, Q: Querier>(
+fn try_set_viewing_key<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     key: String,
@@ -893,10 +989,9 @@ fn is_valid_symbol(symbol: &str) -> bool {
 }
 
 fn verify_admin(
-    contract_config: &ContrConf,
+    contract_config: &ContractConfig,
     env: &Env,
 ) -> StdResult<()> {
-    // check if sender is a minter
     let admin_op = &contract_config.admin;
     match admin_op {
         Some(admin) => {
@@ -914,27 +1009,55 @@ fn verify_admin(
     Ok(())
 }
 
-/// verifies if sender is a minter
-fn verify_minter(
-    contract_config: &ContrConf,
+/// verifies if sender is a curator
+fn verify_curator(
+    contract_config: &ContractConfig,
     env: &Env
 ) -> StdResult<()> {
-    // check if sender is a minter
-    let minters = &contract_config.minters;
-    if !minters.contains(&env.message.sender) {
+    let curators = &contract_config.curators;
+    if !curators.contains(&env.message.sender) {
         return Err(StdError::generic_err(
-            "Only minters are allowed to mint",
+            "Only curators are allowed to curate token_ids",
         ));
     }
     Ok(())
 }
 
+/// verifies if sender is the address that curated the token_id
+fn verify_curator_of_token_id(
+    token_info: &StoredTokenInfo,
+    env: &Env
+) -> StdResult<()> {
+    let curator = &token_info.curator;
+    if curator != &env.message.sender {
+        return Err(StdError::generic_err(
+            "You are not the curator of this token_id",
+        ));
+    }
+    Ok(())
+}
+
+/// verifies if sender is a minter of the specific token_id
+fn verify_minter(
+    token_info: &StoredTokenInfo,
+    env: &Env
+) -> StdResult<()> {
+    let minters = &token_info.token_config.flatten().minters;
+    if !minters.contains(&env.message.sender) {
+        return Err(StdError::generic_err(format!(
+            "Only minters are allowed to mint additional tokens for token_id {}",
+            token_info.token_id
+        )));
+    }
+    Ok(())
+}
+
 /// checks if `token_id` is available (ie: not yet created), then creates new `token_id` and initial balances
-fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
+fn exec_curate_token_id<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: &Env,
-    config: &mut ContrConf,
-    initial_token: MintTokenId,
+    config: &mut ContractConfig,
+    initial_token: CurateTokenId,
     memo: Option<String>,
 ) -> StdResult<()> {
     // check: token_id has not been created yet
@@ -974,7 +1097,10 @@ fn exec_mint_token_id<S: Storage, A: Api, Q: Querier>(
 
 
     // create and save new token info
-    tkn_info_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &initial_token.token_info)?;
+    tkn_info_w(&mut deps.storage).save(
+        initial_token.token_info.token_id.as_bytes(), 
+        &initial_token.token_info.to_store(&env.message.sender)
+    )?;
 
     // set initial balances and store mint history
     for balance in initial_token.balances {
@@ -1149,7 +1275,7 @@ fn exec_change_balance<S: Storage>(
     remove_from: Option<&HumanAddr>,
     add_to: Option<&HumanAddr>,
     amount: &Uint128,
-    token_info: &TknInfo,
+    token_info: &StoredTokenInfo,
 ) -> StdResult<()> {
     // check whether token_id is an NFT => cannot mint. This should not be reachable in standard implementation, 
     // as the calling function would have checked that enable_mint == false, which needs to be true for NFTs.
@@ -1368,7 +1494,7 @@ fn query_contract_info<S: Storage, A: Api, Q: Querier>(
     let contr_conf = contr_conf_r(&deps.storage).load()?;
     let response = QueryAnswer::ContractInfo { 
         admin: contr_conf.admin, 
-        minters: contr_conf.minters, 
+        curators: contr_conf.curators, 
         all_token_ids: contr_conf.token_id_list, 
     };
     to_binary(&response)

@@ -36,6 +36,9 @@ impl Addrs {
     pub fn c(&self) -> HumanAddr {
         self.addrs[2].clone()
     }
+    pub fn d(&self) -> HumanAddr {
+        self.addrs[3].clone()
+    }
     pub fn all(&self) -> Vec<HumanAddr> {
         self.addrs.clone()
     }
@@ -43,7 +46,7 @@ impl Addrs {
 
 /// inits 3 addresses
 pub fn init_addrs() -> Addrs {
-    let addr_strs = vec!["addr0", "addr1", "addr2"];
+    let addr_strs = vec!["addr0", "addr1", "addr2", "addr3"];
     let mut addrs: Vec<HumanAddr> = vec![];
     for addr in addr_strs {
         addrs.push(HumanAddr(addr.to_string()));
@@ -63,20 +66,20 @@ pub fn init_helper_default() -> (
     let init_msg = InitMsg {
         has_admin: true,
         admin: None, // None -> sender defaults as admin
-        minters: vec![env.message.sender.clone()],
-        initial_tokens: vec![MintTokenId::default()],
+        curators: vec![env.message.sender.clone()],
+        initial_tokens: vec![CurateTokenId::default()],
         entropy: "seedentropy".to_string(),
     };
 
     (init(&mut deps, env, init_msg), deps)
 }
 
-/// mints 
+/// curate additional:
 /// * 800 fungible token_id 0a to addr0,
 /// * 500 fungible token_id 1 to addr1,
 /// * 1 NFT token_id 2 to addr2
 /// * 1 NFT token_id 2a to addr2
-pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
+pub fn curate_addtl_default<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: &Env,
 ) -> StdResult<()> {
@@ -86,39 +89,39 @@ pub fn mint_addtl_default<S: Storage, A: Api, Q: Querier>(
     let addr2 = HumanAddr("addr2".to_string());
 
     // fungible token_id "0a"
-    let mut mint0a = MintTokenId::default();
-    mint0a.token_info.token_id = "0a".to_string();
-    mint0a.token_info.name = "token0a".to_string();
-    mint0a.token_info.symbol = "TKNO".to_string();
-    mint0a.balances[0].address = addr0.clone();
-    mint0a.balances[0].amount = Uint128(800);
+    let mut curate0a = CurateTokenId::default();
+    curate0a.token_info.token_id = "0a".to_string();
+    curate0a.token_info.name = "token0a".to_string();
+    curate0a.token_info.symbol = "TKNO".to_string();
+    curate0a.balances[0].address = addr0;
+    curate0a.balances[0].amount = Uint128(800);
 
     // fungible token_id "1"
-    let mut mint1 = MintTokenId::default();
-    mint1.token_info.token_id = "1".to_string();
-    mint1.token_info.name = "token1".to_string();
-    mint1.token_info.symbol = "TKNA".to_string();
-    mint1.balances[0].address = addr1.clone();
-    mint1.balances[0].amount = Uint128(500);
+    let mut curate1 = CurateTokenId::default();
+    curate1.token_info.token_id = "1".to_string();
+    curate1.token_info.name = "token1".to_string();
+    curate1.token_info.symbol = "TKNA".to_string();
+    curate1.balances[0].address = addr1;
+    curate1.balances[0].amount = Uint128(500);
 
     // NFT "2"
-    let mut mint2 = MintTokenId::default();
-    mint2.token_info.token_id = "2".to_string();
-    mint2.token_info.name = "token2".to_string();
-    mint2.token_info.symbol = "TKNB".to_string();
-    mint2.token_info.token_config = TknConf::default_nft();
-    mint2.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
+    let mut curate2 = CurateTokenId::default();
+    curate2.token_info.token_id = "2".to_string();
+    curate2.token_info.name = "token2".to_string();
+    curate2.token_info.symbol = "TKNB".to_string();
+    curate2.token_info.token_config = TknConfig::default_nft();
+    curate2.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
     
     // NFT "2a"
-    let mut mint2a = MintTokenId::default();
-    mint2a.token_info.token_id = "2a".to_string();
-    mint2a.token_info.name = "token2a".to_string();
-    mint2a.token_info.symbol = "TKNBA".to_string();
-    mint2a.token_info.token_config = TknConf::default_nft();
-    mint2a.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
+    let mut curate2a = CurateTokenId::default();
+    curate2a.token_info.token_id = "2a".to_string();
+    curate2a.token_info.name = "token2a".to_string();
+    curate2a.token_info.symbol = "TKNBA".to_string();
+    curate2a.token_info.token_config = TknConfig::default_nft();
+    curate2a.balances = vec![Balance { address: addr2, amount: Uint128(1) }];
 
-    // batch mint token_id "0a", "1", NFT "2" and NFT "3"
-    let msg = HandleMsg::MintTokenIds{initial_tokens: vec![mint0a, mint1, mint2, mint2a], memo: None, padding: None };
+    // batch curate token_id "0a", "1", NFT "2" and NFT "3"
+    let msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate0a, curate1, curate2, curate2a], memo: None, padding: None };
     handle(deps, env.to_owned(), msg)?;
     
     Ok(())
@@ -147,7 +150,7 @@ pub fn chk_bal<S: Storage>(
     token_id_str: &str,
     address: &HumanAddr,
 ) -> Option<Uint128> {
-    balances_r(storage, &token_id_str.to_string())
+    balances_r(storage, token_id_str)
     .may_load(to_binary(&address).unwrap().as_slice()).unwrap()
 }
 
@@ -160,7 +163,7 @@ pub fn extract_cosmos_msg<U: DeserializeOwned>(message: &CosmosMsg) -> StdResult
         },
         _ => return Err(StdError::generic_err("unable to extract msg from CosmosMsg"))
     };
-    let decoded_msg: U = from_binary(&msg).unwrap();
+    let decoded_msg: U = from_binary(msg).unwrap();
     Ok((decoded_msg, receiver_addr, receiver_hash))
 }
 

@@ -5,10 +5,10 @@
     {
       "type": "object",
       "required": [
-        "mint_token_ids"
+        "curate_token_ids"
       ],
       "properties": {
-        "mint_token_ids": {
+        "curate_token_ids": {
           "type": "object",
           "required": [
             "status"
@@ -252,6 +252,44 @@
     {
       "type": "object",
       "required": [
+        "add_curators"
+      ],
+      "properties": {
+        "add_curators": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/definitions/ResponseStatus"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "remove_curators"
+      ],
+      "properties": {
+        "remove_curators": {
+          "type": "object",
+          "required": [
+            "status"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/definitions/ResponseStatus"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "add_minters"
       ],
       "properties": {
@@ -309,10 +347,10 @@
     {
       "type": "object",
       "required": [
-        "break_admin_key"
+        "remove_admin"
       ],
       "properties": {
-        "break_admin_key": {
+        "remove_admin": {
           "type": "object",
           "required": [
             "status"

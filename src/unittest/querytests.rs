@@ -1,6 +1,6 @@
 use core::panic;
 use std::ops::Add;
-use serde_json;
+use serde_json::to_string;
 
 use crate::state::Permission;
 
@@ -41,9 +41,9 @@ fn test_q_init() -> StdResult<()> {
     let q_result = query(&deps, msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
-        QueryAnswer::ContractInfo { admin, minters, all_token_ids } => {
+        QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
             assert_eq!(&admin.unwrap(), &addr0);
-            assert_eq!(&minters, &vec![addr0.clone()]);
+            assert_eq!(&curators, &vec![addr0.clone()]);
             assert_eq!(&all_token_ids, &vec!["0".to_string()]);
         }
         _ => panic!("query error")
@@ -52,7 +52,7 @@ fn test_q_init() -> StdResult<()> {
     // set_viewing_key
     let env = mock_env("addr0", &[]);
     let msg = HandleMsg::SetViewingKey { key: "vkey".to_string(), padding: None };
-    handle(&mut deps, env.clone(), msg)?;
+    handle(&mut deps, env, msg)?;
 
     // query balance
     let msg = QueryMsg::Balance { owner: addr0.clone(), viewer: addr0, key: "vkey".to_string(), token_id: "0".to_string() };
@@ -120,9 +120,9 @@ fn test_q_permission() -> StdResult<()> {
     // i) set_viewing_key
     env.message.sender = addr1.clone();
     let msg_vk2 = HandleMsg::SetViewingKey { key: "vkey2".to_string(), padding: None };
-    handle(&mut deps, env.clone(), msg_vk2)?;
+    handle(&mut deps, env, msg_vk2)?;
     // ii) query permissions
-    let msg_q2 = QueryMsg::Permission { owner: addr0.clone(), allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
+    let msg_q2 = QueryMsg::Permission { owner: addr0, allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
     let q_result = query(&deps, msg_q2);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
@@ -146,14 +146,14 @@ fn test_query_balance() -> StdResult<()> {
     // init addresses
     let addr = init_addrs();
 
-    // instantiate + mint more tokens
+    // instantiate + curate more tokens
     let (_init_result, mut deps) = init_helper_default();
     let mut env = mock_env("addr0", &[]);
-    mint_addtl_default(&mut deps, &env)?;
+    curate_addtl_default(&mut deps, &env)?;
 
     // cannot view balance without viewing keys
     let msg0_q_bal0_novk = QueryMsg::Balance { owner: addr.a(), viewer: addr.a(), key: "vkeya".to_string(), token_id: "0".to_string() };
-    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg0_q_bal0_novk.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg0_q_bal0_novk)?)?;
     match q_answer {
         QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
         _ => panic!("query error")
@@ -230,7 +230,7 @@ fn test_query_balance() -> StdResult<()> {
     q_result = query(&deps, msg1_q_bal0.clone());
     assert!(q_result.is_ok());
     // ii) a handle must happen in order to trigger the block height change (won't be required once upgraded to CosmWasm v1.0)
-    let random_msg = HandleMsg::AddMinters { add_minters: vec![], padding: None };
+    let random_msg = HandleMsg::AddCurators { add_curators: vec![], padding: None };
     handle(&mut deps, env, random_msg)?;
     // iii) query now
     q_result = query(&deps, msg1_q_bal0);
@@ -265,8 +265,8 @@ fn test_query_tokenid_private_info() -> StdResult<()> {
     match q_answer {
         QueryAnswer::TokenIdPrivateInfo { token_id_info, total_supply, owner 
         } => {
-            assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
-            assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"private_metadata\":{\"token_uri\":\"private uri\""));
+            assert!(to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
+            assert!(to_string(&token_id_info).unwrap().contains("\"private_metadata\":{\"token_uri\":\"private uri\""));
             assert_eq!(total_supply, Some(Uint128(1000)));
             assert!(owner.is_none());
         },

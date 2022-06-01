@@ -3,7 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    state::{MintTokenId, TokenAmount, Tx, PermissionKey, Permission, TknInfo, }, 
+    state::{CurateTokenId, TokenAmount, Tx, PermissionKey, Permission, StoredTokenInfo, }, 
     vk::viewing_key::ViewingKey,
     metadata::Metadata, expiration::Expiration,
 };
@@ -19,8 +19,8 @@ use secret_toolkit::permit::Permit;
 pub struct InitMsg {
     pub has_admin: bool,
     pub admin: Option<HumanAddr>,
-    pub minters: Vec<HumanAddr>,
-    pub initial_tokens: Vec<MintTokenId>,
+    pub curators: Vec<HumanAddr>,
+    pub initial_tokens: Vec<CurateTokenId>,
     pub entropy: String,
 }
 
@@ -31,8 +31,8 @@ pub struct InitMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleMsg {
-    MintTokenIds {
-        initial_tokens: Vec<MintTokenId>,
+    CurateTokenIds {
+        initial_tokens: Vec<CurateTokenId>,
         memo: Option<String>,
         padding: Option<String>,
     },
@@ -46,7 +46,7 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
-    /// allows minter or owner to change metadata if allowed by token_id configuration.
+    /// allows owner or minter to change metadata if allowed by token_id configuration.
     ChangeMetadata {
         token_id: String,
         /// does not attempt to change if left blank. Can effectively remove metadata by setting 
@@ -127,11 +127,21 @@ pub enum HandleMsg {
         key: String,
         padding: Option<String>,
     },
+    AddCurators {
+        add_curators: Vec<HumanAddr>,
+        padding: Option<String>,
+    },
+    RemoveCurators {
+        remove_curators: Vec<HumanAddr>,
+        padding: Option<String>,
+    },
     AddMinters {
+        token_id: String,
         add_minters: Vec<HumanAddr>,
         padding: Option<String>,
     },
     RemoveMinters {
+        token_id: String,
         remove_minters: Vec<HumanAddr>,
         padding: Option<String>,
     },
@@ -140,12 +150,12 @@ pub enum HandleMsg {
         padding: Option<String>,
     },
     /// Permanently breaks admin keys for this contract. No admin function can be called after this
-    /// action. Any existing minters will remain as minters; no new minters can be added and no current
-    /// minter can be removed. 
+    /// action. Any existing curators or minters will remain as curators or minters; no new curators can be 
+    /// added and no current curator can be removed. 
     /// 
     /// Requires caller to input current admin address and contract address. These inputs are not strictly 
     /// necessary, but as a safety precaution to reduce the chances of accidentally calling this function.
-    BreakAdminKey {
+    RemoveAdmin {
         current_admin: HumanAddr,
         contract_address: HumanAddr,
         padding: Option<String>,
@@ -160,10 +170,10 @@ pub enum HandleMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleAnswer {
-    MintTokenIds { status: ResponseStatus },
+    CurateTokenIds { status: ResponseStatus },
     MintTokens { status: ResponseStatus },
     BurnTokens { status: ResponseStatus },
-    ChangeMetadata {status: ResponseStatus },
+    ChangeMetadata { status: ResponseStatus },
     Transfer { status: ResponseStatus },
     BatchTransfer { status: ResponseStatus },
     Send { status: ResponseStatus },
@@ -173,10 +183,12 @@ pub enum HandleAnswer {
     RegisterReceive { status: ResponseStatus },
     CreateViewingKey { key: ViewingKey },
     SetViewingKey { status: ResponseStatus },
+    AddCurators { status: ResponseStatus },
+    RemoveCurators { status: ResponseStatus },
     AddMinters { status: ResponseStatus },
     RemoveMinters { status: ResponseStatus },
     ChangeAdmin { status: ResponseStatus },
-    BreakAdminKey { status: ResponseStatus },
+    RemoveAdmin { status: ResponseStatus },
     RevokePermit { status: ResponseStatus },
 }
 
@@ -279,7 +291,7 @@ pub enum QueryWithPermit {
 pub enum QueryAnswer {
     ContractInfo {
         admin: Option<HumanAddr>,
-        minters: Vec<HumanAddr>,
+        curators: Vec<HumanAddr>,
         all_token_ids: Vec<String>,
     },
     Balance {
@@ -297,14 +309,14 @@ pub enum QueryAnswer {
     },
     TokenIdPublicInfo {
         /// token_id_info.private_metadata will = None
-        token_id_info: TknInfo,
+        token_id_info: StoredTokenInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
         /// if owner_is_public == false, total_supply = None
         owner: Option<HumanAddr>
     },
     TokenIdPrivateInfo {
-        token_id_info: TknInfo,
+        token_id_info: StoredTokenInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
         /// if owner_is_public == false, total_supply = None
