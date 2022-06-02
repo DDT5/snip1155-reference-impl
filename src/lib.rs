@@ -1,17 +1,16 @@
-pub mod contract;
+pub mod handles;
+pub mod queries;
 pub mod msg;
-pub mod state;
-mod metadata;
+mod state;
 mod receiver;
 mod vk;
-mod expiration;
 
 #[cfg(test)]
 mod unittest;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm {
-    use super::contract;
+    use super::{handles, queries};
     use cosmwasm_std::{
         do_handle, do_init, do_query, ExternalApi, ExternalQuerier, ExternalStorage,
     };
@@ -19,7 +18,7 @@ mod wasm {
     #[no_mangle]
     extern "C" fn init(env_ptr: u32, msg_ptr: u32) -> u32 {
         do_init(
-            &contract::init::<ExternalStorage, ExternalApi, ExternalQuerier>,
+            &handles::init::<ExternalStorage, ExternalApi, ExternalQuerier>,
             env_ptr,
             msg_ptr,
         )
@@ -28,7 +27,7 @@ mod wasm {
     #[no_mangle]
     extern "C" fn handle(env_ptr: u32, msg_ptr: u32) -> u32 {
         do_handle(
-            &contract::handle::<ExternalStorage, ExternalApi, ExternalQuerier>,
+            &handles::handle::<ExternalStorage, ExternalApi, ExternalQuerier>,
             env_ptr,
             msg_ptr,
         )
@@ -37,7 +36,7 @@ mod wasm {
     #[no_mangle]
     extern "C" fn query(msg_ptr: u32) -> u32 {
         do_query(
-            &contract::query::<ExternalStorage, ExternalApi, ExternalQuerier>,
+            &queries::query::<ExternalStorage, ExternalApi, ExternalQuerier>,
             msg_ptr,
         )
     }

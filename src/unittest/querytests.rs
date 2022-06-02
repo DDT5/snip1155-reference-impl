@@ -2,17 +2,18 @@ use core::panic;
 use std::ops::Add;
 use serde_json::to_string;
 
-use crate::state::Permission;
-
 use super::{
     testhelpers::*
 };
 
 use super::super::{
-    contract::*,
+    handles::*,
+    queries::*,
     msg::*,
-    // state::*,
-    expiration::Expiration,
+    state::{
+        permissions::*,
+        expiration::*,
+    },
 };
 
 use cosmwasm_std::{

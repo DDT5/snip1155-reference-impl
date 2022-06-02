@@ -3,9 +3,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    state::{CurateTokenId, TokenAmount, Tx, PermissionKey, Permission, StoredTokenInfo, }, 
+    state::{
+        state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo}, 
+        permissions::{PermissionKey, Permission,},
+        txhistory::Tx, 
+        metadata::Metadata, 
+        expiration::Expiration,
+    }, 
     vk::viewing_key::ViewingKey,
-    metadata::Metadata, expiration::Expiration,
 };
 
 use secret_toolkit::permit::Permit;

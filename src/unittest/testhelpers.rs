@@ -2,9 +2,12 @@ use std::any::Any;
 use serde::de::DeserializeOwned;
 
 use super::super::{
-    contract::*,
+    handles::*,
     msg::*,
     state::*,
+    state::{
+        state_structs::*,
+    },
 };
 
 use cosmwasm_std::{
