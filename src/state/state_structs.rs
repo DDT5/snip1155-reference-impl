@@ -1,6 +1,5 @@
 use super::*;
 
-
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

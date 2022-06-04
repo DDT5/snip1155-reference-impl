@@ -226,14 +226,6 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             owner,
             allowed_address,
         ),
-        HandleMsg::RegisterReceive { 
-            code_hash, 
-            padding: _, 
-        } => try_register_receive(
-            deps, 
-            env, 
-            code_hash
-        ),
         HandleMsg::CreateViewingKey { 
             entropy, 
             padding: _ 
@@ -249,6 +241,11 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             deps, 
             env, 
             key
+        ),
+        HandleMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
+            deps, 
+            env,
+            permit_name,
         ),
         HandleMsg::AddCurators { add_curators, padding: _ 
         } => try_add_curators(
@@ -292,10 +289,13 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             current_admin,
             contract_address,
         ),   
-        HandleMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
+        HandleMsg::RegisterReceive { 
+            code_hash, 
+            padding: _, 
+        } => try_register_receive(
             deps, 
-            env,
-            permit_name,
+            env, 
+            code_hash
         ),
     };
     pad_response(response)
@@ -610,7 +610,7 @@ fn try_batch_send<S: Storage, A:Api, Q:Querier>(
 /// does not check if `token_id` exists so attacker cannot easily figure out if
 /// a `token_id` has been created 
 #[allow(clippy::too_many_arguments)]
-pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
+fn try_give_permission<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
     allowed_address: HumanAddr,
@@ -682,6 +682,90 @@ pub fn try_give_permission<S: Storage, A: Api, Q: Querier>(
         messages: vec![],
         log: vec![],
         data: Some(to_binary(&HandleAnswer::GivePermission { status: Success })?),
+    })
+}
+
+/// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
+/// entry in storage, because it is unecessarily in most use cases, but will require also removing 
+/// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
+/// If permission does not exist, message will return an error. 
+fn try_revoke_permission<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    token_id: String,
+    owner: HumanAddr,
+    allowed_addr: HumanAddr,
+) -> StdResult<HandleResponse> {
+    // either owner or allowed_address can remove permission
+    if env.message.sender != owner && env.message.sender != allowed_addr {
+        return Err(StdError::generic_err(
+            "only the owner or address with permission can remove permission"
+        ))
+    }
+    
+    update_permission(&mut deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RevokePermission { status: Success })?),
+    })
+}
+
+fn try_create_viewing_key<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    entropy: String,
+) -> StdResult<HandleResponse> {
+    // let constants = ReadonlyConfig::from_storage(&deps.storage).constants()?;
+    let contr_conf = contr_conf_r(&deps.storage).load()?;
+    let prng_seed = contr_conf.prng_seed;
+
+    let key = ViewingKey::new(&env, &prng_seed, (&entropy).as_ref());
+
+    let message_sender = deps.api.canonical_address(&env.message.sender)?;
+    write_viewing_key(&mut deps.storage, &message_sender, &key);
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::CreateViewingKey { key })?),
+    })
+}
+
+fn try_set_viewing_key<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    key: String,
+) -> StdResult<HandleResponse> {
+    let vk = ViewingKey(key);
+
+    let message_sender = deps.api.canonical_address(&env.message.sender)?;
+    write_viewing_key(&mut deps.storage, &message_sender, &vk);
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::SetViewingKey { status: Success })?),
+    })
+}
+
+fn try_revoke_permit<S: Storage, A: Api, Q: Querier>(
+    deps: &mut Extern<S, A, Q>,
+    env: Env,
+    permit_name: String,
+) -> StdResult<HandleResponse> {
+    RevokedPermits::revoke_permit(
+        &mut deps.storage,
+        PREFIX_REVOKED_PERMITS,
+        &env.message.sender,
+        &permit_name,
+    );
+
+    Ok(HandleResponse {
+        messages: vec![],
+        log: vec![],
+        data: Some(to_binary(&HandleAnswer::RevokePermit { status: Success })?),
     })
 }
 
@@ -861,33 +945,6 @@ fn try_remove_admin<S: Storage, A: Api, Q: Querier>(
     })
 }
 
-/// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
-/// entry in storage, because it is unecessarily in most use cases, but will require also removing 
-/// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
-/// If permission does not exist, message will return an error. 
-fn try_revoke_permission<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
-    env: Env,
-    token_id: String,
-    owner: HumanAddr,
-    allowed_addr: HumanAddr,
-) -> StdResult<HandleResponse> {
-    // either owner or allowed_address can remove permission
-    if env.message.sender != owner && env.message.sender != allowed_addr {
-        return Err(StdError::generic_err(
-            "only the owner or address with permission can remove permission"
-        ))
-    }
-    
-    update_permission(&mut deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RevokePermission { status: Success })?),
-    })
-}
-
 fn try_register_receive<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
@@ -902,63 +959,6 @@ fn try_register_receive<S: Storage, A: Api, Q: Querier>(
         })?),
     };
     Ok(res)
-}
-
-fn try_create_viewing_key<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
-    env: Env,
-    entropy: String,
-) -> StdResult<HandleResponse> {
-    // let constants = ReadonlyConfig::from_storage(&deps.storage).constants()?;
-    let contr_conf = contr_conf_r(&deps.storage).load()?;
-    let prng_seed = contr_conf.prng_seed;
-
-    let key = ViewingKey::new(&env, &prng_seed, (&entropy).as_ref());
-
-    let message_sender = deps.api.canonical_address(&env.message.sender)?;
-    write_viewing_key(&mut deps.storage, &message_sender, &key);
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::CreateViewingKey { key })?),
-    })
-}
-
-fn try_set_viewing_key<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
-    env: Env,
-    key: String,
-) -> StdResult<HandleResponse> {
-    let vk = ViewingKey(key);
-
-    let message_sender = deps.api.canonical_address(&env.message.sender)?;
-    write_viewing_key(&mut deps.storage, &message_sender, &vk);
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::SetViewingKey { status: Success })?),
-    })
-}
-
-fn try_revoke_permit<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
-    env: Env,
-    permit_name: String,
-) -> StdResult<HandleResponse> {
-    RevokedPermits::revoke_permit(
-        &mut deps.storage,
-        PREFIX_REVOKED_PERMITS,
-        &env.message.sender,
-        &permit_name,
-    );
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RevokePermit { status: Success })?),
-    })
 }
 
 /////////////////////////////////////////////////////////////////////////////////

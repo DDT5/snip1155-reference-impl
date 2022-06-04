@@ -1,6 +1,7 @@
-# runs schema, unit-test and clippy. Doesn't do integration test or mainnet-build 
+# runs schema, unit-test, clippy (incl on unit tests) and creates docs. 
+# Doesn't do integration-test or mainnet-build 
 .PHONY: prep
-prep: schema test _clippy-test
+prep: schema test _clippy-test doc
 _clippy-test:
 	cargo clippy --tests
 
@@ -96,3 +97,9 @@ clean:
 .PHONY: build-receiver
 build-receiver:
 	cd ./tests/example-receiver && $(MAKE) build
+
+.PHONY: doc
+doc:
+	cargo doc --no-deps 
+	rm -rf ./docs
+	cp -r ./target/doc ./docs

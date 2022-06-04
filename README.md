@@ -3,7 +3,9 @@ SNIP1155 Reference Implementation: Private Multitokens  <!-- omit in toc -->
 
 This repository contains the [SNIP1155 Standard Specifications](#base-specifications) and the standard reference implementation.
 
-Note that schemas presented here are simplified for readability. The canonical schemas that developers should rely on can be found [here](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
+Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
+
+Also, [Rust Docs](https://ddt5.github.io/snip1155-reference-impl/) are available.
 
 
 ## Table of contents <!-- omit in toc --> 
@@ -16,43 +18,35 @@ Note that schemas presented here are simplified for readability. The canonical s
   - [The curator(s) and minter(s)](#the-curators-and-minters)
   - [NFT vs fungible tokens](#nft-vs-fungible-tokens)
   - [Handle messages](#handle-messages)
+    - [Curate token ids](#curate-token-ids)
+    - [Mint tokens](#mint-tokens)
+    - [Burn tokens](#burn-tokens)
+    - [Change metadata](#change-metadata)
     - [Transfer](#transfer)
     - [Send](#send)
-    - [BatchTransfer and BatchSend](#batchtransfer-and-batchsend)
-    - [CreateViewingKey and SetViewingKey](#createviewingkey-and-setviewingkey)
-    - [RevokePermit](#revokepermit)
-    - [Allowances and private metadata viewership](#allowances-and-private-metadata-viewership)
-    - [RevokePermission](#revokepermission)
-    - [CurateTokenIds](#curatetokenids)
-    - [MintTokens](#minttokens)
-    - [BurnTokens](#burntokens)
-    - [AddCurators and RemoveCurators](#addcurators-and-removecurators)
-    - [AddMinters and RemoveMinters](#addminters-and-removeminters)
-    - [ChangeAdmin](#changeadmin)
-    - [BreakAdminKey](#breakadminkey)
+    - [Batch transfer and batch send](#batch-transfer-and-batch-send)
+    - [Give permission](#give-permission)
+    - [Revoke permission](#revoke-permission)
+    - [Create viewing key and set viewing key](#create-viewing-key-and-set-viewing-key)
+    - [Revoke permit](#revoke-permit)
+    - [Add curators and remove curators](#add-curators-and-remove-curators)
+    - [Add minters and remove minters](#add-minters-and-remove-minters)
+    - [Change admin](#change-admin)
+    - [Remove admin](#remove-admin)
   - [Queries](#queries)
-    - [ContractInfo](#contractinfo)
-    - [Minters](#minters)
-    - [NumTokens](#numtokens)
-  - [Authenticated Queries](#authenticated-queries)
+    - [Contract info](#contract-info)
+    - [TokenId public information](#tokenid-public-information)
+    - [Registered code hash](#registered-code-hash)
+  - [Authenticated queries](#authenticated-queries)
     - [Balance](#balance)
-    - [BatchBalance](#batchbalance)
-    - [Approved](#approved)
-    - [IsApproved](#isapproved)
-    - [OwnerOf](#ownerof)
-    - [TokenInfo](#tokeninfo)
-    - [PrivateMetadata](#privatemetadata)
-    - [TransactionHistory](#transactionhistory)
+    - [Transaction history](#transaction-history)
+    - [Permission](#permission)
+    - [All permissions](#all-permissions)
+    - [TokenId private information](#tokenid-private-information)
   - [Receiver functions](#receiver-functions)
-    - [RegisterReceive](#registerreceive)
+    - [Register receive](#register-receive)
     - [Snip1155Receive](#snip1155receive)
   - [Miscellaneous](#miscellaneous)
-  - [Schema](#schema)
-    - [Instantiation message](#instantiation-message)
-    - [Handle messages](#handle-messages-1)
-    - [Handle responses](#handle-responses)
-    - [Query messages](#query-messages)
-    - [Query responses](#query-responses)
 - [Additional specifications](#additional-specifications)
 - [Design decisions](#design-decisions)
   - [Reference implementation goals](#reference-implementation-goals)
@@ -62,15 +56,13 @@ Note that schemas presented here are simplified for readability. The canonical s
   - [Keeping base and additional features separate](#keeping-base-and-additional-features-separate)
 
 
-
 # Abstract
 
-SNIP1155 is a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can create and manage multiple tokens from a single contract instance. Tokens can be a combination of fungible tokens and non-fungible tokens, each with separate configurations, attributes and metadata. 
+SNIP1155 is a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can create and manage multiple tokens from a single contract instance. Tokens can be a combination of fungible tokens and non-fungible tokens, each with separate attributes, configurations, and metadata. 
 
-This specification writeup ("spec" or "specs") outlines the functionality and interface. The design is loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract.
-Fungible and non-fungible tokens are mostly treated equally, but each has a different set of available token configurations which define their possible behaviors. For example, NFTs can only be minted once. Unlike CW1155 where approvals must cover the entire set of tokens, SNIP1155 contracts allow users to control which tokens fall in scope for a given approval (a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761)). In addition, SNIP1155 users can control the type of approval it grants other addresses: token transfer allowances, balance viewership, or private metadata viewership. 
+This specification writeup ("spec" or "specs") outlines the functionality and interface. The design is loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract. Fungible and non-fungible tokens are mostly treated equally, but each has a different set of available token configurations which define their possible behaviors. For example, NFTs cannot be configured to be minted more than once. Unlike CW1155 where approvals must cover the entire set of tokens, SNIP1155 contracts allow users to control which tokens fall in scope for a given approval (a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761)). In addition, SNIP1155 users can control the type of approval it grants other addresses: token transfer allowances, balance viewership, or private metadata viewership. 
 
-The ability to hold multiple token types can provide new functionality, improve developer and user experience, and reduce gas fees. For example, users can batch transfer multiple token types, developers could eliminate inter-contract messages and factory contracts, and users may need to approve only once to cover all tokens for an application.
+The ability to hold multiple token types can offer new functionality, improve developer and user experience, and reduce gas fees. For example, users can batch transfer multiple token types in a single transaction, developers could eliminate inter-contract messages and factory contracts, and users may need one approval transaction to cover all tokens for an application.
 
 See [design decisions](#design-decisions) for more details.
 
@@ -80,58 +72,27 @@ See [design decisions](#design-decisions) for more details.
 This memo uses the terms defined below:
 * Message - an on-chain interface. It is triggered by sending a transaction, and receiving an on-chain response which is read by the client. Messages are authenticated both by the blockchain and by the Secret enclave.
 * Query - an off-chain interface. Queries are done by returning data that a node has locally, and are not public. Query responses are returned immediately, and do not have to wait for blocks. In addition, queries cannot be authenticated using the standard interfaces. Any contract that wishes to strongly enforce query permissions must implement it themselves.
-* [Cosmos Message] Sender or User - the account found under the sender field in a standard Cosmos SDK message. This is also the signer of the message.
-* Native Asset - a coin which is defined and managed by the blockchain infrastructure, not a Secret contract.
-
+* Sender, Caller or User - the account found under the sender field in a standard Cosmos SDK message. This is also the signer of the Cosmos message.
 
 # Base specifications
 
 ## Token hierarchy
 SNIP1155 has a token hierarchy with three layers: (A) SNIP1155 contract > (B) token_id > (C) token(s). 
 
-(A) At the highest level, all tokens of a given SNIP1155 contract MUST share:
+**(A)** At the highest level, all tokens of a given SNIP1155 contract MUST share:
 * admin (if enabled)
 * curator(s)
 
-(B) A SNIP1155 contract MUST have the ability to hold multiple `tokens_id`s. Each `token_id` MUST have their own:
+**(B)** A SNIP1155 contract MUST have the ability to hold multiple `tokens_id`s. Each `token_id` MUST have their own:
 * token_id (unique identifier within a contract)
 * name
 * symbol
-* token_config (which may optionally include a list of minters)
-* public metadata
-* private metadata
-
-(C) Each `token_id` can have 1 or more supply of `tokens`, which are indistinguishable from one another (hence fungible). Non-fungible `token_id`s MUST have a total supply of 1, and MUST only be minted once. 
-
-For example, a given SNIP1155 contract may have the following token hierarchy:
-```
-SNIP1155 contract
-├── token_id 0 (total supply = 2)
-│   ├── fungible token
-│   └── fungible token
-├── token_id 1 (total supply = 3)
-│   ├── fungible token
-│   ├── fungible token
-│   └── fungible token
-└── token_id 2 (total supply = 1)
-    └── non-fungible token
-```
+* `token_config`
+* public `metadata`
+* private `metadata`
 
 
-The table below describes each variable in more detail: 
-
-| Variable         | Type             | Description                                                | Optional |
-| ---------------- | ---------------- | ---------------------------------------------------------- | -------- |
-| admin            | HumanAddr        | Can to add/remove minters and break admin key              | Yes      |
-| minter           | `Vec<HumanAddr>` | Can mint tokens and change metadata if config allows       | Yes      |
-| token_id         | String           | `token_id` unique identifier                               | No       |
-| name             | String           | Name of fungible tokens or NFT. Does not need to be unqiue | No       |
-| symbol           | String           | Symbol of fungible tokens or NFT                           | No       |
-| token_config     | TokenConfig      | Includes enable burn, owner is public, .. (see below)      | No       |
-| public metadata  | Metadata         | Publicly viewable `uri` and `extension`                    | Yes      |
-| private metadata | Metadata         | Non-publicly viewable `uri` and `extension`                | Yes      |
-
-`Token_config` is MUST be an enum with at least these two variants:
+`token_config` is MUST be an enum that includes at least these two variants:
 
 ```rust
 {
@@ -154,7 +115,7 @@ The table below describes each variable in more detail:
 }
 ```
 
-Metadata:
+`metadata` MUST be the following struct:
 ```rust
 {
   token_uri: Option<String>,
@@ -164,159 +125,965 @@ Metadata:
 
 Application developers MAY change `extension` to any `struct` that fits their use case.
 
+**(C)** Each `token_id` can have 1 or more supply of `tokens`, which are indistinguishable from one another (hence fungible). Non-fungible `token_id`s MUST have a total supply of 1, and MUST only be minted once. 
+
+For example, a given SNIP1155 contract may have the following token hierarchy:
+```
+SNIP1155 contract
+├── token_id 0 (total supply = 2)
+│   ├── fungible token
+│   └── fungible token
+├── token_id 1 (total supply = 3)
+│   ├── fungible token
+│   ├── fungible token
+│   └── fungible token
+└── token_id 2 (total supply = 1)
+    └── non-fungible token
+```
+
+
+The table below gives a summary of these variables: 
+
+| Variable         | Type             | Description                                                      | Optional |
+| ---------------- | ---------------- | ---------------------------------------------------------------- | -------- |
+| admin            | HumanAddr        | Can to add/remove minters and break admin key                    | Yes      |
+| curators         | `Vec<HumanAddr>` | Can curate new token_ids                                         | Yes      |
+| minters          | `Vec<HumanAddr>` | Can mint additional fungible tokens and possibly change metadata | Yes      |
+| token_id         | String           | A `token_id`'s unique identifier                                 | No       |
+| name             | String           | Name of fungible token or NFT. Does not need to be unqiue        | No       |
+| symbol           | String           | Symbol of fungible tokens or NFT                                 | No       |
+| token_config     | TokenConfig      | Configuration for a specific `token_id`, set by the `curator`    | No       |
+| public metadata  | Metadata         | Publicly viewable `uri` and `extension`                          | Yes      |
+| private metadata | Metadata         | Non-publicly viewable `uri` and `extension`                      | Yes      |
+
 
 ## Instantiation
-The instantiator MUST have the option to specify the admin, minter(s) and initial balances. See [Instantiation message](#instantiation-message).
+The instantiator MUST have the option to specify the admin, curator(s) and initial balances. 
 
-If no admin is specified, the instantiator MAY be used as the default admin; in this setup, there MUST be an input field `has_admin: bool` which allows the instantiator to instantiate a no-admin contract. If `has_admin == false`, any admin input MUST be ignored by the contract.  
+If no admin is specified, the instantiator SHOULD be used as the default admin; this set up is for familiarity with SNIP20/721 standards. However, there MUST also be an input field `has_admin: bool` which allows the instantiator to instantiate a no-admin contract. If `has_admin == false`, there MUST be no admin. Any admin input MUST be ignored by the contract.   
 
-The `initial_balances` input SHOULD allow an arbitrary number of token_ids and tokens to be created at instantiation. This design makes it convenient to instantiate permissionless contracts with no admin and minters, as all the required tokens can be minted upon instantiation.
+The `initial_balances` input SHOULD allow an arbitrary number of `token_id`s and `token`s to be created at instantiation. This design makes it convenient to instantiate permissionless contracts with no admin, curators and minters, as all the required tokens can be minted upon instantiation.
+
+
+**Instantiation message**
+```js
+{
+  has_admin: boolean,
+  admin?: string,
+  curators: string[],
+  initial_tokens: [{
+    token_info: [{
+      token_id: string, 
+      name: string, 
+      symbol: string, 
+      token_config: "<token_config>",
+      public_metadata?: "<metadata>",
+      private_metadata?: "<metadata>",
+    }],
+    balances: [{
+      address: string,
+      amount: string,
+    }]
+  }],
+  entropy: string,
+} 
+```
+
+`token_config` can be one of the two variants below (see [token hierarchy](#token-hierarchy)):
+```js
+{
+  fungible: {
+    mitners: string[],
+    decimals: number,
+    public_total_supply: boolean,
+    enable_mint: boolean,
+    enable_burn: boolean,
+    minter_may_update_metadata: boolean,
+  }
+}
+{
+  nft: {
+    public_total_supply: boolean,
+    owner_is_public: boolean,
+    enable_burn: boolean,
+    owner_may_update_metadata: boolean,
+  }
+}
+```
+
+`metadata`:
+```js
+{
+  token_uri?: string,
+  extension?: "<any object>",
+}
+```
+
 
 ## The admin
 The role of the admin (if exists) is to add and remove minters. 
 
-The admin MUST be able to perform admin-only transactions. Admin-only transactions MUST NOT be callable by non-admins. Admin-only function MUST include `add_minters`, `remove_minters` and `change_admin` and `break_admin_key`.
+The admin MUST be able to perform admin-only transactions. Admin-only transactions MUST NOT be callable by non-admins. Admin-only function MUST include `add_minters`, `remove_minters` and `change_admin` and `remove_admin`.
 
-The existence of the `break_admin_key` function is enforced in SNIP1155 standards in order to encourage permissionless designs. Users MUST be able to query `contract_info` to get proof on whether an admin role exists.
+The existence of the `remove_admin` function is enforced in SNIP1155 standards in order to encourage permissionless designs. Users MUST be able to query `contract_info` to get proof on whether an admin role exists.
 
 ## The curator(s) and minter(s)
 There are two types of roles that can create tokens: 
-* `curators` curates new token_ids and mints initial balances. They cannot mint additional tokens of existing token_ids, unless they are also minters. 
-* `minters` are specific to each token_id. These addresses can mint incremental fungible tokens of existing token_ids if the token_id configuration allows this. These addresses cannot mint the initial token balances. Minters of a given token_id may also change the public and private metadata if the token_config of the token_id allows this. They are not relevant to NFTs in the base specification. 
+* `curators` MUST be able to curate new `token_id`s and mints initial balances. They MUST NOT be able to mint additional tokens of existing token_ids, unless they are also minters. 
+* `minters` are specific to each token_id. They MUST be able to mint incremental fungible tokens of existing token_ids if the token_id configuration allows this. They MUST NOT be able to mint the initial token balances. Minters of a given token_id can change the public and private metadata if the token_config of the token_id allows this. They are not relevant to NFTs in the base specification. 
 
 ## NFT vs fungible tokens
-Minters MUST have the option to set public metadata and and private metadata for a token_id. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
+Curators MUST have the option to set public metadata and and private metadata for a token_id. Minters of specific token_id SHOULD be able to change metadata if the configuration allows them to. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
 
-Fungible token metadata cannot be changed in the base specification[^1] but is OPTIONAL in the [additional specifications](#additional-specifications). The rules that govern how fungible metadata is changed is left to application developers to decide.
+Private metadata of an NFT MUST NOT be viewable by any address, other than the owner's address or addresses that have been given permission to[^1]. The base standard implementation allows any owner of a fungible token to view private metadata of the fungible `token_id`, but different rules MAY be implemented in additional specifications.  
 
-Private metadata of an NFT MUST NOT be viewable by any address, other than the owner's address or addresses that have been given permission to[^2]. The standard implementation allows any owner of a fungible token to view private metadata of the fungible `token_id`, but different rules MAY be implemented by application developers.  
-
-[^1]: See the [fractionalized NFT reference implementation](https://github.com/DDT5/frac-snft-ref-impl) if the use case requires multiple addresses owning an NFT.
-[^2]: The base specifications do not have sealed metadata functionality, which is included in the additional specifications.
+[^1]: The base specifications do not have sealed metadata functionality, which is included in the additional specifications.
 
 
 ## Handle messages
 
-See schemas [here](#handle-messages-1)
+### Curate token ids
+Curators MUST be able to access this function. Other addresses MUST NOT be able to call this function. (Note that admins cannot mint unless it is also a curator). 
+
+A curator MUST be able to create new `token_id`s. The curator MUST be able to configure the token_id and set initial balances. A curator MUST NOT be able to curate a `token_id` that already exists.
+
+`CurateTokenIds` MUST be able to create multiple `token_id`s and set multiple initial balances in a single transaction. Therefore, `BatchCurateTokenIds` is not necesary. 
+
+Message:
+```js
+{
+  curate_token_ids: {
+    initial_tokens: [{
+      token_info: [{
+        token_id: string, 
+        name: string, 
+        symbol: string, 
+        token_config: "<token_config>",
+        public_metadata: "<metadata>",
+        private_metadata: "<metadata>",
+      }],
+      balances: [{
+        address: string,
+        amount: string,
+      }]
+    }],
+    memo?: string,
+    padding?: string,
+  }
+}
+```
+
+Response:
+```js
+{
+  curate_token_id: {
+    status: "success"
+  }
+}
+```
+
+### Mint tokens
+Minters of a given token_id MUST be able to access this function. Other addresses MUST NOT be able to call this function. (Note that admins and curators cannot mint unless they are also minters. Additionally, minters are set by either the admin or the curator that curated the given token_id). 
+
+A minter MUST be able to mint tokens on existing `token_id`s if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens).
+
+`MintTokens` MUST be able to mint multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchMintTokens` is not necessary.
+
+Message:
+```js
+{
+  mint_tokens: {
+    mint_tokens: [{
+      token_id: string,
+      balances: [{
+        address: string,
+        amount: string,
+      }]
+    }],
+    memo?: string,
+    padding?: string,
+  }
+}
+```
+
+Response:
+```js
+{
+  mint_tokens: {
+    status: "success"
+  }
+}
+```
+
+### Burn tokens
+Owners of tokens MUST be allowed to burn their tokens only if the `token_id` configuration allows it to. The base specification does not allow any address to burn tokens they do not own, but this feature is OPTIONAL.
+
+`BurnTokens` MUST be able to burn multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchBurnTokens` is not necessary.
+
+Message:
+```js
+{   
+  burn_tokens {
+    burn_tokens: [{
+      token_id: string,
+      balances: [{
+        address: string,
+        amount: string,
+      }]
+    }],
+    memo?: string,
+    padding?: string,
+  }
+}
+```
+
+Response:
+```js
+{
+  burn_tokens: {
+    status: "success"
+  }
+}
+```
+
+### Change metadata
+
+Minters (for fungible tokens) or owners (for NFTs) MUST be able to change the token_id's metadata if the configuration allows them to. 
+
+```js
+{
+  change_metadata {
+      token_id: string,
+      public_metadata?: "<metadata>",
+      private_metadata?: "<metadata>",
+  }
+}
+```
+
+Response:
+```js
+{
+  change_metadata: {
+    status: "success"
+  }
+}
+```
 
 ### Transfer
-Transfers a specified amount of tokens of a single `token_id` from one address to another. If the transaction caller is not the current owner of the token, a successful transaction MUST require that the caller has the required transfer allowances.  
+Transfers a specified number of tokens of a single `token_id` from one address to another. If the transaction caller is not the current owner of the token, a successful transaction MUST require that the caller has the required transfer allowances.  
 
 The SNIP1155 `Transfer` interface more closely reflects SNIP721 than SNIP20. SNIP20's `Transfer` and `TransferFrom` functions can both be performed using SNIP1155's `Transfer` function. 
+
+```js
+{
+  transfer {
+    token_id: string,
+    from: string,
+    recipient: string,
+    amount: string,
+    memo?: string,
+    padding?: string,
+  },
+}
+```
+
+Response:
+```js
+{
+  transfer: {
+    status: "success"
+  }
+}
+```
 
 ### Send
 Similar to `Transfer`. If the recipient has registered itself with a `RegisterReceive` message, this function MUST also send an inter-contract message ("callback") to the recipient. It is also RECOMMENDED that `Send` includes an optional code hash input, so the recipient contract does not need to have to first `RegisterReceive`.
 
 The SNIP1155 `Send` interface more closely reflects SNIP721 than SNIP20. SNIP20's `Send` and `SendFrom` functions can both be performed using SNIP1155's `Send` function. 
 
-### BatchTransfer and BatchSend
+```js
+{
+  send {
+    token_id: string,
+    from: string,
+    recipient: string,
+    recipient_code_hash?: string,
+    amount: string,
+    msg?: "<binary>",
+    memo?: string,
+    padding?: string,
+  },
+}
+```
+
+Response:
+```js
+{
+  send: {
+    status: "success"
+  }
+}
+```
+
+### Batch transfer and batch send
 These functions perform multiple `Transfer`, or `Send` actions in a single transaction. Multiple `token_id`s and recipients MUST be allowed in a batch, including a mix of NFTs and fungible tokens of the same SNIP1155 contract.
 
 `BatchSend` MUST allow different callback messages to be sent for each `Send` action.
 
-### CreateViewingKey and SetViewingKey 
-These perform the same functions as specified in the SNIP20 standards.
+```js
+{
+  batch_transfer {
+    actions: [{
+      token_id: string,
+      from: string,
+      recipient: string,
+      amount: string,
+      memo?: string,
+    }],
+    padding?: string,
+  },
+}
+{
+  batch_send {
+    actions: [{
+      token_id: string,
+      from: string,
+      recipient: string,
+      recipient_code_hash?: string,
+      amount: string,
+      msg?: "<binary>",
+      memo?: string,
+    }],
+    padding?: string,
+  },
+}
+```
 
-### RevokePermit
-Similar to SNIP20 and SNIP721; allows an address revoke a query permit that it may have previously created and shared.
+Response:
+```js
+{
+  batch_transfer: {
+    status: "success"
+  }
+}
+{
+  batch_send: {
+    status: "success"
+  }
+}
+```
 
-### Allowances and private metadata viewership
-`GivePermission` is used by an address to grant other addresses permissions to transfer or view private information of its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global. Permissions MUST include the ability for a token owner to allow another address to:
+### Give permission
+`GivePermission` is used by an address to grant other addresses permissions to transfer or view private information of its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global). Permissions MUST include the ability for a token owner to allow another address to:
 * view token owner's balance
 * view private metadata 
 * transfer tokens up to a specified allowance
 
-It is OPTIONAL to additionally include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces.
+`GivePermission` can be used to set a specific transfer allowance limit. It is OPTIONAL to additionally include `IncreaseAllowance` and `DecreaseAllowance` messages, as these are familiar SNIP20 interfaces.
 
-### RevokePermission
+```js
+{
+  give_permission {
+    allowed_address: string,
+    token_id: String,
+    view_balance?: boolean,
+    view_balance_expiry?: "<expiration>",
+    view_private_metadata?: boolean,
+    view_private_metadata_expiry?: "<expiration>",
+    transfer?: string,
+    transfer_expiry?: "<expiration>",
+    padding?: string,
+  },
+}
+```
+
+`expiration` can be one of the three variants below
+```js
+{
+  at_height: number,
+}
+{
+  at_time: number,
+}
+{
+  never,
+}
+```
+
+Response:
+```js
+{
+  give_permission: {
+    status: "success"
+  }
+}
+```
+
+### Revoke permission
 An operator with existing permissions (not to be confused with Query Permits) can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
 
-### CurateTokenIds
-Curators MUST be able to access this function. Other addresses MUST NOT be able to call this function. (Note that admins cannot mint unless it is also a curator). 
+```js
+{
+  revoke_permission {
+    token_id: string,
+    owner: string,
+    allowed_address: string,
+    padding?: string,
+  },
+}
+```
 
-A curator MUST be able to create new `token_id`s. The curator MUST be able to configure the token_id and set initial balances. A curator MUST NOT be able to mint a token_id with a `token_id` unique identifier that already exists.
+Response:
+```js
+{
+  revoke_permission: {
+    status: "success"
+  }
+}
+```
 
-`CurateTokenIds` MUST be able to create multiple `token_id`s and set multiple initial balances in a single transaction. Therefore, `BatchCurateTokenIds` is not necesary. 
 
-### MintTokens
-Minters of a given token_id MUST be able to access this function. Other addresses MUST NOT be able to call this function. (Note that admins cannot mint unless it is also a minter). 
+### Create viewing key and set viewing key 
+These perform the same functions as specified in the SNIP20 standards.
 
-A minter MUST be able to mint tokens on existing `token_id`s if the configuration allows it to. If a token_id is an NFT, minters MUST NOT be able to mint additional tokens; NFTs SHALL only be minted at most once. The token configuration SHOULD specify whether minters are allowed to mint additional tokens (for fungible tokens).
+A user can call this function to create or set a viewing key to perform authenticated queries.
 
-`MintTokens` MUST be able to mint multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchMintTokens` is not necessary.
+```js
+{
+  create_viewing_key {
+    entropy: string,
+    padding?: string,
+  },
+}
+{
+  set_viewing_key {
+    key: string,
+    padding?: string,
+  },
+}
+```
 
-### BurnTokens
-Owners of tokens MUST be allowed to burn their tokens only if the `token_id` configuration allows it to. The base specification does not allow any address to burn tokens they do not own, but this feature is OPTIONAL.
+Response:
+```js
+{
+  create_viewing_key: {
+    status: "success"
+  }
+}
+{
+  set_viewing_key: {
+    status: "success"
+  }
+}
+```
 
-`BurnTokens` MUST be able to burn multiple tokens across multiple `token_id`s in a single transaction. Therefore, `BatchBurnTokens` is not necessary.
+### Revoke permit
+Similar to SNIP20 and SNIP721; allows an address revoke a query permit (not to be confused with permission) that it may have previously created and shared. Query permits are an alternative way to perform authenticated queries without having to first create a viewing key. The ability to revoke permits gives an additional level of access control. 
 
-### AddCurators and RemoveCurators
-The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. AddCurators add one or more curators to the list of curators, while RemoveCurators remove one or more curators from the list of curators. Note that a given SNIP1155 contract instance share a consistent list of curators.
+```js
 
-### AddMinters and RemoveMinters
-The admin and token_id curator MUST be able to access this function. Other addresses MUST NOT be able to call this function. AddMinters add one or more minters to the list of minters for a given token_id, while RemoveMinters remove one or more minters from the list of minters for a given token_id.
+{
+  revoke_permit {
+    permit_name: string,
+    padding?: string,
+  },
+}
+```
 
-### ChangeAdmin
+```js
+{
+  revoke_permit: {
+    status: "success"
+  }
+}
+```
+
+
+### Add curators and remove curators
+The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. `AddCurators` add one or more curators to the list of curators, while `RemoveCurators` remove one or more curators from the list of curators. Note that a single SNIP1155 contract instance share a consistent list of curators.
+
+Message:
+```js
+{
+  add_curators {
+        add_curators: string[],
+        padding?: string,
+    },
+}
+{
+  remove_curators {
+        remove_curators: string[],
+        padding?: string,
+    },
+}
+```
+
+Response:
+```js
+{
+  add_curators: {
+    status: "success"
+  }
+}
+{
+  remove_curators: {
+    status: "success"
+  }
+}
+```
+
+### Add minters and remove minters
+The admin and the curator that curated the specific token_id MUST be able to access this function. Other addresses MUST NOT be able to call this function. `AddMinters` add one or more minters to the list of minters for a given token_id, while `RemoveMinters` remove one or more minters from the list of minters for a given token_id.
+
+Message:
+```js
+{
+  add_minters {
+        token_id: string,
+        add_minters: string[],
+        padding: string,
+    },
+}
+{
+  remove_minters {
+      token_id: string,
+      remove_minters: string[],
+      padding: string,
+  },
+}
+```
+
+Response:
+```js
+{
+  add_minters: {
+    status: "success"
+  }
+}
+{
+  remove_minters: {
+    status: "success"
+  }
+}
+```
+
+### Change admin
 The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. This function allows an admin to change the admin address. When this happens, the message caller SHOULD lose its own admin rights. The base specifications allow only one admin at a time. If multiple admins are implemented, a public query MUST be available for anyone to view all the admin addresses. 
 
-### BreakAdminKey
-The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. This function allows an admin to revoke its admin rights, without assigning a new admin. Doing this results in a contract with no admin.
+```js
+{
+  change_admin {
+    new_admin: string,
+    padding?: string,
+  },
+}
+```
 
+Response:
+```js
+{
+  change_admin: {
+    status: "success"
+  }
+}
+```
+
+### Remove admin
+The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. This function allows an admin to revoke its admin rights, without assigning a new admin. Doing this results in a contract that permanently has no admin (ie: "breaking the admin key").
+
+```js
+{
+  remove_admin {
+    current_admin: string,
+    contract_address: string,
+    padding?: string,
+  },
+}
+```
+
+Response:
+```js
+{
+  remove_admin: {
+    status: "success"
+  }
+}
+```
 
 ## Queries
 
-### ContractInfo
+### Contract info
 
+Any user MUST be able to query the contract information, which MUST provide the following information:
+* Current `admin`; if there is no admin, it MUST return `null`
+* Current list of `curators`
+* A list of all token_ids that have been curated
 
+```js
+{
+  contract_info {  }
+}
+```
 
-### Minters
+```js
+{
+  contract_info {
+    admin?: string,
+    curators: string[],
+    all_token_ids: string[],
+  }
+}
+```
 
-### NumTokens
+### TokenId public information
 
+Any user MUST be able to query the public information of a given token_id. In the base specificiation, the query response json schema is similar to `token_id_private_info`, except that `private_metadata` MUST be `null`. 
 
-## Authenticated Queries
-Authenticated queries can be made using viewing keys or query permits.
+Query message:
+```js
+{
+  token_id_public_info { 
+    token_id: string 
+  }
+}
+```
+
+Query response:
+```js
+{
+  token_id_public_info {
+    token_id_info: {
+      token_id: string, 
+      name: string, 
+      symbol: string, 
+      token_config: "<token_config>",
+      public_metadata: "<metadata>",
+      private_metadata: null,
+      curator: string
+    },
+    total_supply?: string,
+    owner?: string
+  }
+}
+```
+
+### Registered code hash
+
+Any user MUST be able to query the code hash of a contract that has registered with the SNIP1155 contract.
+
+Query message:
+```js
+{
+  registered_code_hash {
+    contract: string
+  }
+}
+```
+
+Query response:
+```js
+/// returns None if contract has not registered with SNIP1155 contract
+{
+  registered_code_hash {
+    code_hash?: string,
+  }
+}
+```
+
+## Authenticated queries
+Authenticated queries can be made using viewing keys or query permits. If viewing key is incorrect, an `viewing_key_error` is returned with a custom message:
+
+```js
+{
+  viewing_key_error {
+    msg: string,
+  }
+}
+```
+
+If incorrect query permit is used, the contract returns `generic_err` with a custom message in most cases. 
+
 
 ### Balance
 
-### BatchBalance 
+A user MUST be able to view the balances of its own token_ids. The user may also grant another user to view its balances. 
 
-### Approved
+Query message:
+```js
+// with viewing key
+{
+  balance: {
+    owner: string,
+    viewer: string,
+    key: string,
+    token_id: string,
+  }
+}
+// with query permit
+{
+  with_permit:{
+    permit: <"permit">,
+    query: {
+      balance { 
+        owner: string, 
+        token_id: string 
+      }
+    }
+  }
+}
+```
 
-<!-- ### ApprovedForAll -->
+Query reponse:
+```js
+{
+  balance {
+    amount: string,
+  },
+}
+```
 
-### IsApproved
+### Transaction history
 
-<!-- ### IsApprovedForAll -->
+A user MUST be able to view its transaction history. Transactions include minting (including minting initial balances from `CurateTokenIds`), burning, and transferring (including transfers from `Send` messages).
 
-### OwnerOf
-### TokenInfo
-<!-- ### AllTokenInfo -->
-### PrivateMetadata
-<!-- ### TokenDossier -->
+Query message:
+```js
+// with viewing key
+{
+  transaction_history {
+    address: string,
+    key: string,
+    page?: number,
+    page_size: number,
+  }
+}
+// with query permit
+{
+  with_permit:{
+    permit: <"permit">,
+    query: {
+      transaction_history {
+        page?: number,
+        page_size: number,
+      }
+    }
+  }
+}
+```
 
-<!-- ### InventoryApprovals -->
-<!-- ### Tokens -->
-### TransactionHistory
+Query response:
+```js
+{
+  transaction_history {
+    txs: [{
+      tx_id: number,
+      block_height: number,
+      block_time: number,
+      token_id: string,
+      action: "<tx_action>",
+      memo?: string,
+    }],
+    total?: number,
+  }
+}
+```
 
+`tx_action` can be one of the following variants
+```js
+  mint {
+    minter: string,
+    recipient: string,
+    amount: string,
+  },
+  burn {
+    burner?: string,
+    owner: string,
+    amount: string,
+  },
+  transfer {
+    from: string,
+    sender?: string,
+    recipient: string,
+    amount: string,
+  },
+```
+
+### Permission
+
+The permission granter and grantee can view an existing permission.
+
+Query message:
+```js
+// with viewing key
+{
+  permission {
+    owner: string,
+    allowed_address: string,
+    key: string,
+    token_id: string,
+  }
+}
+// with query permit
+{
+  with_permit:{
+    permit: <"permit">,
+    query: {
+      permission {
+        owner: string,
+        allowed_address: string,
+        token_id: string,
+      }
+    }
+  }
+}
+```
+
+Query response:
+```js
+// returns null if no permission 
+{
+  permission?: {
+    view_balance_perm: boolean,
+    view_balance_exp: "<expiration>",
+    view_pr_metadata_perm: boolean,
+    view_pr_metadata_exp: "<expiration>",
+    trfer_allowance_perm: string, 
+    trfer_allowance_exp: "<expiration>",
+  }
+}
+```
+
+### All permissions
+An address (granter) can view a list of all permissions that it has granted to other addresses. The base specification does not allow an address (grantee) to view all permissions it has been granted, but this is OPTIONAL in the additional specifications. 
+
+Query message:
+```js
+// with viewing key
+{
+  all_permissions {
+    address: string,
+    key: string,
+    page?: number,
+    page_size: number,
+  }
+}
+// with query permit
+{
+  with_permit:{
+    permit: <"permit">,
+    query: {
+      all_permissions {
+        page?: number,
+        page_size: number,
+      }
+    }
+  }
+}
+```
+
+Query response:
+```js
+{
+  all_permissions{
+    permission_keys: [{
+      token_id: string,
+      allowed_addr: string,
+    }],
+    permissions: [{
+      view_balance_perm: boolean,
+      view_balance_exp: "<expiration>",
+      view_pr_metadata_perm: boolean,
+      view_pr_metadata_exp: "<expiration>",
+      trfer_allowance_perm: string, 
+      trfer_allowance_exp: "<expiration>",
+    }],
+    total: number,
+  }
+}
+```
+
+### TokenId private information
+
+A token_id owner or address that has been granted permission MUST be able to query the private information of a given token_id. In the base specificiation, the query response json schema is similar to `token_id_public_info`, except that the `private_metadata` field MUST include the private metadata if it exists. 
+
+
+Query message:
+```js
+// with viewing key
+{
+  token_id_private_info { 
+    address: string,
+    key: string,
+    token_id: string,
+  }
+}
+// with query permit
+{
+  with_permit:{
+    permit: <"permit">,
+    query: {
+      token_id_private_info { 
+        token_id: string,
+      }
+    }
+  }
+}
+```
+
+Query response:
+```js
+{
+  token_id_private_info {
+    token_id_info: {
+      token_id: string, 
+      name: string, 
+      symbol: string, 
+      token_config: "<token_config>",
+      public_metadata: "<metadata>",
+      private_metadata: "<metadata>",
+      curator: string
+    },
+    total_supply?: string,
+    owner?: string
+  }
+}
+```
 
 ## Receiver functions
 
-### RegisterReceive
+### Register receive
 This message is used to pair a code hash with a contract address. The SNIP1155 contract MUST store the `code_hash` sent in this message, and use it when calling the `Snip1155Receive` function.
+
+```js
+{
+  register_receive {
+    code_hash: string,
+    padding?: string,
+  },
+}
+```
+
+Response:
+```js
+{
+  register_receive: {
+    status: "success"
+  }
+}
+```
 
 ### Snip1155Receive
 When a the `Send` or `BatchSend` function is called, the SNIP1155 sends a callback to a registered address. When doing so, the SNIP1155 contract MUST call the `Snip1155Receive` handle function of the recipient contract. The callback message is in the following format:
 
-```json
+```js
 {
-  "snip_1155_receive": {
-    "sender": "<HumanAddr that called the transaction>",
-    "token_id": "<String representing unique token_id being sent>",
-    "from": "<HumanAddr of the current owner of the tokens>",
-    "amount": "<Amount of tokens sent in Uint128>",
-    "memo": "<optional String>",
-    "msg": "<optional message in Binary>"
+  snip1155_receive: {
+    sender: "<HumanAddr that called the transaction>",
+    token_id: "<String representing unique token_id being sent>",
+    from: "<HumanAddr of the current owner of the tokens>",
+    amount: "<Amount of tokens sent in Uint128>",
+    memo?: "<optional String>",
+    msg?: "<optional message in Binary>"
   }
 }
 ```
@@ -346,513 +1113,29 @@ While errors during execution of contract functions should usually result in a p
 Note that all amounts are represented as numerical strings (the Uint128 type). Handling decimals is left to the UI.
 
 
-## Schema
-
-
-
-### Instantiation message
-```js
-{
-  has_admin: boolean,
-  admin?: string,
-  minters: string[],
-  initial_tokens: [{
-    token_info: [{
-      token_id: string, 
-      name: string, 
-      symbol: string, 
-      token_config: "<token_config>",
-      public_metadata: "<metadata>",
-      private_metadata: "<metadata>",
-    }],
-    balances: [{
-      address: string,
-      amount: string,
-    }]
-  }],
-  entropy: string,
-} 
-```
-
-### Handle messages
-```js
-{
-  mint_token_ids: {
-    initial_tokens: [{
-      token_info: [{
-        token_id: string, 
-        name: string, 
-        symbol: string, 
-        token_config: "<token_config>",
-        public_metadata: "<metadata>",
-        private_metadata: "<metadata>",
-      }],
-      balances: [{
-        address: string,
-        amount: string,
-      }]
-    }],
-    memo?: string,
-    padding?: string,
-  }
-}
-{
-  mint_tokens: {
-    mint_tokens: [{
-      token_id: string,
-      balances: [{
-        address: string,
-        amount: string,
-      }]
-    }],
-    memo?: string,
-    padding?: string,
-  }
-}
-{   
-  burn_tokens {
-    burn_tokens: [{
-      token_id: string,
-      balances: [{
-        address: string,
-        amount: string,
-      }]
-    }],
-    memo?: string,
-    padding?: string,
-  }
-}
-{
-  change_metadata {
-      token_id: string,
-      public_metadata?: "<metadata>",
-      private_metadata?: "<metadata>",
-  }
-}
-{
-  transfer {
-    token_id: string,
-    from: string,
-    recipient: string,
-    amount: string,
-    memo?: string,
-    padding?: string,
-  },
-}
-{
-  batch_transfer {
-    actions: [{
-      token_id: string,
-      from: string,
-      recipient: string,
-      amount: string,
-      memo?: string,
-    }],
-    padding?: string,
-  },
-}
-{
-  send {
-    token_id: string,
-    from: string,
-    recipient: string,
-    recipient_code_hash?: string,
-    amount: string,
-    msg?: "<binary>", // the binary of object x is: toBase64(toUtf8(JSON.stringify(x)))
-    memo?: string,
-    padding?: string,
-  },
-}
-{
-  batch_send {
-    actions: [{
-      token_id: string,
-      from: string,
-      recipient: string,
-      recipient_code_hash?: string,
-      amount: string,
-      msg?: "<binary>", // the binary of object x is: toBase64(toUtf8(JSON.stringify(x))),
-      memo?: string,
-    }],
-    padding?: string,
-  },
-}
-{
-  give_permission {
-    allowed_address: string,
-    token_id: String,
-    view_balance?: boolean,
-    view_balance_expiry?: "<expiration>",
-    view_private_metadata?: boolean,
-    view_private_metadata_expiry?: "<expiration>",
-    transfer?: string,
-    transfer_expiry?: "<expiration>",
-    padding?: string,
-  },
-}
-{
-  revoke_permission {
-    token_id: string,
-    owner: string,
-    allowed_address: string,
-    padding?: string,
-  },
-}
-{
-  register_receive {
-    code_hash: string,
-    padding?: string,
-  },
-}
-{
-  create_viewing_key {
-    entropy: string,
-    padding?: string,
-  },
-}
-{
-  set_viewing_key {
-    key: string,
-    padding?: string,
-  },
-}
-{
-  add_minters {
-    add_minters: string[],
-    padding?: string,
-  },
-}
-{
-  remove_minters {
-    remove_minters: string[],
-    padding?: string,
-  },
-}
-{
-  change_admin {
-    new_admin: string,
-    padding?: string,
-  },
-}
-{
-  break_admin_key {
-    current_admin: string,
-    contract_address: string,
-    padding?: string,
-  },
-}
-{
-  revoke_permit {
-    permit_name: string,
-    padding?: string,
-  },
-}
-```
-
-Object schemas
-
-`token_config` can be one of the two variants below (see [token hierarchy](#token-hierarchy)):
-```js
-{
-  fungible: {
-    decimals: number,
-    public_total_supply: boolean,
-    enable_mint: boolean,
-    enable_burn: boolean,
-    minter_may_update_metadata: boolean,
-  }
-}
-{
-  nft: {
-    public_total_supply: boolean,
-    owner_is_public: boolean,
-    enable_burn: boolean,
-    minter_may_update_metadata: boolean,
-    owner_may_update_metadata: boolean,
-  }
-}
-```
-
-`metadata` (see [token hierarchy](#token-hierarchy)):
-```js
-{
-  token_uri?: string,
-  extension?: "<any object>",
-}
-```
-
-`expiration` can be one of the three variants below
-```js
-{
-  at_height: number,
-}
-{
-  at_time: number,
-}
-{
-  never,
-}
-```
-
-### Handle responses
-```js
-{ mint_token_ids { status: "success" || "failure" }},
-{ mint_tokens { status: "success" || "failure" }},
-{ burn_tokens { status: "success" || "failure" }},
-{ change_metadata { status: "success" || "failure" }},
-{ transfer { status: "success" || "failure" }},
-{ batch_transfer { status: "success" || "failure" }},
-{ send { status: "success" || "failure" }},
-{ batch_send { status: "success" || "failure" }},
-{ give_permission { status: "success" || "failure" }},
-{ revoke_permission { status: "success" || "failure" }},
-{ register_receive { status: "success" || "failure" }},
-{ create_viewing_key { key: "<viewing key string>" }},
-{ set_viewing_key{ status: "success" || "failure" }},
-{ add_minters { status: "success" || "failure" }},
-{ remove_minters { status: "success" || "failure" }},
-{ change_admin { status: "success" || "failure" }},
-{ break_admin_key { status: "success" || "failure" }},
-{ revoke_permit { status: "success" || "failure" }},
-```
-
-### Query messages
-
-```js
-{
-  contract_info {  }
-}
-{
-  balance {
-    owner: string,
-    viewer: string,
-    key: string,
-    token_id: string,
-  }
-}
-{
-  transaction_history {
-    address: string,
-    key: string,
-    page?: number,
-    page_size: number,
-  }
-}
-{
-  permission {
-    owner: string,
-    allowed_address: string,
-    key: string,
-    token_id: string,
-  }
-}
-{
-  all_permissions {
-    address: string,
-    key: string,
-    page?: number,
-    page_size: number,
-  }
-}
-{
-  token_id_public_info { 
-    token_id: string 
-    }
-}
-{
-  token_id_private_info { 
-    address: string,
-    key: string,
-    token_id: string,
-  }
-}
-{
-  registered_code_hash {
-    contract: string
-  }
-}
-{
-  with_permit {
-    permit: "<permit>",
-    query: "<query_with_permit>",
-  }
-}
-```
-
-`query_with_permit` schema
-```js
-{
-  balance { 
-    owner: string, 
-    token_id: string 
-  }
-}
-{
-  transaction_history {
-    page?: number,
-    page_size: number,
-  }
-}
-{
-  permission {
-    owner: string,
-    allowed_address: string,
-    token_id: string,
-  }
-}
-{
-  all_permissions {
-    page?: number,
-    page_size: number,
-  }
-}
-{
-  token_id_private_info { 
-    token_id: string,
-  }
-}
-```
-
-### Query responses
-
-```js
-{
-  contract_info {
-    admin: string,
-    minters: string[],
-    all_token_ids: string[],
-  }
-}
-{
-  balance {
-    amount: string,
-  }
-}
-{
-  transaction_history {
-    txs: [{
-      tx_id: number,
-      block_height: number,
-      block_time: number,
-      token_id: string,
-      action: "<tx_action>",
-      memo?: string,
-    }],
-    total?: number,
-  }
-}
-// returns null if no permission 
-{
-  permission?: {
-    view_balance_perm: boolean,
-    view_balance_exp: "<expiration>",
-    view_pr_metadata_perm: boolean,
-    view_pr_metadata_exp: "<expiration>",
-    trfer_allowance_perm: string, 
-    trfer_allowance_exp: "<expiration>",
-  }
-}
-{
-  all_permissions{
-    permission_keys: [{
-      token_id: string,
-      allowed_addr: string,
-    }],
-    permissions: [{
-      view_balance_perm: boolean,
-      view_balance_exp: "<expiration>",
-      view_pr_metadata_perm: boolean,
-      view_pr_metadata_exp: "<expiration>",
-      trfer_allowance_perm: string, 
-      trfer_allowance_exp: "<expiration>",
-    }],
-    total: number,
-  }
-}
-{
-  token_id_public_info {
-    token_id_info: {
-      token_id: string, 
-      name: string, 
-      symbol: string, 
-      token_config: "<token_config>",
-      public_metadata: "<metadata>",
-      private_metadata: null,
-    },
-    total_supply?: string,
-    owner?: string
-  }
-}
-{
-  token_id_private_info {
-    token_id_info: {
-      token_id: string, 
-      name: string, 
-      symbol: string, 
-      token_config: "<token_config>",
-      public_metadata: "<metadata>",
-      private_metadata: "<metadata>",
-    },
-    total_supply?: string,
-    owner?: string
-  }
-}
-/// returns None if contract has not registered with SNIP1155 contract
-{
-  registered_code_hash {
-    code_hash?: string,
-  }
-}
-{
-  viewing_key_error {
-    msg: string,
-  }
-}
-```
-
-`tx_action` can be one of the following variants
-```js
-  mint {
-    minter: string,
-    recipient: string,
-    amount: string,
-  },
-  burn {
-    burner?: string,
-    owner: string,
-    amount: string,
-  },
-  transfer {
-    from: string,
-    sender?: string,
-    recipient: string,
-    amount: string,
-  },
-```
 
 # Additional specifications
 
 Additional specifications include:
 * Royalty for NFTs
-* Private metadata for fungible tokens
 * Ability for owners to give other addresses permission to burn their tokens 
-* Ability to view nft ownership history, including configuration on whether this should be public. In the base standard reference implementation, this information is already being saved, but not accessible through queries.
-* Ability for an address to view list of all permissions that it has been granted by others (currently only granter can view comprehensive list of its permissions)
+* Ability to view nft ownership history, including configuration on whether this should be public. In the base reference implementation, only the current owner may be viewable, but the history of ownership is actually being saved, although not accessible through queries.
+* Ability for an address (grantee) to view list of all permissions that it has been granted by others (currently only granter can view comprehensive list of its permissions)
 * Sealed metadata and Reveal functionality that mirrors SNIP721
 * Ability for admin to restrict certain types of transactions (as seen in SNIP20 and SNIP721). A design decision was made on SNIP1155 NOT to include this functionality in the base specifications, in order to encourage more permissionless contract designs.
 * Ability for an owner to give another address batch permission that covers all its token_ids. 
-* Ability for query permits to selectively allow access to other query functions (in the base specifications, selective viewership permissions cover balances and private metadata only)
+* Expand ability for query permits to selectively allow access to specific query functions (in the base specifications, users can grant selective viewership permissions for balances or private metadata)
 
 
 # Design decisions
 
 ## Reference implementation goals
-The SNIP1155 standards and reference implementation aims to provide developers with an additional option to use as a base contract for creating tokens. The aim is to complement the existing SNIP20 and SNIP721 standards by offering a lean contract whose core architecture focuses on the ability to create and manage multiple token types.
+The SNIP1155 standards and reference implementation aims to provide developers with an additional option to use as a base contract for creating Secret Network tokens. The aim is to complement the existing SNIP20 and SNIP721 standards by offering a lean contract whose core architecture focuses on the ability to create and manage multiple token types.
 
 Non-goals include:
 * providing a feature-rich base contract that emcompasses both SNIP20 and SNIP721 functionality
 * superseding previous token standards
-* backward compatability with previous token standards, although [familiar](#familiar-interface) interfaces are used where possible)
+* backward compatability with previous token standards, although [familiar](#familiar-interface) interfaces are used where possible
 
 ## Starting from a blank slate
 The current Secret Network token standard reference implementations at the time of writing (particularly SNIP721) is feature-rich and implements many useful features beyond the base standards. This makes it possible to use one of these contracts as a starting point and add functionality in order to create the SNIP1155 reference implementation.
@@ -861,20 +1144,19 @@ However, the decision was to build the SNIP1155 reference implementation mostly 
 * Mitigates code bloat. The SNIP1155 standard implementation generally aims to avoid implementing non-core features, and starting from a blank slate avoids adopting features from another standard that are not critical for SNIP1155.
 * Reduces surface area of attack and potential for bugs.
 * Offers developers an additional option to use as a base contract that is meaningfully different to existing templates, so developers can choose the reference architecture that most closely fits their requirements.  
-* Allows SNIP1155 to follow an independent update cycle and its own development path, making it more responsive to developments in feature requirements or changes to the network infrastructure that is impactful to SNIP1155 use cases.
+* Allows SNIP1155 to follow an independent update cycle and its own development path, making it more responsive to feature requirements or changes to the network infrastructure that matter most to SNIP1155 use cases.
 
 The disadvantages of this design decision are:
 * No (full) backward compatability with SNIP20 or SNIP721
 * Requires more developer hours to create
 
 ## Permissionless design
-The standard implementations of both SNIP20 and SNIP721 (at the time of writing) are designed to have an admin with special rights. This can be a critical feature depending on the required use case, but has the downside of not being truly permissionless.    
+The standard implementations of both SNIP20 and SNIP721 (at the time of writing) are designed to have an admin with special rights. This can be a useful feature depending on the required use case, but has the downside of not being permissionless.    
 
-With this in mind, the SNIP1155 base standard implementation natively provides the ability to break admin keys at any point, as well as for contract instantiators to create a no-admin contract instances. 
+With this in mind, the SNIP1155 base standard implementation natively provides the ability to break admin keys at any point, as well as for contract instantiators to create no-admin contract instances. 
 
 ## Familiar interface
-The interface reflects some of the message schemas in [SNIP20](https://github.com/scrtlabs/snip20-reference-impl) and [SNIP721](https://github.com/baedrik/snip721-reference-impl), in order to have a familiar interface across Secret Network. However, SNIP1155 does not aim to have backward compatability with SNIP20 and SNIP721.
+The interface reflects a few of the message schemas in [SNIP20](https://github.com/scrtlabs/snip20-reference-impl) and [SNIP721](https://github.com/baedrik/snip721-reference-impl), in order to have a familiar interface across Secret Network. However, SNIP1155 does not aim to have backward compatability with SNIP20 and SNIP721.
 
 ## Keeping base and additional features separate
 The reference implementation aims to maintain a base implementation that is lean (with no additional features), while eventually also offering template code for some additional feature(s) as separate packages within this repository. Keeping the base implementation and additional features in separate packages avoids the situation where developers are forced to adopt all additional features even if their use case does not require them.
-

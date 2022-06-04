@@ -1,7 +1,7 @@
 pub mod handles;
 pub mod queries;
 pub mod msg;
-mod state;
+pub mod state;
 mod receiver;
 mod vk;
 

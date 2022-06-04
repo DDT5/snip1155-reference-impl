@@ -331,7 +331,7 @@
       ]
     },
     "Extension": {
-      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on https://docs.opensea.io/docs/metadata-standards and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on <https://docs.opensea.io/docs/metadata-standards> and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
       "type": "object",
       "properties": {
         "animation_url": {

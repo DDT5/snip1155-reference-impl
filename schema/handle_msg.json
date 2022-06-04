@@ -442,31 +442,6 @@
     {
       "type": "object",
       "required": [
-        "register_receive"
-      ],
-      "properties": {
-        "register_receive": {
-          "type": "object",
-          "required": [
-            "code_hash"
-          ],
-          "properties": {
-            "code_hash": {
-              "type": "string"
-            },
-            "padding": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        }
-      }
-    },
-    {
-      "type": "object",
-      "required": [
         "create_viewing_key"
       ],
       "properties": {
@@ -509,6 +484,32 @@
                 "string",
                 "null"
               ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "disallow the use of a query permit",
+      "type": "object",
+      "required": [
+        "revoke_permit"
+      ],
+      "properties": {
+        "revoke_permit": {
+          "type": "object",
+          "required": [
+            "permit_name"
+          ],
+          "properties": {
+            "padding": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "permit_name": {
+              "type": "string"
             }
           }
         }
@@ -690,26 +691,25 @@
       }
     },
     {
-      "description": "disallow the use of a permit",
       "type": "object",
       "required": [
-        "revoke_permit"
+        "register_receive"
       ],
       "properties": {
-        "revoke_permit": {
+        "register_receive": {
           "type": "object",
           "required": [
-            "permit_name"
+            "code_hash"
           ],
           "properties": {
+            "code_hash": {
+              "type": "string"
+            },
             "padding": {
               "type": [
                 "string",
                 "null"
               ]
-            },
-            "permit_name": {
-              "type": "string"
             }
           }
         }
@@ -819,7 +819,7 @@
       ]
     },
     "Extension": {
-      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on https://docs.opensea.io/docs/metadata-standards and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
+      "description": "metadata extension You can add any metadata fields you need here.  These fields are based on <https://docs.opensea.io/docs/metadata-standards> and are the metadata fields that Stashh uses for robust NFT display.  Urls should be prefixed with `http://`, `https://`, `ipfs://`, or `ar://`",
       "type": "object",
       "properties": {
         "animation_url": {

@@ -120,16 +120,17 @@ pub enum HandleMsg {
         allowed_address: HumanAddr,
         padding: Option<String>,
     },
-    RegisterReceive {
-        code_hash: String,
-        padding: Option<String>,
-    },
     CreateViewingKey {
         entropy: String,
         padding: Option<String>,
     },
     SetViewingKey {
         key: String,
+        padding: Option<String>,
+    },
+    /// disallow the use of a query permit
+    RevokePermit {
+        permit_name: String,
         padding: Option<String>,
     },
     AddCurators {
@@ -165,9 +166,8 @@ pub enum HandleMsg {
         contract_address: HumanAddr,
         padding: Option<String>,
     },
-    /// disallow the use of a permit
-    RevokePermit {
-        permit_name: String,
+    RegisterReceive {
+        code_hash: String,
         padding: Option<String>,
     },
 }
@@ -185,16 +185,16 @@ pub enum HandleAnswer {
     BatchSend { status: ResponseStatus },
     GivePermission { status: ResponseStatus },
     RevokePermission { status: ResponseStatus },
-    RegisterReceive { status: ResponseStatus },
     CreateViewingKey { key: ViewingKey },
     SetViewingKey { status: ResponseStatus },
+    RevokePermit { status: ResponseStatus },
     AddCurators { status: ResponseStatus },
     RemoveCurators { status: ResponseStatus },
     AddMinters { status: ResponseStatus },
     RemoveMinters { status: ResponseStatus },
     ChangeAdmin { status: ResponseStatus },
     RemoveAdmin { status: ResponseStatus },
-    RevokePermit { status: ResponseStatus },
+    RegisterReceive { status: ResponseStatus },
 }
 
 

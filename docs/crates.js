@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["snip1155_reference_impl"];
