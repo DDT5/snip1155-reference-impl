@@ -5,7 +5,7 @@ This repository contains the [SNIP1155 Standard Specifications](#base-specificat
 
 Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
 
-Also, [Rust Docs](https://ddt5.github.io/snip1155-reference-impl/snip1155_reference_impl/index.html) are available.
+Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/index.html) are available.
 
 
 ## Table of contents <!-- omit in toc --> 

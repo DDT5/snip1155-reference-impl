@@ -101,5 +101,5 @@ build-receiver:
 .PHONY: doc
 doc:
 	cargo doc --no-deps 
-	rm -rf ./docs
-	cp -r ./target/doc ./docs
+	rm -rf ../snip1155-doc/docs
+	cp -r ./target/doc ../snip1155-doc/docs

@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["handle","contract handle function. See HandleMsg for the api"],["init","instantiation function. See InitMsg for the api"]]});

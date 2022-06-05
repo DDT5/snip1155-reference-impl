@@ -1,1 +1,0 @@
-initSidebarItems({"enum":[["HandleAnswer",""],["HandleMsg",""],["QueryAnswer",""],["QueryMsg",""],["QueryWithPermit",""],["ResponseStatus",""]],"fn":[["space_pad",""]],"struct":[["InitMsg",""],["SendAction",""],["TransferAction",""]]});
