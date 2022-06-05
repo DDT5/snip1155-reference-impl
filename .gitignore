@@ -19,6 +19,3 @@ contract.wasm*
 # Integration test npm files
 /tests/node_modules
 /tests/package-lock.json
-
-# Other
-/local

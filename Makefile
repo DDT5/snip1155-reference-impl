@@ -92,6 +92,7 @@ speedup-server:
 clean:
 	cargo clean
 	-rm -f ./contract.wasm ./contract.wasm.gz
+	-rm -rf ./tests/node_modules
 	cd ./tests/example-receiver && $(MAKE) clean	
 
 .PHONY: build-receiver
@@ -103,3 +104,10 @@ doc:
 	cargo doc --no-deps 
 	rm -rf ../snip1155-doc/docs
 	cp -r ./target/doc ../snip1155-doc/docs
+
+.PHONY: tarpaulin
+tarpaulin:
+	cargo tarpaulin \
+		--exclude-files tests/example-receiver/src/contract.rs \
+		--exclude-files tests/example-receiver/src/state.rs \
+		--output-dir ./target/tarpaulin -o html

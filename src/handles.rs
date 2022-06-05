@@ -603,7 +603,7 @@ fn try_batch_send<S: Storage, A:Api, Q:Querier>(
     }
 
     Ok(HandleResponse {
-        messages: vec![],
+        messages,
         log: vec![],
         data: Some(to_binary(&HandleAnswer::BatchSend { status: Success })?)
     })

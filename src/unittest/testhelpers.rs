@@ -27,6 +27,7 @@ use cosmwasm_std::{
 
 pub struct Addrs {
     addrs: Vec<HumanAddr>,
+    hashes: Vec<String>,
 }
 
 impl Addrs {
@@ -45,16 +46,29 @@ impl Addrs {
     pub fn all(&self) -> Vec<HumanAddr> {
         self.addrs.clone()
     }
+    pub fn _a_hash(&self) -> String {
+        self.hashes[0].clone()
+    }
+    pub fn b_hash(&self) -> String {
+        self.hashes[1].clone()
+    }
+    pub fn c_hash(&self) -> String {
+        self.hashes[2].clone()
+    }
+    pub fn _d_hash(&self) -> String {
+        self.hashes[3].clone()
+    }
 }
 
 /// inits 3 addresses
 pub fn init_addrs() -> Addrs {
     let addr_strs = vec!["addr0", "addr1", "addr2", "addr3"];
+    let hashes = vec!["addr0_hash".to_string(), "addr1_hash".to_string(), "addr2_hash".to_string(), "addr3_hash".to_string()];
     let mut addrs: Vec<HumanAddr> = vec![];
     for addr in addr_strs {
         addrs.push(HumanAddr(addr.to_string()));
     }
-    Addrs { addrs }
+    Addrs { addrs, hashes }
 }
 
 /// inits contract, with initial balances:

@@ -380,6 +380,207 @@ fn test_send() -> StdResult<()> {
     Ok(())
 }
 
+
+/// note: tested more extensively in integration tests
+#[test]
+fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
+    //init addresses
+    let addr = init_addrs();
+
+    //instantiate
+    let (_init_result, mut deps) = init_helper_default();
+    
+    // curate new tokens
+    let env = mock_env("addr0", &[]);
+    curate_addtl_default(&mut deps, &env)?;
+
+    // initial balances
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.c()), None);
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), None);
+    
+    // can batch transfer
+    let msg_batch_trans = HandleMsg::BatchTransfer { 
+        actions: vec![
+            TransferAction {
+                token_id: "0".to_string(),
+                from: addr.a(),
+                recipient: addr.b(),
+                amount: Uint128(10),
+                memo: None,
+            },
+            TransferAction {
+                token_id: "0a".to_string(),
+                from: addr.a(),
+                recipient: addr.c(),
+                amount: Uint128(20),
+                memo: None,
+            },
+        ], 
+        padding: None
+    };
+    handle(&mut deps, env.clone(), msg_batch_trans)?;
+    
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.b()), Some(Uint128(10)));
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), Some(Uint128(20)));
+    
+     // can batch send
+    let msg_batch_send = HandleMsg::BatchSend {
+        actions: vec![
+            SendAction {
+                token_id: "0".to_string(),
+                from: addr.a(),
+                recipient: addr.b(),
+                recipient_code_hash: Some(addr.b_hash()),
+                amount: Uint128(20),
+                msg: Some(to_binary(&"test message to b")?),
+                memo: None,
+            },
+            SendAction {
+                token_id: "0a".to_string(),
+                from: addr.a(),
+                recipient: addr.c(),
+                recipient_code_hash: Some(addr.c_hash()),
+                amount: Uint128(30),
+                msg: Some(to_binary(&"test message to c")?),
+                memo: None,
+            },
+        ],
+        padding: None,
+    };
+    let response = handle(&mut deps, env.clone(), msg_batch_send)?;
+    
+    // check balances
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.b()), Some(Uint128(30)));
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), Some(Uint128(50)));
+
+    // check inter-contract messages
+    let (receiver_msg_b, receiver_addr_b, receiver_hash_b) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0])?; 
+    assert_eq!(receiver_addr_b, Some(&addr.b())); assert_eq!(receiver_hash_b, &addr.b_hash());
+    let exp_receive_msg_b = Snip1155ReceiveMsg {
+        sender: addr.a(),
+        token_id: "0".to_string(),
+        from: addr.a(),
+        amount: Uint128(20),
+        memo: None,
+        msg: Some(to_binary(&"test message to b")?), 
+    };
+    match receiver_msg_b {
+        ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg_b),
+    }
+
+    let (receiver_msg_c, receiver_addr_c, receiver_hash_c) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[1])?; 
+    assert_eq!(receiver_addr_c, Some(&addr.c())); assert_eq!(receiver_hash_c, &addr.c_hash());
+    let exp_receive_msg_c = Snip1155ReceiveMsg {
+        sender: addr.a(),
+        token_id: "0a".to_string(),
+        from: addr.a(),
+        amount: Uint128(30),
+        memo: None,
+        msg: Some(to_binary(&"test message to c")?), 
+    };
+    match receiver_msg_c {
+        ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg_c),
+    }
+
+    Ok(())
+}
+
+/// note: tested more extensively in integration tests
+#[test]
+fn test_batch_transfer_and_send_errors() -> StdResult<()> {
+    //init addresses
+    let addr = init_addrs();
+
+    //instantiate
+    let (_init_result, mut deps) = init_helper_default();
+     
+    // cannot batch transfer 0a because it does not exist
+    let msg_batch_trans = HandleMsg::BatchTransfer { 
+        actions: vec![
+            TransferAction {
+                token_id: "0".to_string(),
+                from: addr.a(),
+                recipient: addr.b(),
+                amount: Uint128(10),
+                memo: None,
+            },
+            TransferAction {
+                token_id: "0a".to_string(),
+                from: addr.a(),
+                recipient: addr.c(),
+                amount: Uint128(20),
+                memo: None,
+            },
+        ], 
+        padding: None
+    };
+    let env = mock_env("addr0", &[]);
+    let result = handle(&mut deps, env, msg_batch_trans);
+    assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
+
+    Ok(())
+}
+
+#[test]
+fn test_revoke_permission_sanity() -> StdResult<()> {
+    //init addresses
+    let addr = init_addrs();
+
+    //instantiate
+    let (_init_result, mut deps) = init_helper_default();
+     
+    // give permission
+    let msg0_perm_b = HandleMsg::GivePermission { 
+        allowed_address: addr.b(), 
+        token_id: "0".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(10)), transfer_expiry: None,
+        padding: None,
+    };  
+    let mut env = mock_env("addr0", &[]);
+    handle(&mut deps, env.clone(), msg0_perm_b)?;
+
+    let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a(), addr.b()])?;
+
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        key: vks.a(), 
+        token_id: "0".to_string()
+    })?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm) => {
+            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(10))
+        }
+        _ => panic!("query error")
+    }
+
+    // addr.b can revoke (renounce) permission it has been given
+    let msg_revoke = HandleMsg::RevokePermission { 
+        token_id: "0".to_string(), 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_revoke)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        key: vks.a(), 
+        token_id: "0".to_string()
+    })?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm) => {
+            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(0))
+        }
+        _ => panic!("query error")
+    }
+    
+    Ok(())
+}
+
 #[test]
 fn test_transfer_permissions_fungible() -> StdResult<()> {
     // init addresses
