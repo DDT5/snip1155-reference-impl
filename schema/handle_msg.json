@@ -3,6 +3,7 @@
   "title": "HandleMsg",
   "anyOf": [
     {
+      "description": "curates new token_ids. Only curators can access this function.",
       "type": "object",
       "required": [
         "curate_token_ids"
@@ -737,26 +738,6 @@
         }
       }
     },
-    "Balance": {
-      "type": "object",
-      "required": [
-        "address",
-        "amount"
-      ],
-      "properties": {
-        "address": {
-          "description": "For BurnToken, `address` needs to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
-          "allOf": [
-            {
-              "$ref": "#/definitions/HumanAddr"
-            }
-          ]
-        },
-        "amount": {
-          "$ref": "#/definitions/Uint128"
-        }
-      }
-    },
     "Binary": {
       "description": "Binary is a wrapper around Vec<u8> to add base64 de/serialization with serde. It also adds some helper methods to help encode inline.\n\nThis is only needed as serde-json-{core,wasm} has a horrible encoding for Vec<u8>",
       "type": "string"
@@ -771,7 +752,7 @@
         "balances": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Balance"
+            "$ref": "#/definitions/TokenIdBalance"
           }
         },
         "token_info": {
@@ -1122,11 +1103,31 @@
           "description": "For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Balance"
+            "$ref": "#/definitions/TokenIdBalance"
           }
         },
         "token_id": {
           "type": "string"
+        }
+      }
+    },
+    "TokenIdBalance": {
+      "type": "object",
+      "required": [
+        "address",
+        "amount"
+      ],
+      "properties": {
+        "address": {
+          "description": "For BurnToken, `address` needs to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HumanAddr"
+            }
+          ]
+        },
+        "amount": {
+          "$ref": "#/definitions/Uint128"
         }
       }
     },
@@ -1144,7 +1145,6 @@
           "type": "string"
         },
         "private_metadata": {
-          "description": "private metadata can only be set for nfts in the base specification. It is OPTIONAL in additional specifications to allow fungible tokens to have private metadata",
           "anyOf": [
             {
               "$ref": "#/definitions/Metadata"

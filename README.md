@@ -5,7 +5,7 @@ This repository contains the [SNIP1155 Standard Specifications](#base-specificat
 
 Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
 
-Also, [Rust Docs](https://ddt5.github.io/snip1155-reference-impl/) are available.
+Also, [Rust Docs](https://ddt5.github.io/snip1155-reference-impl/snip1155_reference_impl/index.html) are available.
 
 
 ## Table of contents <!-- omit in toc --> 
@@ -39,6 +39,7 @@ Also, [Rust Docs](https://ddt5.github.io/snip1155-reference-impl/) are available
     - [Registered code hash](#registered-code-hash)
   - [Authenticated queries](#authenticated-queries)
     - [Balance](#balance)
+    - [All balances](#all-balances)
     - [Transaction history](#transaction-history)
     - [Permission](#permission)
     - [All permissions](#all-permissions)
@@ -475,7 +476,7 @@ Response:
 
 ### Give permission
 `GivePermission` is used by an address to grant other addresses permissions to transfer or view private information of its tokens. This function MUST allow the transaction caller to set the `token_id`s that fall in scope of a given approval (unlike in CW1155, where approvals are global). Permissions MUST include the ability for a token owner to allow another address to:
-* view token owner's balance
+* view token owner's balance (of specified token_ids. The base specification does not allow giving permission to view all token_id balances)
 * view private metadata 
 * transfer tokens up to a specified allowance
 
@@ -842,6 +843,47 @@ Query reponse:
 }
 ```
 
+### All balances
+
+An owner MUST be able to query all its token_id balances. Note that in the base specification, balance viewership permission only grants another address to query `balance`, not `AllBalances`. Functionally, this query searches through an address's transaction history (effectively calling [transaction_history](#transaction-history)) to produce a list of token_ids, before searching for balances of each unique token_id. In order to avoid situations where query computation is too large, users have the option to specify the page and page size of the `transaction_history` search; this is unlikely to be necessary for straight queries, but may be useful for contract-to-contract interactions. If these two fields are ignored, the query will return the full list of `(token_id, balance)` for the address, where it has some balance currently or at some point in the past. Returns in ascending alphabetical order of `token_id`.
+
+Query message:
+```js
+// with viewing key
+{
+  all_balances: {
+    owner: string,
+    key: string,
+    tx_history_page?: number,
+    tx_history_page_size?: number,
+  }
+}
+// with query permit
+{
+  with_permit: {
+    permit: <"permit">,
+    query: {
+      all_balances { 
+        tx_history_page?: number,
+        tx_history_page_size?: number,
+      }
+    }
+  }
+}
+```
+
+Query response:
+```js
+{
+  all_balances: [
+    {
+    token_id: string,
+    amount: string
+    }
+  ]
+}
+```
+
 ### Transaction history
 
 A user MUST be able to view its transaction history. Transactions include minting (including minting initial balances from `CurateTokenIds`), burning, and transferring (including transfers from `Send` messages).
@@ -850,7 +892,7 @@ Query message:
 ```js
 // with viewing key
 {
-  transaction_history {
+  transaction_history: {
     address: string,
     key: string,
     page?: number,
@@ -859,7 +901,7 @@ Query message:
 }
 // with query permit
 {
-  with_permit:{
+  with_permit: {
     permit: <"permit">,
     query: {
       transaction_history {
@@ -874,7 +916,7 @@ Query message:
 Query response:
 ```js
 {
-  transaction_history {
+  transaction_history: {
     txs: [{
       tx_id: number,
       block_height: number,
@@ -925,7 +967,7 @@ Query message:
 }
 // with query permit
 {
-  with_permit:{
+  with_permit: {
     permit: <"permit">,
     query: {
       permission {
@@ -960,7 +1002,7 @@ Query message:
 ```js
 // with viewing key
 {
-  all_permissions {
+  all_permissions: {
     address: string,
     key: string,
     page?: number,
@@ -969,7 +1011,7 @@ Query message:
 }
 // with query permit
 {
-  with_permit:{
+  with_permit: {
     permit: <"permit">,
     query: {
       all_permissions {
@@ -984,7 +1026,7 @@ Query message:
 Query response:
 ```js
 {
-  all_permissions{
+  all_permissions: {
     permission_keys: [{
       token_id: string,
       allowed_addr: string,

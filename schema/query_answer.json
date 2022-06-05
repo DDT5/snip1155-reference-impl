@@ -63,6 +63,20 @@
     {
       "type": "object",
       "required": [
+        "all_balances"
+      ],
+      "properties": {
+        "all_balances": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OwnerBalance"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "transaction_history"
       ],
       "properties": {
@@ -494,6 +508,21 @@
         }
       }
     },
+    "OwnerBalance": {
+      "type": "object",
+      "required": [
+        "amount",
+        "token_id"
+      ],
+      "properties": {
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        },
+        "token_id": {
+          "type": "string"
+        }
+      }
+    },
     "Permission": {
       "description": "struct to store permission for a `[token_id, owner, allowed_addr]` combination",
       "type": "object",
@@ -560,7 +589,6 @@
           "type": "string"
         },
         "private_metadata": {
-          "description": "private metadata can only be set for nfts in the base specification. It is OPTIONAL in additional specifications to allow fungible tokens to have private metadata",
           "anyOf": [
             {
               "$ref": "#/definitions/Metadata"

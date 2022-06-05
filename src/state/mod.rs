@@ -63,6 +63,7 @@ pub const PREFIX_RECEIVERS: &[u8] = b"s1155receivers";
 pub fn contr_conf_w<S: Storage>(storage: &mut S) -> Singleton<S, ContractConfig> {
     singleton(storage, CONTR_CONF)
 }
+/// Contract configuration: reads information on this contract
 pub fn contr_conf_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, ContractConfig> {
     singleton_read( storage, CONTR_CONF)
 }
@@ -71,6 +72,7 @@ pub fn contr_conf_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, ContractCon
 pub fn blockinfo_w<S: Storage>(storage: &mut S) -> Singleton<S, BlockInfo> {
     singleton(storage, BLOCK_KEY)
 }
+/// Reads BlockInfo of latest tx. Should not be necessary after env becomes available to queries
 pub fn blockinfo_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, BlockInfo> {
     singleton_read(storage, BLOCK_KEY)
 }
@@ -83,6 +85,7 @@ pub fn blockinfo_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, BlockInfo> {
 pub fn tkn_info_w<S: Storage>(storage: &mut S) -> Bucket<S, StoredTokenInfo> {
     bucket(TKN_INFO, storage)
 }
+/// token_id configs. Key is `token_id.as_bytes()`
 pub fn tkn_info_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, StoredTokenInfo> {
     bucket_read(TKN_INFO, storage)
 }
@@ -91,6 +94,7 @@ pub fn tkn_info_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, StoredTokenInfo>
 pub fn tkn_tot_supply_w<S: Storage>(storage: &mut S) -> Bucket<S, Uint128> {
     bucket(TKN_TOTAL_SUPPLY, storage)
 }
+/// total supply of a token_id. Key is `token_id.as_bytes()`
 pub fn tkn_tot_supply_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Uint128> {
     bucket_read(TKN_TOTAL_SUPPLY, storage)
 }
@@ -99,7 +103,7 @@ pub fn tkn_tot_supply_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Uint128> {
 // Multi-level Buckets
 /////////////////////////////////////////////////////////////////////////////////
 
-/// Multilevel bucket to store balances for each token_id & addr combination. Key intended to 
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
 /// be [`token_id`, `owner`: to_binary(&HumanAddr)?.as_slice()]  
 /// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
 pub fn balances_w<'a, 'b, S: Storage>(
@@ -108,6 +112,8 @@ pub fn balances_w<'a, 'b, S: Storage>(
 ) -> Bucket<'a, S, Uint128> {
     Bucket::multilevel(&[BALANCES, token_id.as_bytes()], storage)
 }
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
+/// be [`token_id`, `owner`: to_binary(&HumanAddr)?.as_slice()]  
 pub fn balances_r<'a, 'b, S: Storage>(
     storage: &'a S,
     token_id: &'b str
@@ -116,7 +122,7 @@ pub fn balances_r<'a, 'b, S: Storage>(
 }
 
 /// private functions.
-/// To store permission. key intended to be [`owner`, `token_id`, `allowed_addr`]
+/// To store permission. key is to be [`owner`, `token_id`, `allowed_addr`]
 /// `allowed_addr` is `to_binary(&HumanAddr)?.as_slice()` 
 fn permission_w<'a, S: Storage>(
     storage: &'a mut S,
@@ -126,6 +132,9 @@ fn permission_w<'a, S: Storage>(
     let owner_bin = to_binary(owner).unwrap();
     Bucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
 }
+/// private functions.
+/// To read permission. key is to be [`owner`, `token_id`, `allowed_addr`]
+/// `allowed_addr` is `to_binary(&HumanAddr)?.as_slice()` 
 fn permission_r<'a, S: Storage>(
     storage: &'a S,
     owner: &'a HumanAddr,

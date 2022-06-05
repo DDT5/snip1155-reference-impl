@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     state::{
-        state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo}, 
+        state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo, OwnerBalance}, 
         permissions::{PermissionKey, Permission,},
         txhistory::Tx, 
         metadata::Metadata, 
@@ -22,10 +22,16 @@ use secret_toolkit::permit::Permit;
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)] //PartialEq
 pub struct InitMsg {
+    /// if `false` the contract will instantiate permanently as a no-admin (permissionless) contract
     pub has_admin: bool,
+    /// if `admin` == `None` && `has_admin` == `true`, the instantiator will be admin
+    /// if `has_admin` == `false`, this field will be ignore (ie: there will be no admin)
     pub admin: Option<HumanAddr>,
+    /// sets initial list of curators, which can create new token_ids 
     pub curators: Vec<HumanAddr>,
+    /// curates initial list of tokens
     pub initial_tokens: Vec<CurateTokenId>,
+    /// for `create_viewing_key` function
     pub entropy: String,
 }
 
@@ -36,6 +42,7 @@ pub struct InitMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleMsg {
+    /// curates new token_ids. Only curators can access this function. 
     CurateTokenIds {
         initial_tokens: Vec<CurateTokenId>,
         memo: Option<String>,
@@ -213,6 +220,12 @@ pub enum QueryMsg {
         key: String,
         token_id: String,
     },
+    AllBalances {
+        owner: HumanAddr,
+        key: String,
+        tx_history_page: Option<u32>,
+        tx_history_page_size: Option<u32>,
+    },
     TransactionHistory {
         address: HumanAddr,
         key: String,
@@ -252,6 +265,7 @@ impl QueryMsg {
     pub fn get_validation_params(&self) -> (Vec<&HumanAddr>, ViewingKey) {
         match self {
             Self::Balance { owner, viewer, key, .. } => (vec![owner, viewer], ViewingKey(key.clone())),
+            Self::AllBalances { owner, key, .. } => (vec![owner], ViewingKey(key.clone())),
             Self::TransactionHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
             Self::Permission {
                 owner,
@@ -261,7 +275,10 @@ impl QueryMsg {
             } => (vec![owner, allowed_address], ViewingKey(key.clone())),
             Self::AllPermissions { address, key, .. } => (vec![address], ViewingKey(key.clone())),
             Self::TokenIdPrivateInfo { address, key, .. } => (vec![address], ViewingKey(key.clone())),
-            _ => panic!("This query type does not require authentication"),
+            Self::ContractInfo {  } |
+            Self::TokenIdPublicInfo { .. } |
+            Self::RegisteredCodeHash { .. } |
+            Self::WithPermit { .. } => unreachable!("This query type does not require viewing key authentication"),
         }
     }
 }
@@ -272,6 +289,10 @@ pub enum QueryWithPermit {
     Balance { 
         owner: HumanAddr, 
         token_id: String 
+    },
+    AllBalances { 
+        tx_history_page: Option<u32>,
+        tx_history_page_size: Option<u32>,
     },
     TransactionHistory {
         page: Option<u32>,
@@ -302,6 +323,7 @@ pub enum QueryAnswer {
     Balance {
         amount: Uint128,
     },
+    AllBalances(Vec<OwnerBalance>),
     TransactionHistory {
         txs: Vec<Tx>,
         total: Option<u64>,

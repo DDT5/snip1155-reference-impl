@@ -2,6 +2,8 @@ use core::panic;
 use std::ops::Add;
 use serde_json::to_string;
 
+use crate::state::state_structs::OwnerBalance;
+
 use super::{
     testhelpers::*
 };
@@ -11,6 +13,7 @@ use super::super::{
     queries::*,
     msg::*,
     state::{
+        state_structs::*,
         permissions::*,
         expiration::*,
     },
@@ -241,6 +244,86 @@ fn test_query_balance() -> StdResult<()> {
     let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg0_q_bal0)?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128(1000)),
+        _ => panic!("query error")
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_query_all_balance() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    let mut env = mock_env("addr0", &[]);
+    curate_addtl_default(&mut deps, &env)?;
+    let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a(), addr.b()])?;
+
+    // addr.b cannot query addr.a's AllBalance
+    let msg = QueryMsg::AllBalances { owner: addr.a(), key: vks.b(), tx_history_page: None, tx_history_page_size: None };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg)?)?;
+    match q_answer {
+        QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
+        _ => panic!("query error")
+    }
+
+    // addr.a can query AllBalance
+    let msg_q_allbal = QueryMsg::AllBalances { owner: addr.a(), key: vks.a(), tx_history_page: None, tx_history_page_size: None };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_allbal.clone())?)?;
+    match q_answer {
+        QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
+            OwnerBalance { token_id: "0".to_string(), amount: Uint128(1000) },
+            OwnerBalance { token_id: "0a".to_string(), amount: Uint128(800) },
+            ]),
+        _ => panic!("query error")
+    }
+
+    // mint additional token_id "0", doesn't create another entry in AllBalance
+    let msg_mint = HandleMsg::MintTokens { 
+        mint_tokens: vec![TokenAmount { 
+            token_id: "0".to_string(), 
+            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128(100) }] 
+        }], 
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_mint)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_allbal.clone())?)?;
+    match q_answer {
+        QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
+            OwnerBalance { token_id: "0".to_string(), amount: Uint128(1100) },
+            OwnerBalance { token_id: "0a".to_string(), amount: Uint128(800) },
+        ]),
+        _ => panic!("query error")
+    }
+
+    // curate a list of tokens
+    let mut curate0 = CurateTokenId::default();
+    curate0.token_info.token_id = "test_foo".to_string();
+    let mut curate1 = CurateTokenId::default();
+    curate1.token_info.token_id = "test_bar".to_string();
+    let mut curate2 = CurateTokenId::default();
+    curate2.token_info.token_id = "test_hello".to_string();
+    let mut curate3 = CurateTokenId::default();
+    curate3.token_info.token_id = "test_aha".to_string();
+    let msg_curate = HandleMsg::CurateTokenIds{initial_tokens: vec![curate0, curate1, curate2, curate3], memo: None, padding: None };
+    env.message.sender = addr.a();
+    handle(&mut deps, env, msg_curate)?;
+
+    // returns all balances in token_id alphabetical order
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_allbal)?)?;
+    match q_answer {
+        QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
+            OwnerBalance { token_id: "0".to_string(), amount: Uint128(1100) },
+            OwnerBalance { token_id: "0a".to_string(), amount: Uint128(800) },
+            OwnerBalance { token_id: "test_aha".to_string(), amount: Uint128(1000) },
+            OwnerBalance { token_id: "test_bar".to_string(), amount: Uint128(1000) },
+            OwnerBalance { token_id: "test_foo".to_string(), amount: Uint128(1000) },
+            OwnerBalance { token_id: "test_hello".to_string(), amount: Uint128(1000) },
+        ]),
         _ => panic!("query error")
     }
 

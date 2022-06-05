@@ -47,6 +47,45 @@
     {
       "type": "object",
       "required": [
+        "all_balances"
+      ],
+      "properties": {
+        "all_balances": {
+          "type": "object",
+          "required": [
+            "key",
+            "owner"
+          ],
+          "properties": {
+            "key": {
+              "type": "string"
+            },
+            "owner": {
+              "$ref": "#/definitions/HumanAddr"
+            },
+            "tx_history_page": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            },
+            "tx_history_page_size": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0.0
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "transaction_history"
       ],
       "properties": {
@@ -352,6 +391,35 @@
                 },
                 "token_id": {
                   "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "all_balances"
+          ],
+          "properties": {
+            "all_balances": {
+              "type": "object",
+              "properties": {
+                "tx_history_page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
+                },
+                "tx_history_page_size": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0.0
                 }
               }
             }

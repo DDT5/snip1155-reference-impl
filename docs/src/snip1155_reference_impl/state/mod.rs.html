@@ -186,6 +186,15 @@
 <span id="181">181</span>
 <span id="182">182</span>
 <span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
 </pre><pre class="rust"><code><span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">state_structs</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">permissions</span>;
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">txhistory</span>;
@@ -251,6 +260,7 @@
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">contr_conf_w</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;mut</span> <span class="ident">S</span>) -&gt; <span class="ident">Singleton</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">ContractConfig</span><span class="op">&gt;</span> {
     <span class="ident">singleton</span>(<span class="ident">storage</span>, <span class="ident">CONTR_CONF</span>)
 }
+<span class="doccomment">/// Contract configuration: reads information on this contract</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">contr_conf_r</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="ident">S</span>) -&gt; <span class="ident">ReadonlySingleton</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">ContractConfig</span><span class="op">&gt;</span> {
     <span class="ident">singleton_read</span>( <span class="ident">storage</span>, <span class="ident">CONTR_CONF</span>)
 }
@@ -259,6 +269,7 @@
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">blockinfo_w</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;mut</span> <span class="ident">S</span>) -&gt; <span class="ident">Singleton</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">BlockInfo</span><span class="op">&gt;</span> {
     <span class="ident">singleton</span>(<span class="ident">storage</span>, <span class="ident">BLOCK_KEY</span>)
 }
+<span class="doccomment">/// Reads BlockInfo of latest tx. Should not be necessary after env becomes available to queries</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">blockinfo_r</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="ident">S</span>) -&gt; <span class="ident">ReadonlySingleton</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">BlockInfo</span><span class="op">&gt;</span> {
     <span class="ident">singleton_read</span>(<span class="ident">storage</span>, <span class="ident">BLOCK_KEY</span>)
 }
@@ -271,6 +282,7 @@
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tkn_info_w</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;mut</span> <span class="ident">S</span>) -&gt; <span class="ident">Bucket</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">StoredTokenInfo</span><span class="op">&gt;</span> {
     <span class="ident">bucket</span>(<span class="ident">TKN_INFO</span>, <span class="ident">storage</span>)
 }
+<span class="doccomment">/// token_id configs. Key is `token_id.as_bytes()`</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tkn_info_r</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="ident">S</span>) -&gt; <span class="ident">ReadonlyBucket</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">StoredTokenInfo</span><span class="op">&gt;</span> {
     <span class="ident">bucket_read</span>(<span class="ident">TKN_INFO</span>, <span class="ident">storage</span>)
 }
@@ -279,6 +291,7 @@
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tkn_tot_supply_w</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;mut</span> <span class="ident">S</span>) -&gt; <span class="ident">Bucket</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">Uint128</span><span class="op">&gt;</span> {
     <span class="ident">bucket</span>(<span class="ident">TKN_TOTAL_SUPPLY</span>, <span class="ident">storage</span>)
 }
+<span class="doccomment">/// total supply of a token_id. Key is `token_id.as_bytes()`</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">tkn_tot_supply_r</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(<span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="ident">S</span>) -&gt; <span class="ident">ReadonlyBucket</span><span class="op">&lt;</span><span class="ident">S</span>, <span class="ident">Uint128</span><span class="op">&gt;</span> {
     <span class="ident">bucket_read</span>(<span class="ident">TKN_TOTAL_SUPPLY</span>, <span class="ident">storage</span>)
 }
@@ -287,7 +300,7 @@
 <span class="comment">// Multi-level Buckets</span>
 <span class="comment">/////////////////////////////////////////////////////////////////////////////////</span>
 
-<span class="doccomment">/// Multilevel bucket to store balances for each token_id &amp; addr combination. Key intended to </span>
+<span class="doccomment">/// Multilevel bucket to store balances for each token_id &amp; addr combination. Key is to </span>
 <span class="doccomment">/// be [`token_id`, `owner`: to_binary(&amp;HumanAddr)?.as_slice()]  </span>
 <span class="doccomment">/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` </span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">balances_w</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>, <span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(
@@ -296,6 +309,8 @@
 ) -&gt; <span class="ident">Bucket</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">S</span>, <span class="ident">Uint128</span><span class="op">&gt;</span> {
     <span class="ident">Bucket::multilevel</span>(<span class="kw-2">&amp;</span>[<span class="ident">BALANCES</span>, <span class="ident">token_id</span>.<span class="ident">as_bytes</span>()], <span class="ident">storage</span>)
 }
+<span class="doccomment">/// Multilevel bucket to store balances for each token_id &amp; addr combination. Key is to </span>
+<span class="doccomment">/// be [`token_id`, `owner`: to_binary(&amp;HumanAddr)?.as_slice()]  </span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">balances_r</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="lifetime">&#39;b</span>, <span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(
     <span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">S</span>,
     <span class="ident">token_id</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;b</span> <span class="ident">str</span>
@@ -304,7 +319,7 @@
 }
 
 <span class="doccomment">/// private functions.</span>
-<span class="doccomment">/// To store permission. key intended to be [`owner`, `token_id`, `allowed_addr`]</span>
+<span class="doccomment">/// To store permission. key is to be [`owner`, `token_id`, `allowed_addr`]</span>
 <span class="doccomment">/// `allowed_addr` is `to_binary(&amp;HumanAddr)?.as_slice()` </span>
 <span class="kw">fn</span> <span class="ident">permission_w</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(
     <span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="kw-2">mut</span> <span class="ident">S</span>,
@@ -314,6 +329,9 @@
     <span class="kw">let</span> <span class="ident">owner_bin</span> <span class="op">=</span> <span class="ident">to_binary</span>(<span class="ident">owner</span>).<span class="ident">unwrap</span>();
     <span class="ident">Bucket::multilevel</span>(<span class="kw-2">&amp;</span>[<span class="ident">PREFIX_PERMISSIONS</span>, <span class="ident">owner_bin</span>.<span class="ident">as_slice</span>(), <span class="ident">token_id</span>.<span class="ident">as_bytes</span>()], <span class="ident">storage</span>)
 }
+<span class="doccomment">/// private functions.</span>
+<span class="doccomment">/// To read permission. key is to be [`owner`, `token_id`, `allowed_addr`]</span>
+<span class="doccomment">/// `allowed_addr` is `to_binary(&amp;HumanAddr)?.as_slice()` </span>
 <span class="kw">fn</span> <span class="ident">permission_r</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span>, <span class="ident">S</span>: <span class="ident">Storage</span><span class="op">&gt;</span>(
     <span class="ident">storage</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">S</span>,
     <span class="ident">owner</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">HumanAddr</span>,

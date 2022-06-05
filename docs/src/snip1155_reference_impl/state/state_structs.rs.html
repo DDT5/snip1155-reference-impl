@@ -273,6 +273,8 @@
 <span id="268">268</span>
 <span id="269">269</span>
 <span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 
 <span class="kw">use</span> <span class="ident">schemars::JsonSchema</span>;
@@ -316,8 +318,6 @@
     <span class="kw">pub</span> <span class="ident">symbol</span>: <span class="ident">String</span>,
     <span class="kw">pub</span> <span class="ident">token_config</span>: <span class="ident">TknConfig</span>,
     <span class="kw">pub</span> <span class="ident">public_metadata</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span>,
-    <span class="doccomment">/// private metadata can only be set for nfts in the base specification. It is OPTIONAL in </span>
-    <span class="doccomment">/// additional specifications to allow fungible tokens to have private metadata</span>
     <span class="kw">pub</span> <span class="ident">private_metadata</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span>,
 }
 
@@ -343,8 +343,6 @@
     <span class="kw">pub</span> <span class="ident">symbol</span>: <span class="ident">String</span>,
     <span class="kw">pub</span> <span class="ident">token_config</span>: <span class="ident">TknConfig</span>,
     <span class="kw">pub</span> <span class="ident">public_metadata</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span>,
-    <span class="doccomment">/// private metadata can only be set for nfts in the base specification. It is OPTIONAL in </span>
-    <span class="doccomment">/// additional specifications to allow fungible tokens to have private metadata</span>
     <span class="kw">pub</span> <span class="ident">private_metadata</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Metadata</span><span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">curator</span>: <span class="ident">HumanAddr</span>,
 }
@@ -496,7 +494,7 @@
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">JsonSchema</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">CurateTokenId</span> {
     <span class="kw">pub</span> <span class="ident">token_info</span>: <span class="ident">TokenInfoMsg</span>,
-    <span class="kw">pub</span> <span class="ident">balances</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Balance</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">balances</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">TokenIdBalance</span><span class="op">&gt;</span>,
 }
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">test</span>)]</span>
@@ -517,7 +515,7 @@
                     <span class="ident">extension</span>: <span class="prelude-val">Some</span>(<span class="ident">Extension::default</span>()),
                 }),  
             }, 
-            <span class="ident">balances</span>: <span class="macro">vec!</span>[<span class="ident">Balance</span> { 
+            <span class="ident">balances</span>: <span class="macro">vec!</span>[<span class="ident">TokenIdBalance</span> { 
                 <span class="ident">address</span>: <span class="ident">HumanAddr</span>(<span class="string">&quot;addr0&quot;</span>.<span class="ident">to_string</span>()), 
                 <span class="ident">amount</span>: <span class="ident">Uint128</span>(<span class="number">1000</span>) 
             }],
@@ -532,15 +530,21 @@
     <span class="doccomment">/// For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the </span>
     <span class="doccomment">/// owner&#39;s address. This design decision is to allow `BurnToken` to apply to other addresses, </span>
     <span class="doccomment">/// possible in the additional specifications</span>
-    <span class="kw">pub</span> <span class="ident">balances</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">Balance</span><span class="op">&gt;</span>,
+    <span class="kw">pub</span> <span class="ident">balances</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">TokenIdBalance</span><span class="op">&gt;</span>,
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">JsonSchema</span>)]</span>
-<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">Balance</span> {
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">TokenIdBalance</span> {
     <span class="doccomment">/// For BurnToken, `address` needs to be the owner&#39;s address. This design decision is </span>
     <span class="doccomment">/// to allow `BurnToken` to apply to other addresses, possible in the additional </span>
     <span class="doccomment">/// specifications</span>
     <span class="kw">pub</span> <span class="ident">address</span>: <span class="ident">HumanAddr</span>,
+    <span class="kw">pub</span> <span class="ident">amount</span>: <span class="ident">Uint128</span>,
+}
+
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Serialize</span>, <span class="ident">Deserialize</span>, <span class="ident">Clone</span>, <span class="ident">Debug</span>, <span class="ident">PartialEq</span>, <span class="ident">JsonSchema</span>)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">OwnerBalance</span> {
+    <span class="kw">pub</span> <span class="ident">token_id</span>: <span class="ident">String</span>,
     <span class="kw">pub</span> <span class="ident">amount</span>: <span class="ident">Uint128</span>,
 }
 </code></pre></div>

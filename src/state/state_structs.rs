@@ -41,8 +41,6 @@ pub struct TokenInfoMsg {
     pub symbol: String,
     pub token_config: TknConfig,
     pub public_metadata: Option<Metadata>,
-    /// private metadata can only be set for nfts in the base specification. It is OPTIONAL in 
-    /// additional specifications to allow fungible tokens to have private metadata
     pub private_metadata: Option<Metadata>,
 }
 
@@ -68,8 +66,6 @@ pub struct StoredTokenInfo {
     pub symbol: String,
     pub token_config: TknConfig,
     pub public_metadata: Option<Metadata>,
-    /// private metadata can only be set for nfts in the base specification. It is OPTIONAL in 
-    /// additional specifications to allow fungible tokens to have private metadata
     pub private_metadata: Option<Metadata>,
     pub curator: HumanAddr,
 }
@@ -221,7 +217,7 @@ impl TknConfigFlat {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CurateTokenId {
     pub token_info: TokenInfoMsg,
-    pub balances: Vec<Balance>,
+    pub balances: Vec<TokenIdBalance>,
 }
 
 #[cfg(test)]
@@ -242,7 +238,7 @@ impl Default for CurateTokenId {
                     extension: Some(Extension::default()),
                 }),  
             }, 
-            balances: vec![Balance { 
+            balances: vec![TokenIdBalance { 
                 address: HumanAddr("addr0".to_string()), 
                 amount: Uint128(1000) 
             }],
@@ -257,14 +253,20 @@ pub struct TokenAmount {
     /// For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the 
     /// owner's address. This design decision is to allow `BurnToken` to apply to other addresses, 
     /// possible in the additional specifications
-    pub balances: Vec<Balance>,
+    pub balances: Vec<TokenIdBalance>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Balance {
+pub struct TokenIdBalance {
     /// For BurnToken, `address` needs to be the owner's address. This design decision is 
     /// to allow `BurnToken` to apply to other addresses, possible in the additional 
     /// specifications
     pub address: HumanAddr,
+    pub amount: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct OwnerBalance {
+    pub token_id: String,
     pub amount: Uint128,
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use cosmwasm_std::{
     Extern, Storage, Api, Querier, BlockInfo, 
     Binary, to_binary, 
@@ -20,8 +22,9 @@ use crate::{
         balances_r, 
         tkn_tot_supply_r,
         get_receiver_hash, read_viewing_key,         
+        state_structs::OwnerBalance,
         permissions::{PermissionKey, Permission, may_load_any_permission, list_owner_permission_keys, },
-        txhistory::{get_txs,may_get_current_owner, }, blockinfo_r
+        txhistory::{get_txs,may_get_current_owner, }, blockinfo_r, 
     },
     vk::viewing_key::VIEWING_KEY_SIZE,
 };
@@ -30,6 +33,7 @@ use crate::{
 // Queries
 /////////////////////////////////////////////////////////////////////////////////
 
+/// contract query function. See [QueryMsg](crate::msg::QueryMsg) for the api
 pub fn query<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     msg: QueryMsg,
@@ -40,6 +44,7 @@ pub fn query<S: Storage, A: Api, Q: Querier>(
         QueryMsg::RegisteredCodeHash { contract } => query_registered_code_hash(deps, contract),
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::Balance { .. } |
+        QueryMsg::AllBalances { .. } |
         QueryMsg::TransactionHistory { .. } | 
         QueryMsg::Permission { .. } |
         QueryMsg::AllPermissions { .. } |
@@ -68,6 +73,8 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
     match query {
         QueryWithPermit::Balance { owner, token_id 
         } => query_balance(deps, &owner, &HumanAddr(account), token_id),
+        QueryWithPermit::AllBalances { tx_history_page, tx_history_page_size,
+        } => query_all_balances(deps, &HumanAddr(account), tx_history_page, tx_history_page_size),
         QueryWithPermit::TransactionHistory { page, page_size 
         } => query_transactions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
@@ -83,7 +90,7 @@ fn permit_queries<S: Storage, A: Api, Q: Querier>(
         QueryWithPermit::AllPermissions { page, page_size 
         } => query_all_permissions(deps, &HumanAddr(account), page.unwrap_or(0), page_size),
         QueryWithPermit::TokenIdPrivateInfo { token_id 
-        } => query_token_id_private_info(deps, &HumanAddr(account), token_id)
+        } => query_token_id_private_info(deps, &HumanAddr(account), token_id),
     }
 }
 
@@ -106,6 +113,8 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
             return match msg {
                 QueryMsg::Balance { owner, viewer, token_id, .. 
                 } => query_balance(deps, &owner, &viewer, token_id),
+                QueryMsg::AllBalances { tx_history_page, tx_history_page_size, ..
+                } => query_all_balances(deps, address, tx_history_page, tx_history_page_size),
                 QueryMsg::TransactionHistory {
                     page,
                     page_size,
@@ -117,7 +126,10 @@ fn viewing_keys_queries<S: Storage, A: Api, Q: Querier>(
                 } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
                 QueryMsg::TokenIdPrivateInfo { address, token_id, .. 
                 } => query_token_id_private_info(deps, &address, token_id),
-                _ => panic!("This query type does not require authentication"),
+                QueryMsg::ContractInfo {  } |
+                QueryMsg::TokenIdPublicInfo { .. } |
+                QueryMsg::RegisteredCodeHash { .. } |
+                QueryMsg::WithPermit { .. } => unreachable!("This query type does not require viewing key authentication"),
             };
         }
     }
@@ -284,6 +296,37 @@ fn query_balance<S: Storage, A: Api, Q: Querier>(
         None => Uint128(0),
     };
     let response = QueryAnswer::Balance { amount };
+    to_binary(&response)
+}
+
+fn query_all_balances<S: Storage, A: Api, Q: Querier>(
+    deps: &Extern<S, A, Q>,
+    account: &HumanAddr,
+    tx_history_page: Option<u32>,
+    tx_history_page_size: Option<u32>,
+) -> StdResult<Binary> {
+    let address = deps.api.canonical_address(account)?;
+    let (txs, _total) = get_txs(
+        &deps.api, 
+        &deps.storage, 
+        &address, 
+        tx_history_page.unwrap_or(0u32), 
+        tx_history_page_size.unwrap_or(u32::MAX)
+    )?;
+
+    // create unique list of token_ids that owner has potentially owned. BtreeSet used (rather than Hashset) to have a deterministic order
+    let token_ids = txs.into_iter().map(|tx| tx.token_id).collect::<BTreeSet<_>>();
+
+    // get balances for this list of token_ids, only if balance == Some(_), ie: user has had some balance before 
+    let mut balances: Vec<OwnerBalance> = vec![];
+    for token_id in token_ids.into_iter() {
+        let amount = balances_r(&deps.storage, &token_id).may_load(to_binary(account).unwrap().as_slice()).unwrap();
+        if let Some(i) = amount {
+            balances.push(OwnerBalance { token_id, amount: i })
+        } 
+    }
+    
+    let response = QueryAnswer::AllBalances(balances);
     to_binary(&response)
 }
 

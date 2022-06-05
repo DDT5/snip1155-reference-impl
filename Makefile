@@ -1,7 +1,7 @@
-# runs schema, unit-test, clippy (incl on unit tests) and creates docs. 
+# runs schema, docs, unit-test, and clippy (incl on unit tests). 
 # Doesn't do integration-test or mainnet-build 
 .PHONY: prep
-prep: schema test _clippy-test doc
+prep: schema doc test _clippy-test
 _clippy-test:
 	cargo clippy --tests
 

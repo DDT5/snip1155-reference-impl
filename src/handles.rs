@@ -41,6 +41,7 @@ use crate::{
 // Init
 /////////////////////////////////////////////////////////////////////////////////
 
+/// instantiation function. See [InitMsg](crate::msg::InitMsg) for the api
 pub fn init<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,
@@ -91,6 +92,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
 // Handles
 /////////////////////////////////////////////////////////////////////////////////
 
+/// contract handle function. See [HandleMsg](crate::msg::HandleMsg) for the api
 pub fn handle<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,

@@ -10,6 +10,7 @@
   ],
   "properties": {
     "admin": {
+      "description": "if `admin` == `None` && `has_admin` == `true`, the instantiator will be admin if `has_admin` == `false`, this field will be ignore (ie: there will be no admin)",
       "anyOf": [
         {
           "$ref": "#/definitions/HumanAddr"
@@ -20,18 +21,22 @@
       ]
     },
     "curators": {
+      "description": "sets initial list of curators, which can create new token_ids",
       "type": "array",
       "items": {
         "$ref": "#/definitions/HumanAddr"
       }
     },
     "entropy": {
+      "description": "for `create_viewing_key` function",
       "type": "string"
     },
     "has_admin": {
+      "description": "if `false` the contract will instantiate permanently as a no-admin (permissionless) contract",
       "type": "boolean"
     },
     "initial_tokens": {
+      "description": "curates initial list of tokens",
       "type": "array",
       "items": {
         "$ref": "#/definitions/CurateTokenId"
@@ -59,26 +64,6 @@
         }
       }
     },
-    "Balance": {
-      "type": "object",
-      "required": [
-        "address",
-        "amount"
-      ],
-      "properties": {
-        "address": {
-          "description": "For BurnToken, `address` needs to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
-          "allOf": [
-            {
-              "$ref": "#/definitions/HumanAddr"
-            }
-          ]
-        },
-        "amount": {
-          "$ref": "#/definitions/Uint128"
-        }
-      }
-    },
     "CurateTokenId": {
       "type": "object",
       "required": [
@@ -89,7 +74,7 @@
         "balances": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/Balance"
+            "$ref": "#/definitions/TokenIdBalance"
           }
         },
         "token_info": {
@@ -344,6 +329,26 @@
         }
       ]
     },
+    "TokenIdBalance": {
+      "type": "object",
+      "required": [
+        "address",
+        "amount"
+      ],
+      "properties": {
+        "address": {
+          "description": "For BurnToken, `address` needs to be the owner's address. This design decision is to allow `BurnToken` to apply to other addresses, possible in the additional specifications",
+          "allOf": [
+            {
+              "$ref": "#/definitions/HumanAddr"
+            }
+          ]
+        },
+        "amount": {
+          "$ref": "#/definitions/Uint128"
+        }
+      }
+    },
     "TokenInfoMsg": {
       "description": "message sent my instantiator and curators for a specific `token_id`'s token info",
       "type": "object",
@@ -358,7 +363,6 @@
           "type": "string"
         },
         "private_metadata": {
-          "description": "private metadata can only be set for nfts in the base specification. It is OPTIONAL in additional specifications to allow fungible tokens to have private metadata",
           "anyOf": [
             {
               "$ref": "#/definitions/Metadata"

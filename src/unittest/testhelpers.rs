@@ -113,7 +113,7 @@ pub fn curate_addtl_default<S: Storage, A: Api, Q: Querier>(
     curate2.token_info.name = "token2".to_string();
     curate2.token_info.symbol = "TKNB".to_string();
     curate2.token_info.token_config = TknConfig::default_nft();
-    curate2.balances = vec![Balance { address: addr2.clone(), amount: Uint128(1) }];
+    curate2.balances = vec![TokenIdBalance { address: addr2.clone(), amount: Uint128(1) }];
     
     // NFT "2a"
     let mut curate2a = CurateTokenId::default();
@@ -121,7 +121,7 @@ pub fn curate_addtl_default<S: Storage, A: Api, Q: Querier>(
     curate2a.token_info.name = "token2a".to_string();
     curate2a.token_info.symbol = "TKNBA".to_string();
     curate2a.token_info.token_config = TknConfig::default_nft();
-    curate2a.balances = vec![Balance { address: addr2, amount: Uint128(1) }];
+    curate2a.balances = vec![TokenIdBalance { address: addr2, amount: Uint128(1) }];
 
     // batch curate token_id "0a", "1", NFT "2" and NFT "3"
     let msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate0a, curate1, curate2, curate2a], memo: None, padding: None };
@@ -189,6 +189,12 @@ pub fn generate_viewing_keys<S: Storage, A: Api, Q: Querier>(
             return Err(StdError::generic_err("no viewing key generated"))
         }
     }
+
+    for i in 0..vks.len() {
+        if i == 0 { continue };
+        assert_ne!(vks[i], vks[i-1], "viewing keys of two different addresses are similar");
+    }
+
     Ok(Vks {vks})
 }
 
@@ -206,4 +212,7 @@ impl Vks {
     pub fn c(&self) -> String {
         self.vks[2].clone()
     }
+    // pub fn d(&self) -> String {
+    //     self.vks[3].clone()
+    // }
 }

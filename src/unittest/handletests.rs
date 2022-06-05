@@ -116,8 +116,8 @@ fn test_curate_token_id() -> StdResult<()> {
     curate.token_info.token_id = "testa".to_string();
     curate.token_info.token_config = TknConfig::default_nft();
     curate.balances = vec![
-        Balance { address: addr0.clone(), amount: Uint128(1) },
-        Balance { address: addr1.clone(), amount: Uint128(1) },
+        TokenIdBalance { address: addr0.clone(), amount: Uint128(1) },
+        TokenIdBalance { address: addr1.clone(), amount: Uint128(1) },
         ];
     let mut msg = HandleMsg::CurateTokenIds{initial_tokens: vec![curate], memo: None, padding: None };
     let mut result = handle(&mut deps, env.clone(), msg);
@@ -171,8 +171,8 @@ fn test_mint_tokens() -> StdResult<()> {
     let mint = TokenAmount { 
         token_id: "0".to_string(), 
         balances: vec![
-            Balance { address: addr0.clone(), amount: Uint128(10) },
-            Balance { address: addr1.clone(), amount: Uint128(10) }
+            TokenIdBalance { address: addr0.clone(), amount: Uint128(10) },
+            TokenIdBalance { address: addr1.clone(), amount: Uint128(10) }
         ],
     };
     let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
@@ -191,7 +191,7 @@ fn test_mint_tokens() -> StdResult<()> {
     env.message.sender = addr0.clone();
     let mint = TokenAmount { 
         token_id: "2".to_string(), 
-        balances: vec![Balance { address: addr0.clone(), amount: Uint128(1) }],
+        balances: vec![TokenIdBalance { address: addr0.clone(), amount: Uint128(1) }],
     };
     let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     let result = handle(&mut deps, env, msg);
@@ -226,7 +226,7 @@ fn test_burn() -> StdResult<()> {
     let burn = TokenAmount { 
         token_id: "1".to_string(), 
         balances: vec![
-            Balance { address: addr1.clone(), amount: Uint128(501) }
+            TokenIdBalance { address: addr1.clone(), amount: Uint128(501) }
         ],
     };
     let msg = HandleMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
@@ -242,7 +242,7 @@ fn test_burn() -> StdResult<()> {
     let burn = TokenAmount { 
         token_id: "1".to_string(), 
         balances: vec![
-            Balance { address: addr1.clone(), amount: Uint128(300) }
+            TokenIdBalance { address: addr1.clone(), amount: Uint128(300) }
         ],
     };
     let msg = HandleMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
@@ -254,7 +254,7 @@ fn test_burn() -> StdResult<()> {
     let burn = TokenAmount { 
         token_id: "2".to_string(), 
         balances: vec![
-            Balance { address: addr2.clone(), amount: Uint128(1) }
+            TokenIdBalance { address: addr2.clone(), amount: Uint128(1) }
         ],
     };
     let msg = HandleMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
@@ -702,7 +702,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     let msg_mint = HandleMsg::MintTokens { 
         mint_tokens: vec![TokenAmount { 
             token_id: "test0".to_string(), 
-            balances: vec![Balance { address: addr.a(), amount: Uint128(100) }] 
+            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128(100) }] 
         }], 
         memo: None, padding: None 
     };
@@ -771,7 +771,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     let msg_burn = HandleMsg::BurnTokens { 
         burn_tokens: vec![TokenAmount {
             token_id: "test0".to_string(),
-            balances: vec![Balance {
+            balances: vec![TokenIdBalance {
                 address: addr.a(),
                 amount: Uint128(500),
             }],
