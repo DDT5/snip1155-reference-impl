@@ -326,7 +326,7 @@ pub enum QueryAnswer {
     AllBalances(Vec<OwnerBalance>),
     TransactionHistory {
         txs: Vec<Tx>,
-        total: Option<u64>,
+        total: u64,
     },
     Permission(Option<Permission>),
     AllPermissions{

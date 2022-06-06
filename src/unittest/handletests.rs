@@ -14,7 +14,7 @@ use super::super::{
         metadata::*,
     },
     receiver::{Snip1155ReceiveMsg, ReceiverHandleMsg},
-
+    vk::viewing_key::ViewingKey,
 };
 
 use cosmwasm_std::{
@@ -22,8 +22,9 @@ use cosmwasm_std::{
     StdResult, 
     InitResponse, 
     HumanAddr, Uint128, 
-    to_binary, from_binary, 
+    to_binary, from_binary, Api, 
 };
+use secret_toolkit::permit::RevokedPermits;
 
 /////////////////////////////////////////////////////////////////////////////////
 // Tests
@@ -268,6 +269,244 @@ fn test_burn() -> StdResult<()> {
 }
 
 #[test]
+fn test_change_metadata_nft() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+        // addr.a() = admin;
+        // addr.b() = curator;
+        // addr.c() = owner;
+        // addr.d() = new owner;
+
+    // custom instantiate
+    let mut deps = mock_dependencies(20, &[]);
+    let mut env = mock_env(addr.a(), &[]);
+
+    let init_msg = InitMsg {
+        has_admin: true,
+        admin: None, // None -> sender defaults as admin
+        curators: vec![addr.b()],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+    init(&mut deps, env.clone(), init_msg)?;
+    
+    // curate two nfts: one which owner can change metadata, and one which owner cannot
+    let mut curate0 = CurateTokenId::default();
+    curate0.token_info.token_id = "testnft0".to_string();
+    curate0.token_info.token_config = TknConfig::default_nft();
+    curate0.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128(1) }];
+    
+    let mut curate1 = CurateTokenId::default();
+    curate1.token_info.token_id = "testnft1".to_string();
+    curate1.token_info.token_config = TknConfig::default_nft();
+    let mut flat_config = curate1.token_info.token_config.flatten();
+    flat_config.owner_may_update_metadata = false;
+    curate1.token_info.token_config = flat_config.to_enum();
+    curate1.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128(1) }];
+    
+    let msg_curate = HandleMsg::CurateTokenIds { 
+        initial_tokens: vec![curate0, curate1],
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_curate)?;
+
+    // error: admin cannot change nft metadata if not owner
+    let msg_change_metadata = HandleMsg::ChangeMetadata { 
+        token_id: "testnft0".to_string(), 
+        public_metadata: Box::new(Some(Metadata {
+            token_uri: Some("new public uri".to_string()),
+            extension: Some(Extension::default()),
+        })),  
+        private_metadata: Box::new(None), 
+    };
+    env.message.sender = addr.a();
+    let mut result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
+
+    // error: curator cannot change nft metadata if not owner 
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
+
+    // error: random non-owner cannot change metadata
+    env.message.sender = addr.d();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
+
+    // error: nft owner cannot change metadata if config doesn't allow
+    let msg_change_metadata_nft1 = HandleMsg::ChangeMetadata { 
+        token_id: "testnft1".to_string(), 
+        public_metadata: Box::new(None),  
+        private_metadata: Box::new(None), 
+    };
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_change_metadata_nft1);
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft1"));
+
+    // success: nft owner can change metadata if config allows...
+    env.message.sender = addr.c();
+    handle(&mut deps, env.clone(), msg_change_metadata.clone())?;
+        // check public metadata has changed
+        let tkn_info = tkn_info_r(&deps.storage).load("testnft0".to_string().as_bytes())?;
+        assert_eq!(tkn_info.public_metadata, Some(Metadata {
+            token_uri: Some("new public uri".to_string()),
+            extension: Some(Extension::default()),
+        }));
+        // check private metadata unchanged because input is None
+        assert_eq!(tkn_info.private_metadata, Some(Metadata {
+            token_uri: Some("private uri".to_string()),
+            extension: Some(Extension::default()),
+        }));
+    // transfer nft to a different owner...
+    let msg_trans = HandleMsg::Transfer { 
+        token_id: "testnft0".to_string(), 
+        from: addr.c(), 
+        recipient: addr.d(), 
+        amount: Uint128(1), 
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.c();
+    handle(&mut deps, env.clone(), msg_trans)?;
+    
+    // ...error: old nft owner cannot change metadata
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
+
+    // success: new nft owner can change metadata
+    env.message.sender = addr.d();
+    handle(&mut deps, env, msg_change_metadata)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_change_metadata_fungible() -> StdResult<()> {
+        // init addresses
+        let addr = init_addrs();
+        // addr.a() = admin;
+        // addr.b() = curator;
+        // addr.c() = minter;
+        // addr.d() = owner / new minter;
+
+    // custom instantiate
+    let mut deps = mock_dependencies(20, &[]);
+    let mut env = mock_env(addr.a(), &[]);
+
+    let init_msg = InitMsg {
+        has_admin: true,
+        admin: None, // None -> sender defaults as admin
+        curators: vec![addr.b()],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+    init(&mut deps, env.clone(), init_msg)?;
+    
+    // curate two nfts: one which owner can change metadata, and one which owner cannot
+    let mut curate0 = CurateTokenId::default();
+    curate0.token_info.token_id = "test0".to_string();
+    curate0.token_info.token_config = TknConfig::default_fungible();
+    let mut flat_config = curate0.token_info.token_config.flatten();
+    flat_config.minters = vec![addr.c()];
+    curate0.token_info.token_config = flat_config.to_enum();
+    curate0.balances = vec![TokenIdBalance { address: addr.d(), amount: Uint128(1000) }];
+    
+    let mut curate1 = CurateTokenId::default();
+    curate1.token_info.token_id = "test1".to_string();
+    curate1.token_info.token_config = TknConfig::default_fungible();
+    let mut flat_config = curate1.token_info.token_config.flatten();
+    flat_config.minters = vec![addr.c()];
+    flat_config.minter_may_update_metadata = false;
+    curate1.token_info.token_config = flat_config.to_enum();
+    curate1.balances = vec![TokenIdBalance { address: addr.d(), amount: Uint128(1000) }];
+    
+    let msg_curate = HandleMsg::CurateTokenIds { 
+        initial_tokens: vec![curate0, curate1],
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_curate)?;
+
+    // error: admin cannot change metadata if not minter
+    let msg_change_metadata = HandleMsg::ChangeMetadata { 
+        token_id: "test0".to_string(), 
+        public_metadata: Box::new(Some(Metadata {
+            token_uri: Some("new public uri".to_string()),
+            extension: Some(Extension::default()),
+        })),  
+        private_metadata: Box::new(None), 
+    };
+    env.message.sender = addr.a();
+    let mut result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
+
+    // error: curator cannot change nft metadata if not minter 
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
+
+    // error: owner cannot change metadata
+    env.message.sender = addr.d();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
+
+    // error: minter cannot change metadata if config doesn't allow
+    let msg_change_metadata_test1 = HandleMsg::ChangeMetadata { 
+        token_id: "test1".to_string(), 
+        public_metadata: Box::new(None),  
+        private_metadata: Box::new(None), 
+    };
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_change_metadata_test1);
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test1"));
+
+    // success: minter can change metadata if config allows
+    env.message.sender = addr.c();
+    handle(&mut deps, env.clone(), msg_change_metadata.clone())?;
+        // check public metadata has changed
+        let tkn_info = tkn_info_r(&deps.storage).load("test0".to_string().as_bytes())?;
+        assert_eq!(tkn_info.public_metadata, Some(Metadata {
+            token_uri: Some("new public uri".to_string()),
+            extension: Some(Extension::default()),
+        }));
+        // check private metadata unchanged because input is None
+        assert_eq!(tkn_info.private_metadata, Some(Metadata {
+            token_uri: Some("private uri".to_string()),
+            extension: Some(Extension::default()),
+        }));
+
+    // specific token_id curator can add minter (note admin can do this too)...
+    let msg_add_minter = HandleMsg::AddMinters {
+        token_id: "test0".to_string(),
+        add_minters: vec![addr.d()],
+        padding: None,
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_add_minter)?;
+    
+    // ...admin can remove minter (note specific token_id curator can do this too)...
+    let msg_remove_minter = HandleMsg::RemoveMinters {
+        token_id: "test0".to_string(),
+        remove_minters: vec![addr.c()],
+        padding: None,
+    };
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_remove_minter)?;
+
+    // ...error: old minter cannot change metadata
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_change_metadata.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
+
+    // success: new minter can change metadata
+    env.message.sender = addr.d();
+    handle(&mut deps, env, msg_change_metadata)?;
+
+    Ok(())
+}
+
+#[test]
 fn test_transfer() -> StdResult<()> {
     // init addresses
     let addr0 = HumanAddr("addr0".to_string());
@@ -340,35 +579,34 @@ fn test_transfer() -> StdResult<()> {
 #[test]
 fn test_send() -> StdResult<()> {
     // init addresses
-    let addr0 = HumanAddr("addr0".to_string());
-    let addr1 = HumanAddr("addr1".to_string()); let addr1_h = "addr1_hash".to_string();
+    let addr = init_addrs();
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
     // initial balance check 
-    assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1000));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128(1000));
 
-    // send "tkn0" with msg
-    let env = mock_env("addr0", &[]);
+    // `send` token_id "0" with msg
+    let env = mock_env(addr.a(), &[]);
     let msg = HandleMsg::Send { 
         token_id: "0".to_string(), 
-        from: addr0.clone(), 
-        recipient: addr1.clone(), 
-        recipient_code_hash: Some(addr1_h.clone()),
+        from: addr.a(), 
+        recipient: addr.b(), 
+        recipient_code_hash: Some(addr.b_hash()),
         amount: Uint128(800),
         msg: Some(to_binary(&"msg_str")?), 
         memo: None, padding: None,
     };
     let response = handle(&mut deps, env, msg)?;
-    assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(200));
-    assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(800));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128(200));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.b()).unwrap(), Uint128(800));
     let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0])?; 
-    assert_eq!(receiver_addr, Some(&addr1)); assert_eq!(receiver_hash, &addr1_h);
+    assert_eq!(receiver_addr, Some(&addr.b())); assert_eq!(receiver_hash, &addr.b_hash());
     let exp_receive_msg = Snip1155ReceiveMsg {
-        sender: addr0.clone(),
+        sender: addr.a(),
         token_id: "0".to_string(),
-        from: addr0,
+        from: addr.a(),
         amount: Uint128(800),
         memo: None,
         msg: Some(to_binary(&"msg_str")?), 
@@ -522,66 +760,6 @@ fn test_batch_transfer_and_send_errors() -> StdResult<()> {
 }
 
 #[test]
-fn test_revoke_permission_sanity() -> StdResult<()> {
-    //init addresses
-    let addr = init_addrs();
-
-    //instantiate
-    let (_init_result, mut deps) = init_helper_default();
-     
-    // give permission
-    let msg0_perm_b = HandleMsg::GivePermission { 
-        allowed_address: addr.b(), 
-        token_id: "0".to_string(), 
-        view_balance: None, view_balance_expiry: None,
-        view_private_metadata: None, view_private_metadata_expiry: None,
-        transfer: Some(Uint128(10)), transfer_expiry: None,
-        padding: None,
-    };  
-    let mut env = mock_env("addr0", &[]);
-    handle(&mut deps, env.clone(), msg0_perm_b)?;
-
-    let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a(), addr.b()])?;
-
-    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        key: vks.a(), 
-        token_id: "0".to_string()
-    })?)?;
-    match q_answer {
-        QueryAnswer::Permission(perm) => {
-            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(10))
-        }
-        _ => panic!("query error")
-    }
-
-    // addr.b can revoke (renounce) permission it has been given
-    let msg_revoke = HandleMsg::RevokePermission { 
-        token_id: "0".to_string(), 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        padding: None 
-    };
-    env.message.sender = addr.b();
-    handle(&mut deps, env.clone(), msg_revoke)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        key: vks.a(), 
-        token_id: "0".to_string()
-    })?)?;
-    match q_answer {
-        QueryAnswer::Permission(perm) => {
-            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(0))
-        }
-        _ => panic!("query error")
-    }
-    
-    Ok(())
-}
-
-#[test]
 fn test_transfer_permissions_fungible() -> StdResult<()> {
     // init addresses
     let addr0 = HumanAddr("addr0".to_string()); let addr0_bin = to_binary(&addr0)?; let _addr0_u8 = addr0_bin.as_slice();
@@ -608,6 +786,16 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
 
     // cannot transfer with insufficient allowance
     env.message.sender = addr0.clone();
+    let msg0_perm_1 = HandleMsg::GivePermission { 
+        allowed_address: addr1.clone(), 
+        token_id: "0".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(11)), transfer_expiry: None,
+        padding: None,
+    };  
+    handle(&mut deps, env.clone(), msg0_perm_1)?;
+    // check that old permission gets replaced if a new one is granted
     let msg0_perm_1 = HandleMsg::GivePermission { 
         allowed_address: addr1.clone(), 
         token_id: "0".to_string(), 
@@ -785,6 +973,116 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
 }
 
 #[test]
+fn test_revoke_permission_sanity() -> StdResult<()> {
+    //init addresses
+    let addr = init_addrs();
+
+    //instantiate
+    let (_init_result, mut deps) = init_helper_default();
+     
+    // give permission
+    let msg0_perm_b = HandleMsg::GivePermission { 
+        allowed_address: addr.b(), 
+        token_id: "0".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(10)), transfer_expiry: None,
+        padding: None,
+    };  
+    let mut env = mock_env("addr0", &[]);
+    handle(&mut deps, env.clone(), msg0_perm_b)?;
+
+    let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a(), addr.b()])?;
+
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        key: vks.a(), 
+        token_id: "0".to_string()
+    })?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm) => {
+            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(10))
+        }
+        _ => panic!("query error")
+    }
+
+    // addr.b can revoke (renounce) permission it has been given
+    let msg_revoke = HandleMsg::RevokePermission { 
+        token_id: "0".to_string(), 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env.clone(), msg_revoke)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::Permission { 
+        owner: addr.a(), 
+        allowed_address: addr.b(), 
+        key: vks.a(), 
+        token_id: "0".to_string()
+    })?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm) => {
+            assert_eq!(perm.unwrap().trfer_allowance_perm, Uint128(0))
+        }
+        _ => panic!("query error")
+    }
+    
+    Ok(())
+}
+
+#[test]
+fn test_create_and_set_viewing_keys_sanity() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // create vk
+    let msg_create_vk = HandleMsg::CreateViewingKey { entropy: "foobar".to_string(), padding: None };
+    let mut env = mock_env(addr.a(), &[]);
+    let response = handle(&mut deps, env.clone(), msg_create_vk)?;
+    let response_data = from_binary::<HandleAnswer>(&response.data.unwrap())?;
+    match response_data {
+        HandleAnswer::CreateViewingKey { key } => assert!(format!("{}",key).contains("api_key_")),
+        _ => panic!("expected HandleAnswer:CreateViewingKey variant"),
+    }
+
+    // set vk
+    let msg_set_vk = HandleMsg::SetViewingKey { key: "foobar".to_string(), padding: None };
+    env.message.sender = addr.b();
+    handle(&mut deps, env, msg_set_vk)?;
+    let vk = read_viewing_key(&deps.storage, &deps.api.canonical_address(&addr.b())?).unwrap();
+    let exp_vk = ViewingKey("foobar".to_string()).to_hashed();
+    assert_eq!(vk.as_slice(), exp_vk.as_slice());
+    
+    Ok(())
+}
+
+/// permit queries tested more extensively in integration test. Because in current Secret Network API (at the time of writing),
+/// permits will always pass in unit tests
+#[test]
+fn test_revoke_permit_sanity() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // revoke permit 
+    let msg = HandleMsg::RevokePermit { permit_name: "testpermit".to_string(), padding: None };
+    let env = mock_env(addr.a(), &[]);
+    handle(&mut deps, env, msg)?;
+
+    // check that permit is revoked
+    assert!(RevokedPermits::is_permit_revoked(&deps.storage, PREFIX_REVOKED_PERMITS, &addr.a(), "testpermit"));
+
+    Ok(())
+}
+
+#[test]
 fn test_add_remove_curators() -> StdResult<()> {
     // init addresses
     let addr = init_addrs();
@@ -793,7 +1091,7 @@ fn test_add_remove_curators() -> StdResult<()> {
     let (_init_result, mut deps) = init_helper_default();
     
     // non-curator cannot curate new token_ids
-    let mut env = mock_env("addr1", &[]);
+    let mut env = mock_env(addr.b(), &[]);
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "test0".to_string();
     let msg_curate = HandleMsg::CurateTokenIds { 
@@ -883,7 +1181,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     let (_init_result, mut deps) = init_helper_default();
     
     // admin adds 2 curators, addr.b and addr.c ...
-    let mut env = mock_env("addr0", &[]);
+    let mut env = mock_env(addr.a(), &[]);
     let msg_add_curators = HandleMsg::AddCurators { add_curators: vec![addr.b(), addr.c()], padding: None };
     handle(&mut deps, env.clone(), msg_add_curators)?;
     
@@ -1045,6 +1343,214 @@ fn test_add_remove_minters() -> StdResult<()> {
         env.message.sender = address;
         result = handle(&mut deps, env.clone(), msg_mint.clone());
         assert!(extract_error_msg(&result).contains("Only minters are allowed to mint additional tokens for token_id test0"));
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_change_admin() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+    
+    // check current admin
+    let contract_info = contr_conf_r(&deps.storage).load()?;
+    assert_eq!(contract_info.admin, Some(addr.a()));
+
+    // error: non-admin cannot call this function
+    let msg_change_admin = HandleMsg::ChangeAdmin { new_admin: addr.b(), padding: None };
+    let mut env = mock_env(addr.b(), &[]);
+    let result = handle(&mut deps, env.clone(), msg_change_admin.clone());
+    assert!(extract_error_msg(&result).contains("This is an admin function"));
+
+    // success: admin can change admin
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_change_admin)?;
+    let contract_info = contr_conf_r(&deps.storage).load()?;
+    assert_eq!(contract_info.admin, Some(addr.b()));
+
+    // old admin cannot call admin function (choice of function is arbitrary)
+    let msg_add_curators = HandleMsg::AddCurators { add_curators: vec![addr.b()], padding: None };
+    let result = handle(&mut deps, env.clone(), msg_add_curators.clone());
+    assert!(extract_error_msg(&result).contains("This is an admin function"));
+
+    // success: new admin can call admin function
+    env.message.sender = addr.b();
+    handle(&mut deps, env, msg_add_curators)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_remove_admin() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // check admin from contract_info 
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::ContractInfo {  })?)?;
+    match q_answer {
+        QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
+            assert_eq!(admin, Some(addr.a()));
+            assert_eq!(curators, vec![addr.a()]);
+            assert_eq!(all_token_ids, vec!["0".to_string()]);
+        },
+        _ => panic!("query error")
+    }
+
+    // test admin can perform an admin function (choice of function is arbitrary)
+    let msg_add_curators = HandleMsg::AddCurators { add_curators: vec![addr.b()], padding: None };
+    let mut env = mock_env(addr.a(), &[]);
+    handle(&mut deps, env.clone(), msg_add_curators.clone())?;
+
+    // admin tries to remove admin: fail due to wrong current admin input
+    env.message.sender = addr.a();
+    let mut result = handle(&mut deps, env.clone(), HandleMsg::RemoveAdmin {
+        current_admin: addr.b(), contract_address: HumanAddr("cosmos2contract".to_string()), padding: None 
+    });
+    assert!(extract_error_msg(&result).contains("your inputs are incorrect to perform this function"));
+
+    // error: admin tries to remove admin: fail due to wrong contract address
+    env.message.sender = addr.a();
+    result = handle(&mut deps, env.clone(), HandleMsg::RemoveAdmin { 
+        current_admin: addr.a(), contract_address: HumanAddr("wronginput".to_string()), padding: None 
+    });
+    assert!(extract_error_msg(&result).contains("your inputs are incorrect to perform this function"));
+
+    // error: non-admin cannot remove admin
+    let msg_remove_admin = HandleMsg::RemoveAdmin { 
+        current_admin: addr.a(), contract_address: HumanAddr("cosmos2contract".to_string()), padding: None 
+    };
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_remove_admin.clone());
+    assert!(extract_error_msg(&result).contains("This is an admin function"));
+
+    // success: admin removes admin
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_remove_admin)?;
+    
+    // check that admin can no longer perform admin function
+    result = handle(&mut deps, env, msg_add_curators);
+    assert!(extract_error_msg(&result).contains("This contract has no admin"));
+
+    // check that contract_info shows no admin
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::ContractInfo {  })?)?;
+    match q_answer {
+        QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
+            assert_eq!(admin, None);
+            assert_eq!(curators, vec![addr.a(), addr.b()]);
+            assert_eq!(all_token_ids, vec!["0".to_string()]);
+        },
+        _ => panic!("query error")
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_instantiate_admin_inputs() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // case0: instantiate with has_admin = false && admin = None -> no admin
+    let mut deps = mock_dependencies(20, &[]);
+    let mut env = mock_env(addr.a(), &[]);
+
+    let init_msg = InitMsg {
+        has_admin: false,
+        admin: None,
+        curators: vec![],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+
+    init(&mut deps, env.clone(), init_msg)?;
+    assert_eq!(contr_conf_r(&deps.storage).load()?.admin, None);
+
+    // case1: instantiate with has_admin = false && admin = Some(_) -> no admin 
+    let mut deps = mock_dependencies(20, &[]);
+
+    let init_msg = InitMsg {
+        has_admin: false,
+        admin: Some(addr.a()),
+        curators: vec![],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+    
+    init(&mut deps, env.clone(), init_msg)?;
+    assert_eq!(contr_conf_r(&deps.storage).load()?.admin, None);
+
+    // case2: instantiate with has_admin = true && admin = None -> defaults to sender as admin 
+    let mut deps = mock_dependencies(20, &[]);
+
+    let init_msg = InitMsg {
+        has_admin: true,
+        admin: None,
+        curators: vec![],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+
+    env.message.sender = addr.a();
+    init(&mut deps, env.clone(), init_msg)?;
+    assert_eq!(contr_conf_r(&deps.storage).load()?.admin, Some(addr.a()));
+
+    // case3: instantiate with has_admin = true && admin = addr.b() -> admin is addr.b(), although addr.a() instantiated 
+    let mut deps = mock_dependencies(20, &[]);
+
+    let init_msg = InitMsg {
+        has_admin: true,
+        admin: Some(addr.b()),
+        curators: vec![],
+        initial_tokens: vec![],
+        entropy: "seedentropy".to_string(),
+    };
+
+    env.message.sender = addr.a();
+    init(&mut deps, env, init_msg)?;
+    assert_eq!(contr_conf_r(&deps.storage).load()?.admin, Some(addr.b()));
+
+    Ok(())
+}
+ 
+#[test]
+fn test_receiver_sanity() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // `send` with msg
+    let env = mock_env(addr.a(), &[]);
+    let msg = HandleMsg::Send { 
+        token_id: "0".to_string(), 
+        from: addr.a(), 
+        recipient: addr.b(), 
+        recipient_code_hash: Some(addr.b_hash()),
+        amount: Uint128(800),
+        msg: Some(to_binary(&"msg_str")?), 
+        memo: Some("some memo".to_string()), padding: None,
+    };
+    let response = handle(&mut deps, env, msg)?;
+    let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0])?; 
+    assert_eq!(receiver_addr, Some(&addr.b())); assert_eq!(receiver_hash, &addr.b_hash());
+    let exp_receive_msg = Snip1155ReceiveMsg {
+        sender: addr.a(),
+        token_id: "0".to_string(),
+        from: addr.a(),
+        amount: Uint128(800),
+        memo: Some("some memo".to_string()),
+        msg: Some(to_binary(&"msg_str")?), 
+    };
+    match receiver_msg {
+        ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg),
     }
 
     Ok(())

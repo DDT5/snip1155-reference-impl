@@ -314,7 +314,7 @@ fn query_all_balances<S: Storage, A: Api, Q: Querier>(
         tx_history_page_size.unwrap_or(u32::MAX)
     )?;
 
-    // create unique list of token_ids that owner has potentially owned. BtreeSet used (rather than Hashset) to have a deterministic order
+    // create unique list of token_ids that owner has potentially owned. BtreeSet used (rather than Hashset) to have a predictable order
     let token_ids = txs.into_iter().map(|tx| tx.token_id).collect::<BTreeSet<_>>();
 
     // get balances for this list of token_ids, only if balance == Some(_), ie: user has had some balance before 
@@ -341,7 +341,7 @@ fn query_transactions<S: Storage, A: Api, Q: Querier>(
 
     let response = QueryAnswer::TransactionHistory {
         txs,
-        total: Some(total),
+        total,
     };
     to_binary(&response)
 }

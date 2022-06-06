@@ -1,8 +1,5 @@
 use core::panic;
 use std::ops::Add;
-use serde_json::to_string;
-
-use crate::state::state_structs::OwnerBalance;
 
 use super::{
     testhelpers::*
@@ -14,6 +11,7 @@ use super::super::{
     msg::*,
     state::{
         state_structs::*,
+        txhistory::*,
         permissions::*,
         expiration::*,
     },
@@ -71,77 +69,52 @@ fn test_q_init() -> StdResult<()> {
 }
 
 #[test]
-fn test_q_permission() -> StdResult<()> {
+fn test_query_tokenid_public_info_sanity() -> StdResult<()> {
     // init addresses
-    let addr0 = HumanAddr("addr0".to_string());
-    let addr1 = HumanAddr("addr1".to_string());
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, deps) = init_helper_default();
+
+    // view public info of fungible token
+    let msg = QueryMsg::TokenIdPublicInfo { token_id: "0".to_string() };
+    let q_result = query(&deps, msg);
+    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
+    match q_answer {
+        QueryAnswer::TokenIdPublicInfo { token_id_info, total_supply, owner 
+        } => {
+            assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
+            assert_eq!(token_id_info.private_metadata, None);
+            assert_eq!(token_id_info.curator, addr.a());
+            assert_eq!(total_supply, Some(Uint128(1000)));
+            assert!(owner.is_none());
+        },
+        _ => panic!("query error"),
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_query_registered_code_hash() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // give permission to transfer: addr0 grants addr1
-    let mut env = mock_env("addr0", &[]);
-    let msg0_perm_1 = HandleMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "0".to_string(), 
-        view_balance: Some(true), view_balance_expiry: None,
-        view_private_metadata: None, view_private_metadata_expiry: None,
-        transfer: Some(Uint128(10)), transfer_expiry: None,
-        padding: None, 
-    };  
-    handle(&mut deps, env.clone(), msg0_perm_1)?;
+    // register receive addr.a
+    let env = mock_env(addr.a(), &[]);
+    let msg_reg_receive = HandleMsg::RegisterReceive { code_hash: addr.a_hash(), padding: None };
+    handle(&mut deps, env, msg_reg_receive)?;
 
-    // query permission fails: no viewing key
-    let msg_q = QueryMsg::Permission { owner: addr0.clone(), allowed_address: addr1.clone(), key: "vkey".to_string(), token_id: "0".to_string() };
-    let q_result = query(&deps, msg_q.clone());
-    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
+    let msg_q_code_hash = QueryMsg::RegisteredCodeHash { contract: addr.a() };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_code_hash)?)?;
     match q_answer {
-        QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
+        QueryAnswer::RegisteredCodeHash { code_hash } => assert_eq!(code_hash, Some(addr.a_hash())),
         _ => panic!("query error")
     }
-
-    // query permission succeeds with owner's viewing key
-    // i) set_viewing_key
-    env.message.sender = addr0.clone();
-    let msg_vk = HandleMsg::SetViewingKey { key: "vkey".to_string(), padding: None };
-    handle(&mut deps, env.clone(), msg_vk)?;
-    // ii) query permissions
-    let q_result = query(&deps, msg_q);
-    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
-    match q_answer {
-        QueryAnswer::Permission(perm
-        ) => assert_eq!(perm.unwrap_or_default(), 
-                Permission { 
-                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
-                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
-                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
-                }
-            ),
-        _ => panic!("query error")
-    }
-
-    // query permission succeeds with perm_addr's viewing key
-    // i) set_viewing_key
-    env.message.sender = addr1.clone();
-    let msg_vk2 = HandleMsg::SetViewingKey { key: "vkey2".to_string(), padding: None };
-    handle(&mut deps, env, msg_vk2)?;
-    // ii) query permissions
-    let msg_q2 = QueryMsg::Permission { owner: addr0, allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
-    let q_result = query(&deps, msg_q2);
-    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
-    match q_answer {
-        QueryAnswer::Permission(perm
-        ) => assert_eq!(
-                perm.unwrap_or_default(), 
-                Permission { 
-                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
-                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
-                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
-                }
-            ),
-        _ => panic!("query error")
-    }
-
+    
     Ok(())
 }
 
@@ -331,7 +304,278 @@ fn test_query_all_balance() -> StdResult<()> {
 }
 
 #[test]
-fn test_query_tokenid_private_info() -> StdResult<()> {
+fn test_query_transaction_history() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // generate vks
+    let mut env = mock_env(addr.a(), &[]);
+    let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a(), addr.b()])?;
+
+    // query tx history
+    let msg_tx_hist_a_a = QueryMsg::TransactionHistory { address: addr.a(), key: vks.a(), page: None, page_size: 10u32 };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_tx_hist_a_a.clone())?)?;
+    match q_answer {
+        QueryAnswer::TransactionHistory { txs, total } => {
+            match &txs[0].action {
+                TxAction::Mint { minter, recipient, amount } => {
+                    assert_eq!(minter, &addr.a());
+                    assert_eq!(recipient, &addr.a());
+                    assert_eq!(amount, &Uint128(1000));
+                },
+                _ => panic!("wrong tx history variant")
+            };
+            assert_eq!(total, 1_u64);
+        },
+        _ => panic!("query error")
+    }
+
+    // curate more tokens
+    curate_addtl_default(&mut deps, &env)?;
+    // query tx history
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_tx_hist_a_a)?)?;
+    if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
+        if let TxAction::Mint { minter, recipient, amount } = &txs[0].action {
+            assert_eq!(minter, &addr.a());
+            assert_eq!(recipient, &addr.c());
+            assert_eq!(amount, &Uint128(1));
+        }
+        if let TxAction::Mint { minter, recipient, amount } = &txs[1].action {
+            assert_eq!(minter, &addr.a());
+            assert_eq!(recipient, &addr.c());
+            assert_eq!(amount, &Uint128(1));
+        }
+        if let TxAction::Mint { minter, recipient, amount } = &txs[2].action {
+            assert_eq!(minter, &addr.a());
+            assert_eq!(recipient, &addr.b());
+            assert_eq!(amount, &Uint128(500));
+        }
+        if let TxAction::Mint { minter, recipient, amount } = &txs[3].action {
+            assert_eq!(minter, &addr.a());
+            assert_eq!(recipient, &addr.a());
+            assert_eq!(amount, &Uint128(800));
+        }
+        assert_eq!(total, 5_u64);
+    }
+
+    // transfer token
+    let msg_trans = HandleMsg::Transfer { token_id: "0a".to_string(), from: addr.a(), recipient: addr.b(), amount: Uint128(10), memo: None, padding: None };
+    env.message.sender = addr.a();
+    handle(&mut deps, env.clone(), msg_trans)?;
+
+    let msg_tx_hist_b_b = QueryMsg::TransactionHistory { address: addr.b(), key: vks.b(), page: None, page_size: 10u32 };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_tx_hist_b_b.clone())?)?;
+    if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
+        if let TxAction::Transfer { from, sender, recipient, amount } = &txs[0].action {  
+            assert_eq!(from, &addr.a());
+            assert_eq!(sender, &None);
+            assert_eq!(recipient, &addr.b());
+            assert_eq!(amount, &Uint128(10));
+        }
+        // addr.b has only two records in history
+        assert_eq!(total, 2_u64);
+    }
+    
+    // burn token twice in a single tx -> get two txs in history record
+    let msg_burn = HandleMsg::BurnTokens { 
+        burn_tokens: vec![TokenAmount {
+            token_id: "0a".to_string(),
+            balances: vec![
+                TokenIdBalance {
+                    address: addr.b(),
+                    amount: Uint128(3),
+                },
+                TokenIdBalance {
+                    address: addr.b(),
+                    amount: Uint128(4),
+                },
+            ]
+        }], 
+        memo: None, padding: None 
+    };
+    env.message.sender = addr.b();
+    handle(&mut deps, env, msg_burn)?;
+
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_tx_hist_b_b)?)?;
+    if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
+        if let TxAction::Burn { burner, owner, amount } = &txs[0].action {
+            assert_eq!(burner, &None);
+            assert_eq!(owner, &addr.b());
+            assert_eq!(amount, &Uint128(4));
+        }
+        if let TxAction::Burn { burner, owner, amount } = &txs[1].action {
+            assert_eq!(burner, &None);
+            assert_eq!(owner, &addr.b());
+            assert_eq!(amount, &Uint128(3));
+        }
+        // addr.b see two additional history records 
+        assert_eq!(total, 4_u64);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_query_permission() -> StdResult<()> {
+    // init addresses
+    let addr0 = HumanAddr("addr0".to_string());
+    let addr1 = HumanAddr("addr1".to_string());
+
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+
+    // give permission to transfer: addr0 grants addr1
+    let mut env = mock_env("addr0", &[]);
+    let msg0_perm_1 = HandleMsg::GivePermission { 
+        allowed_address: addr1.clone(), 
+        token_id: "0".to_string(), 
+        view_balance: Some(true), view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(10)), transfer_expiry: None,
+        padding: None, 
+    };  
+    handle(&mut deps, env.clone(), msg0_perm_1)?;
+
+    // query permission fails: no viewing key
+    let msg_q = QueryMsg::Permission { owner: addr0.clone(), allowed_address: addr1.clone(), key: "vkey".to_string(), token_id: "0".to_string() };
+    let q_result = query(&deps, msg_q.clone());
+    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
+    match q_answer {
+        QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
+        _ => panic!("query error")
+    }
+
+    // query permission succeeds with owner's viewing key
+    // i) set_viewing_key
+    env.message.sender = addr0.clone();
+    let msg_vk = HandleMsg::SetViewingKey { key: "vkey".to_string(), padding: None };
+    handle(&mut deps, env.clone(), msg_vk)?;
+    // ii) query permissions
+    let q_result = query(&deps, msg_q);
+    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm
+        ) => assert_eq!(perm.unwrap_or_default(), 
+                Permission { 
+                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
+                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
+                }
+            ),
+        _ => panic!("query error")
+    }
+
+    // query permission succeeds with perm_addr's viewing key
+    // i) set_viewing_key
+    env.message.sender = addr1.clone();
+    let msg_vk2 = HandleMsg::SetViewingKey { key: "vkey2".to_string(), padding: None };
+    handle(&mut deps, env, msg_vk2)?;
+    // ii) query permissions
+    let msg_q2 = QueryMsg::Permission { owner: addr0, allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
+    let q_result = query(&deps, msg_q2);
+    let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
+    match q_answer {
+        QueryAnswer::Permission(perm
+        ) => assert_eq!(
+                perm.unwrap_or_default(), 
+                Permission { 
+                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
+                    trfer_allowance_perm: Uint128(10), trfer_allowance_exp: Expiration::default(), 
+                }
+            ),
+        _ => panic!("query error")
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_query_all_permissions() -> StdResult<()> {
+    // init addresses
+    let addr = init_addrs();
+    
+    // instantiate
+    let (_init_result, mut deps) = init_helper_default();
+    
+    // generate vks
+    let env = mock_env(addr.a(), &[]);
+    let vks = generate_viewing_keys(&mut deps, &env, addr.all())?;
+
+    // curate additional tokens
+    curate_addtl_default(&mut deps, &env)?;
+
+    // give permission to transfer: addr.a grants addr.b
+    let msg0_perm_b = HandleMsg::GivePermission { 
+        allowed_address: addr.b(), 
+        token_id: "0".to_string(), 
+        view_balance: Some(true), view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: None, transfer_expiry: None,
+        padding: None, 
+    };  
+    handle(&mut deps, env.clone(), msg0_perm_b)?;
+
+    // give permission to transfer: addr.a grants addr.c
+    let msg0_perm_c = HandleMsg::GivePermission { 
+        allowed_address: addr.c(), 
+        token_id: "0".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: Some(true), view_private_metadata_expiry: None,
+        transfer: None, transfer_expiry: None,
+        padding: None, 
+    };  
+    handle(&mut deps, env.clone(), msg0_perm_c)?;
+
+    // give permission to transfer: addr.a grants addr.d
+    let msg0_perm_d = HandleMsg::GivePermission { 
+        allowed_address: addr.d(), 
+        token_id: "0a".to_string(), 
+        view_balance: None, view_balance_expiry: None,
+        view_private_metadata: None, view_private_metadata_expiry: None,
+        transfer: Some(Uint128(100)), transfer_expiry: Some(Expiration::AtHeight(100u64)),
+        padding: None, 
+    };  
+    handle(&mut deps, env.clone(), msg0_perm_d)?;
+    
+    // addr.a() query AllPermissions
+    let msg_q_allperm_a = QueryMsg::AllPermissions { address: addr.a(), key: vks.a(), page: None, page_size: 10u32 };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_allperm_a)?)?;
+    if let QueryAnswer::AllPermissions { permission_keys, permissions, total } = q_answer {
+        assert_eq!(permission_keys.into_iter().rev().map(|key| key.allowed_addr).collect::<Vec<HumanAddr>>(), 
+            vec![addr.b(), addr.c(), addr.d()]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_perm).collect::<Vec<bool>>(), 
+            vec![true, false, false]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_exp).collect::<Vec<Expiration>>(), 
+            vec![Expiration::Never; 3]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_perm).collect::<Vec<bool>>(), 
+            vec![false, true, false]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_exp).collect::<Vec<Expiration>>(), 
+            vec![Expiration::Never; 3]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_perm).collect::<Vec<Uint128>>(), 
+            vec![Uint128(0), Uint128(0), Uint128(100)]);
+        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_exp).collect::<Vec<Expiration>>(), 
+            vec![Expiration::Never, Expiration::Never, Expiration::AtHeight(100u64)]);
+        assert_eq!(total, 3u64);
+    }
+
+    // addr.b() query AllPermissions -> nothing because can only see list of all permissions as granter
+    let msg_q_allperm_a = QueryMsg::AllPermissions { address: addr.b(), key: vks.b(), page: None, page_size: 10u32 };
+    let q_answer = from_binary::<QueryAnswer>(&query(&deps, msg_q_allperm_a)?)?;
+    if let QueryAnswer::AllPermissions { permission_keys, permissions, total } = q_answer {
+        assert_eq!(permission_keys, vec![]);
+        assert_eq!(permissions, vec![]);
+        assert_eq!(total, 0u64);
+    }
+    
+    Ok(())
+}
+
+#[test]
+fn test_query_tokenid_private_info_sanity() -> StdResult<()> {
     // init addresses
     let addr = init_addrs();
 
@@ -339,7 +583,7 @@ fn test_query_tokenid_private_info() -> StdResult<()> {
     let (_init_result, mut deps) = init_helper_default();
 
     // generate viewing keys
-    let env = mock_env("addr0", &[]);
+    let env = mock_env(addr.a(), &[]);
     let vks = generate_viewing_keys(&mut deps, &env, vec![addr.a()])?;
 
     // view private info of fungible token
@@ -349,8 +593,9 @@ fn test_query_tokenid_private_info() -> StdResult<()> {
     match q_answer {
         QueryAnswer::TokenIdPrivateInfo { token_id_info, total_supply, owner 
         } => {
-            assert!(to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
-            assert!(to_string(&token_id_info).unwrap().contains("\"private_metadata\":{\"token_uri\":\"private uri\""));
+            assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
+            assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"private_metadata\":{\"token_uri\":\"private uri\""));
+            assert_eq!(token_id_info.curator, addr.a());
             assert_eq!(total_supply, Some(Uint128(1000)));
             assert!(owner.is_none());
         },

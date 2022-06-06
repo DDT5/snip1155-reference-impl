@@ -1,7 +1,7 @@
 SNIP1155 Reference Implementation: Private Multitokens  <!-- omit in toc --> 
 ==============
 
-This repository contains the [SNIP1155 Standard Specifications](#base-specifications) and the standard reference implementation.
+This repository contains the [SNIP1155 Standard Specifications](#base-specifications) and the [SNIP1155 standard reference implementation](https://github.com/DDT5/snip1155-reference-impl/)
 
 Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
 
@@ -13,7 +13,7 @@ Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/in
 - [Terms](#terms)
 - [Base specifications](#base-specifications)
   - [Token hierarchy](#token-hierarchy)
-  - [Instantiation](#instantiation)
+  - [The instantiator](#the-instantiator)
   - [The admin](#the-admin)
   - [The curator(s) and minter(s)](#the-curators-and-minters)
   - [NFT vs fungible tokens](#nft-vs-fungible-tokens)
@@ -61,9 +61,11 @@ Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/in
 
 SNIP1155 is a [Secret Network](https://github.com/scrtlabs/SecretNetwork) contract that can create and manage multiple tokens from a single contract instance. Tokens can be a combination of fungible tokens and non-fungible tokens, each with separate attributes, configurations, and metadata. 
 
-This specification writeup ("spec" or "specs") outlines the functionality and interface. The design is loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract. Fungible and non-fungible tokens are mostly treated equally, but each has a different set of available token configurations which define their possible behaviors. For example, NFTs cannot be configured to be minted more than once. Unlike CW1155 where approvals must cover the entire set of tokens, SNIP1155 contracts allow users to control which tokens fall in scope for a given approval (a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761)). In addition, SNIP1155 users can control the type of approval it grants other addresses: token transfer allowances, balance viewership, or private metadata viewership. 
+This specification writeup ("spec" or "specs") outlines the functionality and interface. The design is loosely based on [CW1155](https://lib.rs/crates/cw1155) which is in turn based on Ethereum's [ERC1155](https://eips.ethereum.org/EIPS/eip-1155), with an additional privacy layer made possible as a Secret Network contract. Fungible and non-fungible tokens are mostly treated equally, but each has a different set of available token configurations which define their possible behaviors. For example, NFTs cannot be configured to be minted more than once. Unlike CW1155 where approvals must cover the entire set of tokens, SNIP1155 contracts allow users to control which tokens fall in scope for a given approval (a feature from [ERC1761](https://eips.ethereum.org/EIPS/eip-1761)), as well as control the type of approval it grants other addresses: token transfer allowances, balance viewership, or private metadata viewership. Also, in SNIP1155, tokens can be configured to allow metadata to be changed.
 
-The ability to hold multiple token types can offer new functionality, improve developer and user experience, and reduce gas fees. For example, users can batch transfer multiple token types in a single transaction, developers could eliminate inter-contract messages and factory contracts, and users may need one approval transaction to cover all tokens for an application.
+SNIP1155 introduces distinct and well-defined roles for the instantiator, admin, curators and minters. This allows developers to have granular control over how different parties interact with the contract. Additionally, SNIP1155 allows contracts to be instantiated without an admin. Contracts that were instantiated with admins can break their admin keys any time. These functions are native in SNIP1155 in order to encourage developers to create permissionless applications. 
+
+The ability to hold multiple token types can offer new functionality, improve developer and user experience, and reduce gas fees. For example, users can batch transfer multiple token types in a single transaction, users can view multiple balances from a single viewing key, developers can reduce to use of inter-contract messages and factory contracts, and users may need one approval transaction to cover all tokens for an application.
 
 See [design decisions](#design-decisions) for more details.
 
@@ -158,8 +160,12 @@ The table below gives a summary of these variables:
 | private metadata | Metadata         | Non-publicly viewable `uri` and `extension`                      | Yes      |
 
 
-## Instantiation
-The instantiator MUST have the option to specify the admin, curator(s) and initial balances. 
+## The instantiator
+The instantiator creates a new instance of a SNIP1155 contract. In that process, the instantiator MUST be able to:
+* choose if the contract has an admin, and specify the admin address if applicable
+* specify the curator(s) 
+* curate and mint initial token balances
+* specify the minter(s) for each `token_id` 
 
 If no admin is specified, the instantiator SHOULD be used as the default admin; this set up is for familiarity with SNIP20/721 standards. However, there MUST also be an input field `has_admin: bool` which allows the instantiator to instantiate a no-admin contract. If `has_admin == false`, there MUST be no admin. Any admin input MUST be ignored by the contract.   
 
@@ -222,9 +228,9 @@ The `initial_balances` input SHOULD allow an arbitrary number of `token_id`s and
 
 
 ## The admin
-The role of the admin (if exists) is to add and remove minters. 
+The role of the admin (if exists) is to add and remove curators and minters. 
 
-The admin MUST be able to perform admin-only transactions. Admin-only transactions MUST NOT be callable by non-admins. Admin-only function MUST include `add_minters`, `remove_minters` and `change_admin` and `remove_admin`.
+The admin MUST be able to perform admin-only transactions. Admin-only transactions MUST NOT be callable by non-admins. Admin-only function MUST include `add_curators`, `remove_curators`, `add_minters`, `remove_minters`, `change_admin` and `remove_admin`.
 
 The existence of the `remove_admin` function is enforced in SNIP1155 standards in order to encourage permissionless designs. Users MUST be able to query `contract_info` to get proof on whether an admin role exists.
 
@@ -324,7 +330,7 @@ Owners of tokens MUST be allowed to burn their tokens only if the `token_id` con
 Message:
 ```js
 {   
-  burn_tokens {
+  burn_tokens: {
     burn_tokens: [{
       token_id: string,
       balances: [{
@@ -349,11 +355,11 @@ Response:
 
 ### Change metadata
 
-Minters (for fungible tokens) or owners (for NFTs) MUST be able to change the token_id's metadata if the configuration allows them to. 
+Minters (for fungible tokens) or owners (for NFTs) MUST be able to change the token_id's metadata if the configuration allows them to. `null` values can be used for either `public_metadata` or `private_metadata` fields in order to leave the existing metadata unchanged.  
 
 ```js
 {
-  change_metadata {
+  change_metadata: {
       token_id: string,
       public_metadata?: "<metadata>",
       private_metadata?: "<metadata>",
@@ -377,7 +383,7 @@ The SNIP1155 `Transfer` interface more closely reflects SNIP721 than SNIP20. SNI
 
 ```js
 {
-  transfer {
+  transfer: {
     token_id: string,
     from: string,
     recipient: string,
@@ -404,7 +410,7 @@ The SNIP1155 `Send` interface more closely reflects SNIP721 than SNIP20. SNIP20'
 
 ```js
 {
-  send {
+  send: {
     token_id: string,
     from: string,
     recipient: string,
@@ -433,7 +439,7 @@ These functions perform multiple `Transfer`, or `Send` actions in a single trans
 
 ```js
 {
-  batch_transfer {
+  batch_transfer: {
     actions: [{
       token_id: string,
       from: string,
@@ -445,7 +451,7 @@ These functions perform multiple `Transfer`, or `Send` actions in a single trans
   },
 }
 {
-  batch_send {
+  batch_send: {
     actions: [{
       token_id: string,
       from: string,
@@ -484,9 +490,9 @@ Response:
 
 ```js
 {
-  give_permission {
+  give_permission: {
     allowed_address: string,
-    token_id: String,
+    token_id: string,
     view_balance?: boolean,
     view_balance_expiry?: "<expiration>",
     view_private_metadata?: boolean,
@@ -525,7 +531,7 @@ An operator with existing permissions (not to be confused with Query Permits) ca
 
 ```js
 {
-  revoke_permission {
+  revoke_permission: {
     token_id: string,
     owner: string,
     allowed_address: string,
@@ -551,13 +557,13 @@ A user can call this function to create or set a viewing key to perform authenti
 
 ```js
 {
-  create_viewing_key {
+  create_viewing_key: {
     entropy: string,
     padding?: string,
   },
 }
 {
-  set_viewing_key {
+  set_viewing_key: {
     key: string,
     padding?: string,
   },
@@ -584,7 +590,7 @@ Similar to SNIP20 and SNIP721; allows an address revoke a query permit (not to b
 ```js
 
 {
-  revoke_permit {
+  revoke_permit: {
     permit_name: string,
     padding?: string,
   },
@@ -606,13 +612,13 @@ The admin MUST be able to access this function. Other addresses MUST NOT be able
 Message:
 ```js
 {
-  add_curators {
+  add_curators: {
         add_curators: string[],
         padding?: string,
     },
 }
 {
-  remove_curators {
+  remove_curators: {
         remove_curators: string[],
         padding?: string,
     },
@@ -639,14 +645,14 @@ The admin and the curator that curated the specific token_id MUST be able to acc
 Message:
 ```js
 {
-  add_minters {
+  add_minters: {
         token_id: string,
         add_minters: string[],
         padding: string,
     },
 }
 {
-  remove_minters {
+  remove_minters: {
       token_id: string,
       remove_minters: string[],
       padding: string,
@@ -673,7 +679,7 @@ The admin MUST be able to access this function. Other addresses MUST NOT be able
 
 ```js
 {
-  change_admin {
+  change_admin: {
     new_admin: string,
     padding?: string,
   },
@@ -694,7 +700,7 @@ The admin MUST be able to access this function. Other addresses MUST NOT be able
 
 ```js
 {
-  remove_admin {
+  remove_admin: {
     current_admin: string,
     contract_address: string,
     padding?: string,
@@ -722,13 +728,13 @@ Any user MUST be able to query the contract information, which MUST provide the 
 
 ```js
 {
-  contract_info {  }
+  contract_info: {  }
 }
 ```
 
 ```js
 {
-  contract_info {
+  contract_info: {
     admin?: string,
     curators: string[],
     all_token_ids: string[],
@@ -743,7 +749,7 @@ Any user MUST be able to query the public information of a given token_id. In th
 Query message:
 ```js
 {
-  token_id_public_info { 
+  token_id_public_info: { 
     token_id: string 
   }
 }
@@ -752,7 +758,7 @@ Query message:
 Query response:
 ```js
 {
-  token_id_public_info {
+  token_id_public_info: {
     token_id_info: {
       token_id: string, 
       name: string, 
@@ -775,7 +781,7 @@ Any user MUST be able to query the code hash of a contract that has registered w
 Query message:
 ```js
 {
-  registered_code_hash {
+  registered_code_hash: {
     contract: string
   }
 }
@@ -785,7 +791,7 @@ Query response:
 ```js
 /// returns None if contract has not registered with SNIP1155 contract
 {
-  registered_code_hash {
+  registered_code_hash: {
     code_hash?: string,
   }
 }
@@ -796,7 +802,7 @@ Authenticated queries can be made using viewing keys or query permits. If viewin
 
 ```js
 {
-  viewing_key_error {
+  viewing_key_error: {
     msg: string,
   }
 }
@@ -822,10 +828,10 @@ Query message:
 }
 // with query permit
 {
-  with_permit:{
+  with_permit: {
     permit: <"permit">,
     query: {
-      balance { 
+      balance: { 
         owner: string, 
         token_id: string 
       }
@@ -837,7 +843,7 @@ Query message:
 Query reponse:
 ```js
 {
-  balance {
+  balance: {
     amount: string,
   },
 }
@@ -863,7 +869,7 @@ Query message:
   with_permit: {
     permit: <"permit">,
     query: {
-      all_balances { 
+      all_balances: { 
         tx_history_page?: number,
         tx_history_page_size?: number,
       }
@@ -904,7 +910,7 @@ Query message:
   with_permit: {
     permit: <"permit">,
     query: {
-      transaction_history {
+      transaction_history: {
         page?: number,
         page_size: number,
       }
@@ -925,24 +931,24 @@ Query response:
       action: "<tx_action>",
       memo?: string,
     }],
-    total?: number,
+    total: number,
   }
 }
 ```
 
 `tx_action` can be one of the following variants
 ```js
-  mint {
+  mint: {
     minter: string,
     recipient: string,
     amount: string,
   },
-  burn {
+  burn: {
     burner?: string,
     owner: string,
     amount: string,
   },
-  transfer {
+  transfer: {
     from: string,
     sender?: string,
     recipient: string,
@@ -958,7 +964,7 @@ Query message:
 ```js
 // with viewing key
 {
-  permission {
+  permission: {
     owner: string,
     allowed_address: string,
     key: string,
@@ -970,7 +976,7 @@ Query message:
   with_permit: {
     permit: <"permit">,
     query: {
-      permission {
+      permission: {
         owner: string,
         allowed_address: string,
         token_id: string,
@@ -1014,7 +1020,7 @@ Query message:
   with_permit: {
     permit: <"permit">,
     query: {
-      all_permissions {
+      all_permissions: {
         page?: number,
         page_size: number,
       }
@@ -1053,7 +1059,7 @@ Query message:
 ```js
 // with viewing key
 {
-  token_id_private_info { 
+  token_id_private_info: { 
     address: string,
     key: string,
     token_id: string,
@@ -1061,10 +1067,10 @@ Query message:
 }
 // with query permit
 {
-  with_permit:{
+  with_permit: {
     permit: <"permit">,
     query: {
-      token_id_private_info { 
+      token_id_private_info: { 
         token_id: string,
       }
     }
@@ -1075,7 +1081,7 @@ Query message:
 Query response:
 ```js
 {
-  token_id_private_info {
+  token_id_private_info: {
     token_id_info: {
       token_id: string, 
       name: string, 
@@ -1098,7 +1104,7 @@ This message is used to pair a code hash with a contract address. The SNIP1155 c
 
 ```js
 {
-  register_receive {
+  register_receive: {
     code_hash: string,
     padding?: string,
   },

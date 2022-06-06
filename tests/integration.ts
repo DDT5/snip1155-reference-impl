@@ -33,8 +33,8 @@ interface TknConfNft { "nft": {
 }}
 
 type Permission = {
-  view_owner_perm: boolean,
-  view_owner_exp: string,
+  view_balance_perm: boolean,
+  view_balance_exp: string,
   view_pr_metadata_perm: boolean,
   view_pr_metadata_exp: string,
   trfer_allowance_perm: string,

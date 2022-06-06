@@ -487,22 +487,17 @@ fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
     // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not 
     let allow_update = is_owner && tkn_conf.owner_may_update_metadata || is_minter && tkn_conf.minter_may_update_metadata;
 
-    // control flow on whether i) sender wants to change metadata, ii) whether it is allowed based on `allow_update`
-    match (&public_metadata, &private_metadata) {
-        (None, None) => (),
-        _ => {
-            match allow_update {
-                false => return Err(StdError::generic_err(format!(
-                    "unable to change the metadata for token_id {}",
-                    token_id
-                ))),
-                true => {
-                    let mut tkn_info = tkn_info_op.unwrap();
-                    tkn_info.public_metadata = public_metadata;
-                    tkn_info.private_metadata = private_metadata;
-                    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &tkn_info)?;
-                }
-            }
+    // control flow based on `allow_update`
+    match allow_update {
+        false => return Err(StdError::generic_err(format!(
+            "unable to change the metadata for token_id {}",
+            token_id
+        ))),
+        true => {
+            let mut tkn_info = tkn_info_op.unwrap();
+            if public_metadata.is_some() { tkn_info.public_metadata = public_metadata };
+            if private_metadata.is_some() { tkn_info.private_metadata = private_metadata };
+            tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &tkn_info)?;
         }
     }
 

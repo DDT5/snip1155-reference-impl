@@ -83,14 +83,12 @@
         "transaction_history": {
           "type": "object",
           "required": [
+            "total",
             "txs"
           ],
           "properties": {
             "total": {
-              "type": [
-                "integer",
-                "null"
-              ],
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },

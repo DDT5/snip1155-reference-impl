@@ -159,13 +159,13 @@ pub fn perm_r<'a, S: Storage>(
 /////////////////////////////////////////////////////////////////////////////////
 
 pub fn write_viewing_key<S: Storage>(store: &mut S, owner: &CanonicalAddr, key: &ViewingKey) {
-    let mut balance_store = PrefixedStorage::new(PREFIX_VIEW_KEY, store);
-    balance_store.set(owner.as_slice(), &key.to_hashed());
+    let mut vk_store = PrefixedStorage::new(PREFIX_VIEW_KEY, store);
+    vk_store.set(owner.as_slice(), &key.to_hashed());
 }
 
 pub fn read_viewing_key<S: Storage>(store: &S, owner: &CanonicalAddr) -> Option<Vec<u8>> {
-    let balance_store = ReadonlyPrefixedStorage::new(PREFIX_VIEW_KEY, store);
-    balance_store.get(owner.as_slice())
+    let vk_store = ReadonlyPrefixedStorage::new(PREFIX_VIEW_KEY, store);
+    vk_store.get(owner.as_slice())
 }
 
 

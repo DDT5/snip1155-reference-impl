@@ -46,7 +46,7 @@ impl Addrs {
     pub fn all(&self) -> Vec<HumanAddr> {
         self.addrs.clone()
     }
-    pub fn _a_hash(&self) -> String {
+    pub fn a_hash(&self) -> String {
         self.hashes[0].clone()
     }
     pub fn b_hash(&self) -> String {
