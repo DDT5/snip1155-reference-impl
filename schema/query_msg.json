@@ -1,8 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "QueryMsg",
+  "description": "Query messages to SNIP1155 contract. See [QueryAnswer](crate::msg::QueryAnswer) for the response messages for each variant, which has more detail.",
   "anyOf": [
     {
+      "description": "returns public information of the SNIP1155 contract",
       "type": "object",
       "required": [
         "contract_info"

@@ -39,6 +39,10 @@ pub struct InitMsg {
 // Handle Messages
 /////////////////////////////////////////////////////////////////////////////////
 
+/// Handle messages to SNIP1155 contract. 
+/// 
+/// Mostly responds with `HandleAnswer { <variant_name>: { status: success }}` if successful.
+/// See [HandleAnswer](crate::msg::HandleAnswer) for the response messages for each variant.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleMsg {
@@ -48,11 +52,18 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
+    /// mints additional tokens of existing fungible token_ids, if configuration allows this, ie
+    /// `enable_mint == true`.
+    /// Only minters can access this function
     MintTokens {
         mint_tokens: Vec<TokenAmount>,
         memo: Option<String>,
         padding: Option<String>,
     },
+    /// burns existing tokens, if configuration allows this, ie
+    /// `enable_burn == true`.
+    /// Only owners can burn their own tokens in the base specifications. Flexibility is built
+    /// into the contract functions to allow other addresses to burn tokens, allowed in additional specifications.
     BurnTokens {
         burn_tokens: Vec<TokenAmount>,
         memo: Option<String>,
@@ -72,6 +83,9 @@ pub enum HandleMsg {
         /// between variants. Not strictly necessary.
         private_metadata: Box<Option<Metadata>>,
     },
+    /// transfers one or more tokens of a single token_id. Other third address can perform this function
+    /// if it has permission to transfer. ie: if addr3 can call this function to transfer tokens from addr0
+    /// to addr2, if addr0 gives addr3 enough transfer allowance.
     Transfer {
         token_id: String,
         // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
@@ -81,10 +95,13 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
+    /// performs `transfer`s of multiple token_ids in a single transaction
     BatchTransfer {
         actions: Vec<TransferAction>,
         padding: Option<String>,
     },
+    /// similar to transfer, but also sends a cosmos message. The recipient needs to be a contract that 
+    /// has a SNIP1155Receive handle function. See [receiver](crate::receiver) for more information. 
     Send {
         token_id: String,
         // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
@@ -96,10 +113,22 @@ pub enum HandleMsg {
         memo: Option<String>,
         padding: Option<String>,
     },
+    /// performs `send` of multiple token_ids in a single transaction
     BatchSend {
         actions: Vec<SendAction>,
         padding: Option<String>,
     },
+    /// allows an owner of token_ids to change transfer or viewership permissions to other addresses.  
+    /// 
+    /// The base specification has three types of permissions:
+    /// * view balance permission: owner can allow another address to view owner's balance of specific token_ids
+    /// * view private metadata: owner can allow another address to view private metadata of specific token_ids
+    /// * transfer allowance: owner can give permission to another address to transfer tokens up to a certain limit (cumulatively)
+    /// Owners can set an [expiry](crate::state::expiration) for each of these permissions. 
+    /// 
+    /// SNIP1155 gives flexibility for permissions to have any combination of
+    /// * type of permission granted
+    /// * on which token_ids
     GivePermission {
         /// address being granted/revoked permission
         allowed_address: HumanAddr,
@@ -118,7 +147,9 @@ pub enum HandleMsg {
         /// optional message length padding
         padding: Option<String>,
     },
-    /// Removes all permissions that a specific owner has granted to a specific address, for a specific token_id 
+    /// Removes all permissions that a specific owner has granted to a specific address, for a specific token_id.
+    /// A permission grantee can use this function to renounce a permission it has been given.
+    /// For owners, the `GivePermission` message can be used instead to have the same effect as `RevokePermission`.
     RevokePermission {
         token_id: String,
         /// token owner
@@ -179,6 +210,8 @@ pub enum HandleMsg {
     },
 }
 
+/// Handle answers in the `data` field of `HandleResponse`. See
+/// [HandleMsg](crate::msg::HandleMsg), which has more details
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleAnswer {
@@ -210,9 +243,13 @@ pub enum HandleAnswer {
 // Query messages
 /////////////////////////////////////////////////////////////////////////////////
 
+
+/// Query messages to SNIP1155 contract. See [QueryAnswer](crate::msg::QueryAnswer) 
+/// for the response messages for each variant, which has more detail.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
+    /// returns public information of the SNIP1155 contract
     ContractInfo {  },
     Balance {
         owner: HumanAddr,
@@ -312,30 +349,45 @@ pub enum QueryWithPermit {
     },
 }
 
+/// the query responses for each [QueryMsg](crate::msg::QueryMsg) variant
 #[derive(Serialize, Deserialize, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryAnswer {
+    /// returns contract-level information:
     ContractInfo {
+        // the address of the admin, or `None` for an admin-free contract
         admin: Option<HumanAddr>,
+        /// the list of curators in the contract
         curators: Vec<HumanAddr>,
+        /// the list of all token_ids that have been curated
         all_token_ids: Vec<String>,
     },
+    /// returns balance of a specific token_id. Owners can give permission to other addresses to query their balance
     Balance {
         amount: Uint128,
     },
+    /// returns all token_id balances owned by an address. Only owners can use this query
     AllBalances(Vec<OwnerBalance>),
+    /// all permissions related to a particular address. Note that "curation" is not recorded as a transaction per se, but
+    /// the tokens minted as part of the initial_balances set by the curator is recorded under `TxAction::Mint`  
     TransactionHistory {
         txs: Vec<Tx>,
         total: u64,
     },
     Permission(Option<Permission>),
+    /// all permissions granted, viewable by the permission granter.
+    /// Users or applications can match the permission_keys that corresponds to each permission as
+    /// they have a similar order, ie: the index of `permission_keys` vector corresponds to the index 
+    /// of the `permissions` vector.
     AllPermissions{
         permission_keys: Vec<PermissionKey>,
         permissions: Vec<Permission>,
+        /// the total number of permission entries stored for a given granter, which may include "blank" 
+        /// permissions, ie: where all permissions are set to `false` or `Uint128(0)`
         total: u64,
     },
     TokenIdPublicInfo {
-        /// token_id_info.private_metadata will = None
+        /// token_id_info.private_metadata will always = None
         token_id_info: StoredTokenInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
@@ -353,6 +405,8 @@ pub enum QueryAnswer {
     RegisteredCodeHash {
         code_hash: Option<String>,
     },
+    /// returned when an viewing_key-specific errors occur during a user's attempt to 
+    /// perform an authenticated query 
     ViewingKeyError {
         msg: String,
     },

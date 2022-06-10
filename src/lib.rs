@@ -2,7 +2,7 @@ pub mod handles;
 pub mod queries;
 pub mod msg;
 pub mod state;
-mod receiver;
+pub mod receiver;
 mod vk;
 
 #[cfg(test)]

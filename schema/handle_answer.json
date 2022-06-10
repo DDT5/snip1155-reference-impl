@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "HandleAnswer",
+  "description": "Handle answers in the `data` field of `HandleResponse`. See [HandleMsg](crate::msg::HandleMsg), which has more details",
   "anyOf": [
     {
       "type": "object",

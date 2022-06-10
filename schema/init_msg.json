@@ -305,6 +305,8 @@
               "type": "object",
               "required": [
                 "enable_burn",
+                "minter_may_update_metadata",
+                "minters",
                 "owner_is_public",
                 "owner_may_update_metadata",
                 "public_total_supply"
@@ -312,6 +314,16 @@
               "properties": {
                 "enable_burn": {
                   "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "minters": {
+                  "description": "NFTs' minters cannot mint additional tokens, but may be able to change metadata",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/HumanAddr"
+                  }
                 },
                 "owner_is_public": {
                   "type": "boolean"

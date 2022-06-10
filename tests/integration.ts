@@ -187,10 +187,12 @@ async function initDefault(): Promise<jsEnv> {
           name: "nftname", 
           symbol: "NFT", 
           token_config: { nft: {
+              minters: [],
               public_total_supply: true,
               owner_is_public: true,
               enable_burn: true, 
               owner_may_update_metadata: true,
+              minter_may_update_metadata: true,
           }},
           public_metadata,
           private_metadata,
@@ -303,10 +305,12 @@ async function curateTokenIds(
       }} as TknConfFungible;
     } else if (is_nft === true) {
       tkn_conf = { nft: {
+        minters,
         public_total_supply: true,
         owner_is_public: true,
         enable_burn: true, 
         owner_may_update_metadata: true,
+        minter_may_update_metadata: true
       }} as TknConfNft;
     } 
   }
@@ -1270,10 +1274,12 @@ async function testQueries(
         symbol: "NFT",
         token_config: {
           nft: {
+            minters: [],
             public_total_supply: true,
             owner_is_public: true,
             enable_burn: true,
             owner_may_update_metadata: true,
+            minter_may_update_metadata: true,
           }
         },
         public_metadata: {

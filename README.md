@@ -110,10 +110,12 @@ SNIP1155 has a token hierarchy with three layers: (A) SNIP1155 contract > (B) to
 }
 {
   nft: {
+    minters: Vec<HumanAddr>,
     public_total_supply: bool,
     owner_is_public: bool,
     enable_burn: bool,
     owner_may_update_metadata: bool,
+    minter_may_update_metadata: bool,
   }
 }
 ```
@@ -200,7 +202,7 @@ The `initial_balances` input SHOULD allow an arbitrary number of `token_id`s and
 ```js
 {
   fungible: {
-    mitners: string[],
+    minters: string[],
     decimals: number,
     public_total_supply: boolean,
     enable_mint: boolean,
@@ -210,10 +212,12 @@ The `initial_balances` input SHOULD allow an arbitrary number of `token_id`s and
 }
 {
   nft: {
+    minters: string[],
     public_total_supply: boolean,
     owner_is_public: boolean,
     enable_burn: boolean,
     owner_may_update_metadata: boolean,
+    minter_may_update_metadata: boolean,
   }
 }
 ```
@@ -237,10 +241,10 @@ The existence of the `remove_admin` function is enforced in SNIP1155 standards i
 ## The curator(s) and minter(s)
 There are two types of roles that can create tokens: 
 * `curators` MUST be able to curate new `token_id`s and mints initial balances. They MUST NOT be able to mint additional tokens of existing token_ids, unless they are also minters. 
-* `minters` are specific to each token_id. They MUST be able to mint incremental fungible tokens of existing token_ids if the token_id configuration allows this. They MUST NOT be able to mint the initial token balances. Minters of a given token_id can change the public and private metadata if the token_config of the token_id allows this. They are not relevant to NFTs in the base specification. 
+* `minters` are specific to each token_id. They MUST be able to mint incremental fungible tokens of existing token_ids if the token_id configuration allows this. They MUST NOT be able to mint the initial token balances. Minters of a given token_id can change the public and private metadata if the token_config of the token_id allows this (applies to both fungible tokens and nfts). Minters MUST NOT be able to mint additional non-fungible tokens of existing token_ids. 
 
 ## NFT vs fungible tokens
-Curators MUST have the option to set public metadata and and private metadata for a token_id. Minters of specific token_id SHOULD be able to change metadata if the configuration allows them to. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
+Curators MUST have the option to set public metadata and and private metadata for a token_id. Minters of a specific token_id SHOULD be able to change metadata if the configuration allows them to. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
 
 Private metadata of an NFT MUST NOT be viewable by any address, other than the owner's address or addresses that have been given permission to[^1]. The base standard implementation allows any owner of a fungible token to view private metadata of the fungible `token_id`, but different rules MAY be implemented in additional specifications.  
 
@@ -355,7 +359,7 @@ Response:
 
 ### Change metadata
 
-Minters (for fungible tokens) or owners (for NFTs) MUST be able to change the token_id's metadata if the configuration allows them to. `null` values can be used for either `public_metadata` or `private_metadata` fields in order to leave the existing metadata unchanged.  
+Minters (for fungible tokens and NFTs) or owners (for NFTs only) MUST be able to change the token_id's metadata if the configuration allows them to. `null` values can be used for either `public_metadata` or `private_metadata` fields in order to leave the existing metadata unchanged.  
 
 ```js
 {

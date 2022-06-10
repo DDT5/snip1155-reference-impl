@@ -275,7 +275,7 @@ fn test_change_metadata_nft() -> StdResult<()> {
         // addr.a() = admin;
         // addr.b() = curator;
         // addr.c() = owner;
-        // addr.d() = new owner;
+        // addr.d() = new owner for testnft0; minter for testnft2;
 
     // custom instantiate
     let mut deps = mock_dependencies(20, &[]);
@@ -290,12 +290,13 @@ fn test_change_metadata_nft() -> StdResult<()> {
     };
     init(&mut deps, env.clone(), init_msg)?;
     
-    // curate two nfts: one which owner can change metadata, and one which owner cannot
+    // curate three nfts: one which owner can change metadata...
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "testnft0".to_string();
     curate0.token_info.token_config = TknConfig::default_nft();
     curate0.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128(1) }];
     
+    // ... one which owner cannot change metadata...
     let mut curate1 = CurateTokenId::default();
     curate1.token_info.token_id = "testnft1".to_string();
     curate1.token_info.token_config = TknConfig::default_nft();
@@ -304,8 +305,18 @@ fn test_change_metadata_nft() -> StdResult<()> {
     curate1.token_info.token_config = flat_config.to_enum();
     curate1.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128(1) }];
     
+    // ... and one where minter can change metadata (and owner cannot)
+    let mut curate2 = CurateTokenId::default();
+    curate2.token_info.token_id = "testnft2".to_string();
+    curate2.token_info.token_config = TknConfig::default_nft();
+    let mut flat_config = curate2.token_info.token_config.flatten();
+    flat_config.minters = vec![addr.d()];
+    flat_config.owner_may_update_metadata = false;
+    curate2.token_info.token_config = flat_config.to_enum();
+    curate2.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128(1) }];
+    
     let msg_curate = HandleMsg::CurateTokenIds { 
-        initial_tokens: vec![curate0, curate1],
+        initial_tokens: vec![curate0, curate1, curate2],
         memo: None, padding: None 
     };
     env.message.sender = addr.b();
@@ -315,7 +326,7 @@ fn test_change_metadata_nft() -> StdResult<()> {
     let msg_change_metadata = HandleMsg::ChangeMetadata { 
         token_id: "testnft0".to_string(), 
         public_metadata: Box::new(Some(Metadata {
-            token_uri: Some("new public uri".to_string()),
+            token_uri: Some("new public uri for testnft0".to_string()),
             extension: Some(Extension::default()),
         })),  
         private_metadata: Box::new(None), 
@@ -350,7 +361,7 @@ fn test_change_metadata_nft() -> StdResult<()> {
         // check public metadata has changed
         let tkn_info = tkn_info_r(&deps.storage).load("testnft0".to_string().as_bytes())?;
         assert_eq!(tkn_info.public_metadata, Some(Metadata {
-            token_uri: Some("new public uri".to_string()),
+            token_uri: Some("new public uri for testnft0".to_string()),
             extension: Some(Extension::default()),
         }));
         // check private metadata unchanged because input is None
@@ -376,7 +387,48 @@ fn test_change_metadata_nft() -> StdResult<()> {
 
     // success: new nft owner can change metadata
     env.message.sender = addr.d();
-    handle(&mut deps, env, msg_change_metadata)?;
+    handle(&mut deps, env.clone(), msg_change_metadata)?;
+
+
+    // additional nft tests:
+    // testnft2 token, where minter can change metadata, but owner cannot
+    let msg_change_metadata_nft2 = HandleMsg::ChangeMetadata { 
+        token_id: "testnft2".to_string(), 
+        public_metadata: Box::new(None),  
+        private_metadata: Box::new(Some(Metadata {
+            token_uri: Some("new private uri for testnft2".to_string()),
+            extension: Some(Extension::default()),
+        })),  
+    };
+    // admin cannot change metadata
+    env.message.sender = addr.a();
+    result = handle(&mut deps, env.clone(), msg_change_metadata_nft2.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft2"));
+
+    // token_id curator cannot change metadata
+    env.message.sender = addr.b();
+    result = handle(&mut deps, env.clone(), msg_change_metadata_nft2.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft2"));
+
+    // owner cannot change metadata
+    env.message.sender = addr.c();
+    result = handle(&mut deps, env.clone(), msg_change_metadata_nft2.clone());
+    assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft2"));
+
+    // success: minter can change metadata
+    env.message.sender = addr.d();
+    handle(&mut deps, env, msg_change_metadata_nft2)?;
+        // check public metadata unchanged because input is None
+        let tkn_info = tkn_info_r(&deps.storage).load("testnft2".to_string().as_bytes())?;
+        assert_eq!(tkn_info.public_metadata, Some(Metadata {
+            token_uri: Some("public uri".to_string()),
+            extension: Some(Extension::default()),
+        }));
+        // check public metadata has changed
+        assert_eq!(tkn_info.private_metadata, Some(Metadata {
+            token_uri: Some("new private uri for testnft2".to_string()),
+            extension: Some(Extension::default()),
+        }));
 
     Ok(())
 }

@@ -89,11 +89,14 @@ pub enum TknConfig {
     },
     /// no `enable_mint` option because NFT can be minted only once using `CurateTokenIds`
     Nft {
+        /// NFTs' minters cannot mint additional tokens, but may be able to change metadata
+        minters: Vec<HumanAddr>,
         /// total supply can be zero if the token has been burnt
         public_total_supply: bool,
         owner_is_public: bool,
         enable_burn: bool,
         owner_may_update_metadata: bool,
+        minter_may_update_metadata: bool,
     }
 }
 
@@ -123,23 +126,24 @@ impl TknConfig {
                 }
             },
             TknConfig::Nft { 
+                minters,
                 public_total_supply, 
                 owner_is_public, 
                 enable_burn, 
-                owner_may_update_metadata 
+                owner_may_update_metadata, 
+                minter_may_update_metadata
             } => {
                 TknConfigFlat {
                     is_nft: true,
-                    /// NFTs have no minters
-                    minters: vec![],
+                    /// NFTs' minters cannot mint additional tokens, but may be able to change metadata
+                    minters: minters.clone(),
                     decimals: 0_u8,
                     public_total_supply: *public_total_supply,
                     owner_is_public: *owner_is_public,
                     /// NFT can be minted only once using `CurateTokenIds`
                     enable_mint: false,
                     enable_burn: *enable_burn,
-                    /// NFTs have no minters
-                    minter_may_update_metadata: false,
+                    minter_may_update_metadata: *minter_may_update_metadata,
                     owner_may_update_metadata: *owner_may_update_metadata,
                 }
             },
@@ -162,10 +166,12 @@ impl TknConfig {
     #[cfg(test)]
     pub fn default_nft() -> Self {
         TknConfig::Nft { 
+            minters: vec![],
             public_total_supply: true, 
             owner_is_public: true,
             enable_burn: true, 
             owner_may_update_metadata: true, 
+            minter_may_update_metadata: true,
         }
     }
 }
@@ -189,10 +195,12 @@ impl TknConfigFlat {
         match self.is_nft {
             true => {
                 TknConfig::Nft { 
+                    minters: self.minters.clone(),
                     public_total_supply: self.public_total_supply, 
                     owner_is_public: self.owner_is_public, 
                     enable_burn: self.enable_burn, 
-                    owner_may_update_metadata: self.owner_may_update_metadata 
+                    owner_may_update_metadata: self.owner_may_update_metadata,
+                    minter_may_update_metadata: self.minter_may_update_metadata,
                 }
             },
             false => {

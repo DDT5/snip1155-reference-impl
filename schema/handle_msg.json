@@ -1,6 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "HandleMsg",
+  "description": "Handle messages to SNIP1155 contract.\n\nMostly responds with `HandleAnswer { <variant_name>: { status: success }}` if successful. See [HandleAnswer](crate::msg::HandleAnswer) for the response messages for each variant.",
   "anyOf": [
     {
       "description": "curates new token_ids. Only curators can access this function.",
@@ -38,6 +39,7 @@
       }
     },
     {
+      "description": "mints additional tokens of existing fungible token_ids, if configuration allows this, ie `enable_mint == true`. Only minters can access this function",
       "type": "object",
       "required": [
         "mint_tokens"
@@ -72,6 +74,7 @@
       }
     },
     {
+      "description": "burns existing tokens, if configuration allows this, ie `enable_burn == true`. Only owners can burn their own tokens in the base specifications. Flexibility is built into the contract functions to allow other addresses to burn tokens, allowed in additional specifications.",
       "type": "object",
       "required": [
         "burn_tokens"
@@ -148,6 +151,7 @@
       }
     },
     {
+      "description": "transfers one or more tokens of a single token_id. Other third address can perform this function if it has permission to transfer. ie: if addr3 can call this function to transfer tokens from addr0 to addr2, if addr0 gives addr3 enough transfer allowance.",
       "type": "object",
       "required": [
         "transfer"
@@ -191,6 +195,7 @@
       }
     },
     {
+      "description": "performs `transfer`s of multiple token_ids in a single transaction",
       "type": "object",
       "required": [
         "batch_transfer"
@@ -219,6 +224,7 @@
       }
     },
     {
+      "description": "similar to transfer, but also sends a cosmos message. The recipient needs to be a contract that has a SNIP1155Receive handle function. See [receiver](crate::receiver) for more information.",
       "type": "object",
       "required": [
         "send"
@@ -278,6 +284,7 @@
       }
     },
     {
+      "description": "performs `send` of multiple token_ids in a single transaction",
       "type": "object",
       "required": [
         "batch_send"
@@ -306,6 +313,7 @@
       }
     },
     {
+      "description": "allows an owner of token_ids to change transfer or viewership permissions to other addresses.\n\nThe base specification has three types of permissions: * view balance permission: owner can allow another address to view owner's balance of specific token_ids * view private metadata: owner can allow another address to view private metadata of specific token_ids * transfer allowance: owner can give permission to another address to transfer tokens up to a certain limit (cumulatively) Owners can set an [expiry](crate::state::expiration) for each of these permissions.\n\nSNIP1155 gives flexibility for permissions to have any combination of * type of permission granted * on which token_ids",
       "type": "object",
       "required": [
         "give_permission"
@@ -397,7 +405,7 @@
       }
     },
     {
-      "description": "Removes all permissions that a specific owner has granted to a specific address, for a specific token_id",
+      "description": "Removes all permissions that a specific owner has granted to a specific address, for a specific token_id. A permission grantee can use this function to renounce a permission it has been given. For owners, the `GivePermission` message can be used instead to have the same effect as `RevokePermission`.",
       "type": "object",
       "required": [
         "revoke_permission"
@@ -1067,6 +1075,8 @@
               "type": "object",
               "required": [
                 "enable_burn",
+                "minter_may_update_metadata",
+                "minters",
                 "owner_is_public",
                 "owner_may_update_metadata",
                 "public_total_supply"
@@ -1074,6 +1084,16 @@
               "properties": {
                 "enable_burn": {
                   "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "minters": {
+                  "description": "NFTs' minters cannot mint additional tokens, but may be able to change metadata",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/HumanAddr"
+                  }
                 },
                 "owner_is_public": {
                   "type": "boolean"

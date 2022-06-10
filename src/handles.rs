@@ -92,7 +92,8 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
 // Handles
 /////////////////////////////////////////////////////////////////////////////////
 
-/// contract handle function. See [HandleMsg](crate::msg::HandleMsg) for the api
+/// contract handle function. See [HandleMsg](crate::msg::HandleMsg) and 
+/// [HandleAnswer](crate::msg::HandleAnswer) for the api
 pub fn handle<S: Storage, A: Api, Q: Querier>(
     deps: &mut Extern<S, A, Q>,
     env: Env,

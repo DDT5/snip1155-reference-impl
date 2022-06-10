@@ -1,8 +1,10 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "QueryAnswer",
+  "description": "the query responses for each [QueryMsg](crate::msg::QueryMsg) variant",
   "anyOf": [
     {
+      "description": "returns contract-level information:",
       "type": "object",
       "required": [
         "contract_info"
@@ -26,12 +28,14 @@
               ]
             },
             "all_token_ids": {
+              "description": "the list of all token_ids that have been curated",
               "type": "array",
               "items": {
                 "type": "string"
               }
             },
             "curators": {
+              "description": "the list of curators in the contract",
               "type": "array",
               "items": {
                 "$ref": "#/definitions/HumanAddr"
@@ -42,6 +46,7 @@
       }
     },
     {
+      "description": "returns balance of a specific token_id. Owners can give permission to other addresses to query their balance",
       "type": "object",
       "required": [
         "balance"
@@ -61,6 +66,7 @@
       }
     },
     {
+      "description": "returns all token_id balances owned by an address. Only owners can use this query",
       "type": "object",
       "required": [
         "all_balances"
@@ -75,6 +81,7 @@
       }
     },
     {
+      "description": "all permissions related to a particular address. Note that \"curation\" is not recorded as a transaction per se, but the tokens minted as part of the initial_balances set by the curator is recorded under `TxAction::Mint`",
       "type": "object",
       "required": [
         "transaction_history"
@@ -121,6 +128,7 @@
       }
     },
     {
+      "description": "all permissions granted, viewable by the permission granter. Users or applications can match the permission_keys that corresponds to each permission as they have a similar order, ie: the index of `permission_keys` vector corresponds to the index of the `permissions` vector.",
       "type": "object",
       "required": [
         "all_permissions"
@@ -147,6 +155,7 @@
               }
             },
             "total": {
+              "description": "the total number of permission entries stored for a given granter, which may include \"blank\" permissions, ie: where all permissions are set to `false` or `Uint128(0)`",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -179,7 +188,7 @@
               ]
             },
             "token_id_info": {
-              "description": "token_id_info.private_metadata will = None",
+              "description": "token_id_info.private_metadata will always = None",
               "allOf": [
                 {
                   "$ref": "#/definitions/StoredTokenInfo"
@@ -263,6 +272,7 @@
       }
     },
     {
+      "description": "returned when an viewing_key-specific errors occur during a user's attempt to perform an authenticated query",
       "type": "object",
       "required": [
         "viewing_key_error"
@@ -676,6 +686,8 @@
               "type": "object",
               "required": [
                 "enable_burn",
+                "minter_may_update_metadata",
+                "minters",
                 "owner_is_public",
                 "owner_may_update_metadata",
                 "public_total_supply"
@@ -683,6 +695,16 @@
               "properties": {
                 "enable_burn": {
                   "type": "boolean"
+                },
+                "minter_may_update_metadata": {
+                  "type": "boolean"
+                },
+                "minters": {
+                  "description": "NFTs' minters cannot mint additional tokens, but may be able to change metadata",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/HumanAddr"
+                  }
                 },
                 "owner_is_public": {
                   "type": "boolean"

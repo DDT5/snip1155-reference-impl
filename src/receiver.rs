@@ -11,12 +11,18 @@ use crate::{state::RESPONSE_BLOCK_SIZE, msg::space_pad};
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub struct Snip1155ReceiveMsg {
+    /// the address that sent the `Send` or `BatchSend` message
     pub sender: HumanAddr,
+    /// unique token_id `String`
     pub token_id: String,
+    /// the previous owner of the tokens being transferred
     pub from: HumanAddr,
+    /// amount of tokens being transferred
     pub amount: Uint128,
+    /// optional memo
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memo: Option<String>,
+    /// optional message
     pub msg: Option<Binary>,
 }
 

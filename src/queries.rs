@@ -33,7 +33,8 @@ use crate::{
 // Queries
 /////////////////////////////////////////////////////////////////////////////////
 
-/// contract query function. See [QueryMsg](crate::msg::QueryMsg) for the api
+/// contract query function. See [QueryMsg](crate::msg::QueryMsg) and 
+/// [QueryAnswer](crate::msg::QueryAnswer) for the api
 pub fn query<S: Storage, A: Api, Q: Querier>(
     deps: &Extern<S, A, Q>,
     msg: QueryMsg,
