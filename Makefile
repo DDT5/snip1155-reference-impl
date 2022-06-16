@@ -111,3 +111,4 @@ tarpaulin:
 		--exclude-files tests/example-receiver/src/contract.rs \
 		--exclude-files tests/example-receiver/src/state.rs \
 		--output-dir ./target/tarpaulin -o html
+	wslview target/tarpaulin/tarpaulin-report.html

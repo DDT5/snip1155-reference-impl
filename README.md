@@ -1,11 +1,9 @@
 SNIP1155 Reference Implementation: Private Multitokens  <!-- omit in toc --> 
 ==============
 
-This repository contains the [SNIP1155 Standard Specifications](#base-specifications) and the [SNIP1155 standard reference implementation](https://github.com/DDT5/snip1155-reference-impl/)
+This repository contains the [SNIP1155 Base Specifications](#base-specifications) and the [SNIP1155 standard reference implementation](https://github.com/DDT5/snip1155-reference-impl/)
 
-Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
-
-Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/index.html) are available.
+**This is a work in progress**
 
 
 ## Table of contents <!-- omit in toc --> 
@@ -18,7 +16,7 @@ Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/in
   - [The curator(s) and minter(s)](#the-curators-and-minters)
   - [NFT vs fungible tokens](#nft-vs-fungible-tokens)
   - [Handle messages](#handle-messages)
-    - [Curate token ids](#curate-token-ids)
+    - [Curate tokenIds](#curate-tokenids)
     - [Mint tokens](#mint-tokens)
     - [Burn tokens](#burn-tokens)
     - [Change metadata](#change-metadata)
@@ -54,7 +52,7 @@ Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/in
   - [Starting from a blank slate](#starting-from-a-blank-slate)
   - [Permissionless design](#permissionless-design)
   - [Familiar interface](#familiar-interface)
-  - [Keeping base and additional features separate](#keeping-base-and-additional-features-separate)
+  - [Modular additional features](#modular-additional-features)
 
 
 # Abstract
@@ -68,6 +66,11 @@ SNIP1155 introduces distinct and well-defined roles for the instantiator, admin,
 The ability to hold multiple token types can offer new functionality, improve developer and user experience, and reduce gas fees. For example, users can batch transfer multiple token types in a single transaction, users can view multiple balances from a single viewing key, developers can reduce to use of inter-contract messages and factory contracts, and users may need one approval transaction to cover all tokens for an application.
 
 See [design decisions](#design-decisions) for more details.
+
+Message schemas presented in this specification document are simplified for readability and in order to illustrate functionality. Developers who need detailed API should rely on the [canonical schemas](https://github.com/DDT5/snip1155-reference-impl/tree/master/schema). If there are any discrepancies, the canonical schemas should be used.
+
+Also, [Rust Docs](https://ddt5.github.io/snip1155-doc/snip1155_reference_impl/index.html) are available.
+
 
 # Terms
 *The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119).*
@@ -95,7 +98,7 @@ SNIP1155 has a token hierarchy with three layers: (A) SNIP1155 contract > (B) to
 * private `metadata`
 
 
-`token_config` is MUST be an enum that includes at least these two variants:
+`token_config` MUST be an enum that includes at least these two variants:
 
 ```rust
 {
@@ -151,7 +154,7 @@ The table below gives a summary of these variables:
 
 | Variable         | Type             | Description                                                      | Optional |
 | ---------------- | ---------------- | ---------------------------------------------------------------- | -------- |
-| admin            | HumanAddr        | Can to add/remove minters and break admin key                    | Yes      |
+| admin            | HumanAddr        | Can to add/remove curators and minters, and break admin key      | Yes      |
 | curators         | `Vec<HumanAddr>` | Can curate new token_ids                                         | Yes      |
 | minters          | `Vec<HumanAddr>` | Can mint additional fungible tokens and possibly change metadata | Yes      |
 | token_id         | String           | A `token_id`'s unique identifier                                 | No       |
@@ -244,7 +247,7 @@ There are two types of roles that can create tokens:
 * `minters` are specific to each token_id. They MUST be able to mint incremental fungible tokens of existing token_ids if the token_id configuration allows this. They MUST NOT be able to mint the initial token balances. Minters of a given token_id can change the public and private metadata if the token_config of the token_id allows this (applies to both fungible tokens and nfts). Minters MUST NOT be able to mint additional non-fungible tokens of existing token_ids. 
 
 ## NFT vs fungible tokens
-Curators MUST have the option to set public metadata and and private metadata for a token_id. Minters of a specific token_id SHOULD be able to change metadata if the configuration allows them to. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
+Curators MUST have the option to set public metadata and private metadata for a token_id. Minters of a specific token_id SHOULD be able to change metadata if the configuration allows them to. An NFT owner MUST be able to change the metadata if the token_id configuration allows it to.
 
 Private metadata of an NFT MUST NOT be viewable by any address, other than the owner's address or addresses that have been given permission to[^1]. The base standard implementation allows any owner of a fungible token to view private metadata of the fungible `token_id`, but different rules MAY be implemented in additional specifications.  
 
@@ -253,7 +256,7 @@ Private metadata of an NFT MUST NOT be viewable by any address, other than the o
 
 ## Handle messages
 
-### Curate token ids
+### Curate tokenIds
 Curators MUST be able to access this function. Other addresses MUST NOT be able to call this function. (Note that admins cannot mint unless it is also a curator). 
 
 A curator MUST be able to create new `token_id`s. The curator MUST be able to configure the token_id and set initial balances. A curator MUST NOT be able to curate a `token_id` that already exists.
@@ -531,7 +534,7 @@ Response:
 ```
 
 ### Revoke permission
-An operator with existing permissions (not to be confused with Query Permits) can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although `GivePermission` can also be used for this purpose.  
+An operator with existing permissions (not to be confused with Query Permits) can use this to revoke (or more accurately, renounce) the permissions it has received. A token owner can also call this function to revoke permissions, although it is recommended that `GivePermission` is used for this purpose instead.  
 
 ```js
 {
@@ -557,7 +560,7 @@ Response:
 ### Create viewing key and set viewing key 
 These perform the same functions as specified in the SNIP20 standards.
 
-A user can call this function to create or set a viewing key to perform authenticated queries.
+A user can call this function to create or set a viewing key, which is used to perform authenticated queries.
 
 ```js
 {
@@ -644,7 +647,9 @@ Response:
 ```
 
 ### Add minters and remove minters
-The admin and the curator that curated the specific token_id MUST be able to access this function. Other addresses MUST NOT be able to call this function. `AddMinters` add one or more minters to the list of minters for a given token_id, while `RemoveMinters` remove one or more minters from the list of minters for a given token_id.
+The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. `AddMinters` add one or more minters to the list of minters for a given token_id, while `RemoveMinters` remove one or more minters from the list of minters for a given token_id.
+
+In additional specifications, it is OPTIONAL to allow the curator of the specific `token_id` to call `AddMinters` and `RemoveMinters`.  
 
 Message:
 ```js
@@ -679,7 +684,7 @@ Response:
 ```
 
 ### Change admin
-The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. This function allows an admin to change the admin address. When this happens, the message caller SHOULD lose its own admin rights. The base specifications allow only one admin at a time. If multiple admins are implemented, a public query MUST be available for anyone to view all the admin addresses. 
+The admin MUST be able to access this function. Other addresses MUST NOT be able to call this function. This function allows an admin to change the admin address. When this happens, the message caller SHOULD lose its own admin rights. The base specifications allow only one admin at a time. If multiple admins are implemented (possible in additional specifications), a public query MUST be available for anyone to view all the admin addresses. 
 
 ```js
 {
@@ -748,7 +753,7 @@ Any user MUST be able to query the contract information, which MUST provide the 
 
 ### TokenId public information
 
-Any user MUST be able to query the public information of a given token_id. In the base specificiation, the query response json schema is similar to `token_id_private_info`, except that `private_metadata` MUST be `null`. 
+Any user MUST be able to query the public information of a given token_id. In the base specification, the query response json schema is similar to `token_id_private_info`, except that `private_metadata` MUST be `null`. 
 
 Query message:
 ```js
@@ -1056,7 +1061,7 @@ Query response:
 
 ### TokenId private information
 
-A token_id owner or address that has been granted permission MUST be able to query the private information of a given token_id. In the base specificiation, the query response json schema is similar to `token_id_public_info`, except that the `private_metadata` field MUST include the private metadata if it exists. 
+A token_id owner or address that has been granted permission MUST be able to query the private information of a given token_id. In the base specification, the query response json schema is similar to `token_id_public_info`, except that the `private_metadata` field MUST include the private metadata if it exists. 
 
 
 Query message:
@@ -1182,25 +1187,25 @@ Additional specifications include:
 # Design decisions
 
 ## Reference implementation goals
-The SNIP1155 standards and reference implementation aims to provide developers with an additional option to use as a base contract for creating Secret Network tokens. The aim is to complement the existing SNIP20 and SNIP721 standards by offering a lean contract whose core architecture focuses on the ability to create and manage multiple token types.
+The SNIP1155 standards and [reference implementation](https://github.com/DDT5/snip1155-reference-impl/) aims to provide developers with an additional option to use as a base contract for creating Secret Network tokens. The aim is to complement the existing SNIP20 and SNIP721 standards by offering a lean contract whose core architecture focuses on the ability to create and manage multiple token types.
 
 Non-goals include:
-* providing a feature-rich base contract that emcompasses both SNIP20 and SNIP721 functionality
+* providing a feature-rich base contract that encompasses both SNIP20 and SNIP721 functionality
 * superseding previous token standards
-* backward compatability with previous token standards, although [familiar](#familiar-interface) interfaces are used where possible
+* backward compatibility with previous token standards, although [familiar](#familiar-interface) interfaces are used where possible
 
 ## Starting from a blank slate
-The current Secret Network token standard reference implementations at the time of writing (particularly SNIP721) is feature-rich and implements many useful features beyond the base standards. This makes it possible to use one of these contracts as a starting point and add functionality in order to create the SNIP1155 reference implementation.
+The current Secret Network token standard reference implementations at the time of writing are feature-rich and implement many useful features beyond their base standards. This makes it possible to use one of these contracts as a starting point and add functionality in order to create the SNIP1155 reference implementation.
 
 However, the decision was to build the SNIP1155 reference implementation mostly from a blank slate. This creates a leaner contract with several advantages from a systems design point of view:
 * Mitigates code bloat. The SNIP1155 standard implementation generally aims to avoid implementing non-core features, and starting from a blank slate avoids adopting features from another standard that are not critical for SNIP1155.
 * Reduces surface area of attack and potential for bugs.
-* Offers developers an additional option to use as a base contract that is meaningfully different to existing templates, so developers can choose the reference architecture that most closely fits their requirements.  
+* Offers developers an additional base contract option that is meaningfully different to existing templates, so developers can choose the architecture that most closely fits their requirements.  
 * Allows SNIP1155 to follow an independent update cycle and its own development path, making it more responsive to feature requirements or changes to the network infrastructure that matter most to SNIP1155 use cases.
 
 The disadvantages of this design decision are:
-* No (full) backward compatability with SNIP20 or SNIP721
-* Requires more developer hours to create
+* No (full) backward compatibility with SNIP20 or SNIP721
+* Required more developer hours to create
 
 ## Permissionless design
 The standard implementations of both SNIP20 and SNIP721 (at the time of writing) are designed to have an admin with special rights. This can be a useful feature depending on the required use case, but has the downside of not being permissionless.    
@@ -1208,7 +1213,7 @@ The standard implementations of both SNIP20 and SNIP721 (at the time of writing)
 With this in mind, the SNIP1155 base standard implementation natively provides the ability to break admin keys at any point, as well as for contract instantiators to create no-admin contract instances. 
 
 ## Familiar interface
-The interface reflects a few of the message schemas in [SNIP20](https://github.com/scrtlabs/snip20-reference-impl) and [SNIP721](https://github.com/baedrik/snip721-reference-impl), in order to have a familiar interface across Secret Network. However, SNIP1155 does not aim to have backward compatability with SNIP20 and SNIP721.
+The interface reflects a few of the message schemas in [SNIP20](https://github.com/scrtlabs/snip20-reference-impl) and [SNIP721](https://github.com/baedrik/snip721-reference-impl), in order to have a familiar interface across Secret Network. However, SNIP1155 does not aim to have backward compatibility with SNIP20 and SNIP721.
 
-## Keeping base and additional features separate
-The reference implementation aims to maintain a base implementation that is lean (with no additional features), while eventually also offering template code for some additional feature(s) as separate packages within this repository. Keeping the base implementation and additional features in separate packages avoids the situation where developers are forced to adopt all additional features even if their use case does not require them.
+## Modular additional features
+The reference implementation aims to maintain a base implementation that is lean (with no additional features). The aspiration is to eventually offer template code for some additional feature(s) in a modular fashion. Keeping the base implementation and additional features separate avoids the situation where developers are forced to adopt all additional features even if their use case does not require them.

@@ -158,46 +158,56 @@ fn test_curate_token_id() -> StdResult<()> {
 #[test]
 fn test_mint_tokens() -> StdResult<()> {
     // init addresses
-    let addr0 = HumanAddr("addr0".to_string());
-    let addr1 = HumanAddr("addr1".to_string());
+    let addr = init_addrs();
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
     // curate additional token_ids
-    let mut env = mock_env("addr0", &[]);
+    let mut env = mock_env(addr.a(), &[]);
     curate_addtl_default(&mut deps, &env)?;
 
-    // mint more fungible tokens to multiple addresses
+
+    // error: cannot mint non-existent token_id
+    let mint_non_exist = TokenAmount { 
+        token_id: "test0".to_string(), 
+        balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128(100) },],
+    };
+    let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint_non_exist], memo: None, padding: None };
+    let result = handle(&mut deps, env.clone(), msg);
+    assert!(extract_error_msg(&result).contains("token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids"));
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), None);
+
+    // success: mint more fungible tokens to multiple addresses
     let mint = TokenAmount { 
         token_id: "0".to_string(), 
         balances: vec![
-            TokenIdBalance { address: addr0.clone(), amount: Uint128(10) },
-            TokenIdBalance { address: addr1.clone(), amount: Uint128(10) }
+            TokenIdBalance { address: addr.a(), amount: Uint128(10) },
+            TokenIdBalance { address: addr.b(), amount: Uint128(10) }
         ],
     };
     let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     handle(&mut deps, env.clone(), msg.clone())?;
-    assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
-    assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128(10));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128(1010));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.b()).unwrap(), Uint128(10));
     // 1 initial balance, 4 curate_token_id, 2 mint_token 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     // non-minter cannot mint
-    env.message.sender = addr1;
+    env.message.sender = addr.b();
     let result = handle(&mut deps, env.clone(), msg);
     assert!(extract_error_msg(&result).contains("Only minters are allowed to mint"));
 
     // cannot mint additional nfts
-    env.message.sender = addr0.clone();
+    env.message.sender = addr.a();
     let mint = TokenAmount { 
         token_id: "2".to_string(), 
-        balances: vec![TokenIdBalance { address: addr0.clone(), amount: Uint128(1) }],
+        balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128(1) }],
     };
     let msg = HandleMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     let result = handle(&mut deps, env, msg);
     assert!(extract_error_msg(&result).contains("minting is not enabled for this token_id"));
-    assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128(1010));
+    assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128(1010));
     // 1 initial balance, 4 curate_token_id, 2 mint_token 
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
     
@@ -528,16 +538,16 @@ fn test_change_metadata_fungible() -> StdResult<()> {
             extension: Some(Extension::default()),
         }));
 
-    // specific token_id curator can add minter (note admin can do this too)...
+    // admin can add minter...
     let msg_add_minter = HandleMsg::AddMinters {
         token_id: "test0".to_string(),
         add_minters: vec![addr.d()],
         padding: None,
     };
-    env.message.sender = addr.b();
+    env.message.sender = addr.a();
     handle(&mut deps, env.clone(), msg_add_minter)?;
     
-    // ...admin can remove minter (note specific token_id curator can do this too)...
+    // ...admin can remove minter
     let msg_remove_minter = HandleMsg::RemoveMinters {
         token_id: "test0".to_string(),
         remove_minters: vec![addr.c()],
@@ -1260,7 +1270,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     let mut result = handle(&mut deps, env.clone(), msg_mint.clone());
     assert!(extract_error_msg(&result).contains("Only minters are allowed to mint additional tokens for token_id test0"));
 
-    // addr.c, is curator, but not token_id "test0"'s curator, so cannot add minters
+    // addr.c, is curator, but not token_id "test0"'s curator, so cannot add minters (in base spec, addr.c cannot add/remove minter in any event)
     let msg_add_minter_c = HandleMsg::AddMinters { 
         token_id: "test0".to_string(), 
         add_minters: vec![addr.c()], 
@@ -1268,31 +1278,33 @@ fn test_add_remove_minters() -> StdResult<()> {
     };
     env.message.sender = addr.c();
     result = handle(&mut deps, env.clone(), msg_add_minter_c.clone());
-    assert!(extract_error_msg(&result).contains("You need to be either the admin or address that created token_id test0 to perform this function"));
+    assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
 
-    // addr.b, as token_id's curator, can add minter addr.c
+    // addr.b, as token_id's curator, but still cannot add minter addr.c (in additional specs, may be possible)
     env.message.sender = addr.b();
-    handle(&mut deps, env.clone(), msg_add_minter_c)?;
+    result = handle(&mut deps, env.clone(), msg_add_minter_c);
+    assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
+
+    // check minter list is unchanged 
     let q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.curator, addr.b());
-            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c()]);
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a()]);
         }
         _ => panic!("query error")
     }
 
-    // admin addr.a can also add minter addr.d
-    let msg_add_minter_d = HandleMsg::AddMinters { 
+    // admin addr.a can add minters addr.c and addr.d twice (in a single tx). 
+    // Addr.d is added twice for test later that it can be removed in a single remove_minter msg
+    let msg_add_minter_cd = HandleMsg::AddMinters { 
         token_id: "test0".to_string(), 
-        add_minters: vec![addr.d()], 
+        add_minters: vec![addr.c(), addr.d(), addr.d()], 
         padding: None
     };
     env.message.sender = addr.a();
-    // add minter d twice -- for test later
-    for _ in 0..2 {
-        handle(&mut deps, env.clone(), msg_add_minter_d.clone())?;
-    }
+    handle(&mut deps, env.clone(), msg_add_minter_cd)?;
+
     let mut q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
@@ -1354,31 +1366,30 @@ fn test_add_remove_minters() -> StdResult<()> {
         _ => panic!("query error")
     }
 
-    // minter cannot change metadata (when config doesn't allow) --> do as separate test?
-    // ...
-
-    // curator addr.c cannot remove minters [addr.a, addr.c] because addr.c is not the curator that created this token_id
-    let msg_remove_minter_ac = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.c()], padding: None };
+    // curator addr.c cannot remove minters addr.c (note: addr.c is not the curator that created this token_id, although this is irrelevant in base specs)
+    let msg_remove_minter_c = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.c()], padding: None };
     env.message.sender = addr.c();
-    result = handle(&mut deps, env.clone(), msg_remove_minter_ac.clone());
-    assert!(extract_error_msg(&result).contains("You need to be either the admin or address that created token_id test0 to perform this function"));
+    result = handle(&mut deps, env.clone(), msg_remove_minter_c.clone());
+    assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
 
-    // token_id curator addr.b can remove minter [addr.a, addr.c]
+    // token_id curator addr.b cannot remove minter addr.c, per the base specs
     env.message.sender = addr.b();
-    handle(&mut deps, env.clone(), msg_remove_minter_ac)?;
+    result = handle(&mut deps, env.clone(), msg_remove_minter_c);
+    assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
+    // check minter list is unchanged
     q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
-            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.d(), addr.d()]);
+            assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c(), addr.d(), addr.d()]);
         }
         _ => panic!("query error")
     }
 
-    // admin can remove minter too: minter addr.d; although added twice, just need one remove
+    // admin can remove all minters: minter addr.d; although added twice, just need one input remove
     // addr.a (as admin) can also remove itself as minter
-    let msg_remove_minter_d = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.a(), addr.d()], padding: None };
+    let msg_remove_minter_acd = HandleMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.a(), addr.c(), addr.d()], padding: None };
     env.message.sender = addr.a();
-    handle(&mut deps, env.clone(), msg_remove_minter_d)?;
+    handle(&mut deps, env.clone(), msg_remove_minter_acd)?;
     q_answer = from_binary::<QueryAnswer>(&query(&deps, QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
@@ -1389,7 +1400,7 @@ fn test_add_remove_minters() -> StdResult<()> {
 
     // check no one can mint tokens now
     // admin (addr.a) not a minter anymore
-    // sanityaddr.b (curator of the token_id) was never a minter
+    // addr.b (curator of the token_id) was never a minter
     // (addr.c and addr.d) no longer minters
     for address in addr.all() {
         env.message.sender = address;

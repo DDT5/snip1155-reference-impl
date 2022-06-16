@@ -824,16 +824,13 @@ fn try_add_minters<S: Storage, A: Api, Q: Querier>(
     if token_info_op.is_none() { return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))) };
     let mut token_info = token_info_op.unwrap();
 
-    // check if either admin or curator
+    // check if either admin
     let admin_result = verify_admin(&contract_config, &env);
-    let curator_result = verify_curator_of_token_id(&token_info, &env);
+    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
 
-    let verified = admin_result.is_ok() || curator_result.is_ok();
+    let verified = admin_result.is_ok(); // || curator_result.is_ok();
     if !verified {
-        return Err(StdError::generic_err(format!(
-            "You need to be either the admin or address that created token_id {} to perform this function",
-            token_id
-        )));
+        return Err(StdError::generic_err("You need to be the admin to add or remove minters"))
     }
 
     // add minters
@@ -866,14 +863,11 @@ fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
 
     // check if either admin or curator
     let admin_result = verify_admin(&contract_config, &env);
-    let curator_result = verify_curator_of_token_id(&token_info, &env);
+    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
 
-    let verified = admin_result.is_ok() || curator_result.is_ok();
+    let verified = admin_result.is_ok(); // || curator_result.is_ok();
     if !verified {
-        return Err(StdError::generic_err(format!(
-            "You need to be either the admin or address that created token_id {} to perform this function",
-            token_id
-        )));
+        return Err(StdError::generic_err("You need to be the admin to add or remove minters"))
     }
 
     // remove minters
@@ -1022,19 +1016,22 @@ fn verify_curator(
     Ok(())
 }
 
-/// verifies if sender is the address that curated the token_id
-fn verify_curator_of_token_id(
-    token_info: &StoredTokenInfo,
-    env: &Env
-) -> StdResult<()> {
-    let curator = &token_info.curator;
-    if curator != &env.message.sender {
-        return Err(StdError::generic_err(
-            "You are not the curator of this token_id",
-        ));
-    }
-    Ok(())
-}
+// /// verifies if sender is the address that curated the token_id.
+// /// Not part of base specifications, but function left here for potential use. 
+// /// If this additional feature is implemented, it is important to ensure that the instantiator 
+// /// still has the ability to set initial balances without later being able to change minters.
+// fn verify_curator_of_token_id(
+//     token_info: &StoredTokenInfo,
+//     env: &Env
+// ) -> StdResult<()> {
+//     let curator = &token_info.curator;
+//     if curator != &env.message.sender {
+//         return Err(StdError::generic_err(
+//             "You are not the curator of this token_id",
+//         ));
+//     }
+//     Ok(())
+// }
 
 /// verifies if sender is a minter of the specific token_id
 fn verify_minter(
