@@ -4,21 +4,20 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{
-    Storage, Api, Uint128, HumanAddr, CanonicalAddr, BlockInfo, 
+    Storage, Api, Uint128, Addr, CanonicalAddr, BlockInfo, 
     StdResult,
-    ReadonlyStorage,
 };
 
 use cosmwasm_storage::{
     PrefixedStorage, ReadonlyPrefixedStorage, 
 };
 
-use secret_toolkit::{
-    storage::{AppendStore, AppendStoreMut},  
-};
+use secret_toolkit::storage::AppendStore;
 
 use crate::state::save_load_functions::{json_save, json_load};
 
+pub static TX_ID_STORE: AppendStore<u64> = AppendStore::new(PREFIX_TX_IDS);
+pub static NFT_OWNER_STORE: AppendStore<Addr> = AppendStore::new(PREFIX_NFT_OWNER);
 
 /////////////////////////////////////////////////////////////////////////////////
 // Transaction history
@@ -33,30 +32,22 @@ use crate::state::save_load_functions::{json_save, json_load};
 /// * `address` - a reference to the address whose txs to display
 /// * `page` - page to start displaying
 /// * `page_size` - number of txs per page
-pub fn get_txs<S: ReadonlyStorage, A: Api>( 
-    api: &A,
-    storage: &S,
+pub fn get_txs( 
+    api: &dyn Api,
+    storage: &dyn Storage,
     address: &CanonicalAddr,
     page: u32,
     page_size: u32,
 ) -> StdResult<(Vec<Tx>, u64)> {
-    let id_store =
-        ReadonlyPrefixedStorage::multilevel(&[PREFIX_TX_IDS, address.as_slice()], storage);
+    let addr_store = TX_ID_STORE.add_suffix(address.as_slice());
 
-    // Try to access the storage of tx ids for the account.
-    // If it doesn't exist yet, return an empty list of txs.
-    let id_store = if let Some(result) = AppendStore::<u64, _>::attach(&id_store) {
-        result?
-    } else {
-        return Ok((vec![], 0));
-    };
-    let count = id_store.len() as u64;
+    let count = addr_store.get_len(storage)? as u64;
     // access tx storage
-    let tx_store = ReadonlyPrefixedStorage::new(PREFIX_TXS, storage);
+    let tx_store = ReadonlyPrefixedStorage::new(storage, PREFIX_TXS);
     // Take `page_size` txs starting from the latest tx, potentially skipping `page * page_size`
     // txs from the start.
-    let txs: StdResult<Vec<Tx>> = id_store
-        .iter()
+    let txs: StdResult<Vec<Tx>> = addr_store
+        .iter(storage)?
         .rev()
         .skip((page * page_size) as usize)
         .take(page_size as usize)
@@ -73,8 +64,8 @@ pub fn get_txs<S: ReadonlyStorage, A: Api>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn store_transfer<S: Storage>(
-    storage: &mut S,
+pub fn store_transfer(
+    storage: &mut dyn Storage,
     config: &mut ContractConfig,
     block: &BlockInfo,
     token_id: &str,
@@ -93,12 +84,12 @@ pub fn store_transfer<S: Storage>(
     let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
-        block_time: block.time,
+        block_time: block.time.seconds(),
         token_id: token_id.to_string(),
         action,
         memo,
     };
-    let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
+    let mut tx_store = PrefixedStorage::new(storage, PREFIX_TXS);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
     if let StoredTxAction::Transfer {
         from,
@@ -120,8 +111,8 @@ pub fn store_transfer<S: Storage>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn store_mint<S: Storage>(
-    storage: &mut S,
+pub fn store_mint(
+    storage: &mut dyn Storage,
     config: &mut ContractConfig,
     block: &BlockInfo,
     token_id: &str,
@@ -134,12 +125,12 @@ pub fn store_mint<S: Storage>(
     let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
-        block_time: block.time,
+        block_time: block.time.seconds(),
         token_id: token_id.to_string(),
         action,
         memo,
     };
-    let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
+    let mut tx_store = PrefixedStorage::new(storage, PREFIX_TXS);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
     if let StoredTxAction::Mint { minter, recipient, amount: _ } = tx.action {
         append_tx_for_addr(storage, config.tx_cnt, &recipient)?;
@@ -152,8 +143,8 @@ pub fn store_mint<S: Storage>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn store_burn<S: Storage>(
-    storage: &mut S,
+pub fn store_burn(
+    storage: &mut dyn Storage,
     config: &mut ContractConfig,
     block: &BlockInfo,
     token_id: &str,
@@ -166,12 +157,12 @@ pub fn store_burn<S: Storage>(
     let tx = StoredTx {
         tx_id: config.tx_cnt,
         block_height: block.height,
-        block_time: block.time,
+        block_time: block.time.seconds(),
         token_id: token_id.to_string(),
         action,
         memo,
     };
-    let mut tx_store = PrefixedStorage::new(PREFIX_TXS, storage);
+    let mut tx_store = PrefixedStorage::new(storage, PREFIX_TXS);
     json_save(&mut tx_store, &config.tx_cnt.to_le_bytes(), &tx)?;
     if let StoredTxAction::Burn { burner, owner, amount: _ } = tx.action {
         append_tx_for_addr(storage, config.tx_cnt, &owner)?;
@@ -192,14 +183,13 @@ pub fn store_burn<S: Storage>(
 /// * `storage` - a mutable reference to the storage this item should go to
 /// * `tx_id` - the tx id to store
 /// * `address` - a reference to the address for which to store this tx id
-fn append_tx_for_addr<S: Storage>(
-    storage: &mut S,
+fn append_tx_for_addr(
+    storage: &mut dyn Storage,
     tx_id: u64,
     address: &CanonicalAddr,
 ) -> StdResult<()> {
-    let mut store = PrefixedStorage::multilevel(&[PREFIX_TX_IDS, address.as_slice()], storage);
-    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
-    store.push(&tx_id)
+    let addr_store = TX_ID_STORE.add_suffix(address.as_slice());
+    addr_store.push(storage, &tx_id)
 }
 
 
@@ -251,33 +241,33 @@ pub struct StoredTx {
 }
 
 impl StoredTx {
-    pub fn into_humanized<A: Api>(self, api: &A) -> StdResult<Tx> {
+    pub fn into_humanized(self, api: &dyn Api) -> StdResult<Tx> {
         let action = match self.action {
             StoredTxAction::Mint { minter, recipient, amount } => {
                 TxAction::Mint {
-                    minter: api.human_address(&minter)?,
-                    recipient: api.human_address(&recipient)?,
+                    minter: api.addr_humanize(&minter)?,
+                    recipient: api.addr_humanize(&recipient)?,
                     amount,
                 }
             },
             StoredTxAction::Burn { burner, owner, amount } => {
                 let bnr = if let Some(b) = burner { 
-                    Some(api.human_address(&b)?) 
+                    Some(api.addr_humanize(&b)?) 
                 } else { None };
                 TxAction::Burn { 
                     burner: bnr, 
-                    owner: api.human_address(&owner)?, 
+                    owner: api.addr_humanize(&owner)?, 
                     amount, 
                 }
             },
             StoredTxAction::Transfer { from, sender, recipient, amount } => {
                 let sdr = if let Some(s) = sender { 
-                    Some(api.human_address(&s)?) 
+                    Some(api.addr_humanize(&s)?) 
                 } else { None };
                 TxAction::Transfer { 
-                    from: api.human_address(&from)?, 
+                    from: api.addr_humanize(&from)?, 
                     sender: sdr, 
-                    recipient: api.human_address(&recipient)?,  
+                    recipient: api.addr_humanize(&recipient)?,  
                     amount 
                 }
             },
@@ -295,30 +285,30 @@ impl StoredTx {
     }
 }
 
-/// tx type and specifics for storage with HumanAddr
+/// tx type and specifics for storage with Addr
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TxAction {
     Mint {
-        minter: HumanAddr,
-        recipient: HumanAddr,
+        minter: Addr,
+        recipient: Addr,
         amount: Uint128,
     },
     Burn {
         /// in the base specification, the burner MUST be the owner. In the additional
         /// specifications, it is OPTIONAL to allow other addresses to burn tokens.
-        burner: Option<HumanAddr>,
-        owner: HumanAddr,
+        burner: Option<Addr>,
+        owner: Addr,
         amount: Uint128,
     },
     /// `transfer` or `send` txs
     Transfer {
         /// previous owner
-        from: HumanAddr,
+        from: Addr,
         /// optional sender if not owner
-        sender: Option<HumanAddr>,
+        sender: Option<Addr>,
         /// new owner
-        recipient: HumanAddr,
+        recipient: Addr,
         /// amount of tokens transferred
         amount: Uint128,
     },
@@ -351,27 +341,22 @@ pub struct Tx {
 /// In base specification, only the latest (ie: current) owner is relevant. But  
 /// this design pattern is used to allow viewing a token_id's ownership history, 
 /// which is allowed in the additional specifications
-pub fn append_new_owner<S: Storage>(
-    storage: &mut S,
+pub fn append_new_owner(
+    storage: &mut dyn Storage,
     token_id: &str,
-    address: &HumanAddr,
+    address: &Addr,
 ) -> StdResult<()> {
-    let mut store = PrefixedStorage::multilevel(&[PREFIX_NFT_OWNER, token_id.as_bytes()], storage);
-    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
-    store.push(address)
+    let token_id_store = NFT_OWNER_STORE.add_suffix(token_id.as_bytes());
+    token_id_store.push(storage, address)
 }
 
-pub fn may_get_current_owner<S: Storage>(
-    storage: &S,
+pub fn may_get_current_owner(
+    storage: &dyn Storage,
     token_id: &str,
-) -> StdResult<Option<HumanAddr>> {
-    let store_op = ReadonlyPrefixedStorage::multilevel(&[PREFIX_NFT_OWNER, token_id.as_bytes()], storage);
-    let store_op = AppendStore::<HumanAddr, _, _>::attach(&store_op);
-    let store = match store_op {
-        Some(i) => i?,
-        None => return Ok(None),
-    };
-    let pos = store.len().saturating_sub(1);
-    let current_owner = store.get_at(pos)?;
+) -> StdResult<Option<Addr>> {
+    let token_id_store = NFT_OWNER_STORE.add_suffix(token_id.as_bytes());
+        
+    let pos = token_id_store.get_len(storage)?.saturating_sub(1);
+    let current_owner = token_id_store.get_at(storage, pos)?;
     Ok(Some(current_owner))
 }

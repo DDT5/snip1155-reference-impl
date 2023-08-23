@@ -8,7 +8,6 @@ use serde::{de::DeserializeOwned, Serialize};
 use cosmwasm_std::{
     Storage, 
     StdResult, StdError,
-    ReadonlyStorage,
 };
 
 use secret_toolkit::{
@@ -28,8 +27,8 @@ use secret_toolkit::{
 /// * `storage` - a mutable reference to the storage this item should go to
 /// * `key` - a byte slice representing the key to access the stored item
 /// * `value` - a reference to the item to store
-pub fn json_save<T: Serialize, S: Storage>(
-    storage: &mut S,
+pub fn json_save<T: Serialize>(
+    storage: &mut dyn Storage,
     key: &[u8],
     value: &T,
 ) -> StdResult<()> {
@@ -45,7 +44,7 @@ pub fn json_save<T: Serialize, S: Storage>(
 ///
 /// * `storage` - a reference to the storage this item is in
 /// * `key` - a byte slice representing the key that accesses the stored item
-pub fn json_load<T: DeserializeOwned, S: ReadonlyStorage>(storage: &S, key: &[u8]) -> StdResult<T> {
+pub fn json_load<T: DeserializeOwned>(storage: &dyn Storage, key: &[u8]) -> StdResult<T> {
     Json::deserialize(
         &storage
             .get(key)

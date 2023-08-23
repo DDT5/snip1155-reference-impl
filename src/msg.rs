@@ -1,4 +1,4 @@
-use cosmwasm_std::{Uint128, HumanAddr, Binary};
+use cosmwasm_std::{Uint128, Addr, Binary, StdResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,6 @@ use crate::{
         metadata::Metadata, 
         expiration::Expiration,
     }, 
-    vk::viewing_key::ViewingKey,
 };
 
 use secret_toolkit::permit::Permit;
@@ -21,14 +20,14 @@ use secret_toolkit::permit::Permit;
 /////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)] //PartialEq
-pub struct InitMsg {
+pub struct InstantiateMsg {
     /// if `false` the contract will instantiate permanently as a no-admin (permissionless) contract
     pub has_admin: bool,
     /// if `admin` == `None` && `has_admin` == `true`, the instantiator will be admin
     /// if `has_admin` == `false`, this field will be ignore (ie: there will be no admin)
-    pub admin: Option<HumanAddr>,
+    pub admin: Option<Addr>,
     /// sets initial list of curators, which can create new token_ids 
-    pub curators: Vec<HumanAddr>,
+    pub curators: Vec<Addr>,
     /// curates initial list of tokens
     pub initial_tokens: Vec<CurateTokenId>,
     /// for `create_viewing_key` function
@@ -45,7 +44,7 @@ pub struct InitMsg {
 /// See [HandleAnswer](crate::msg::HandleAnswer) for the response messages for each variant.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum HandleMsg {
+pub enum ExecuteMsg {
     /// curates new token_ids. Only curators can access this function. 
     CurateTokenIds {
         initial_tokens: Vec<CurateTokenId>,
@@ -89,8 +88,8 @@ pub enum HandleMsg {
     Transfer {
         token_id: String,
         // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
-        from: HumanAddr,
-        recipient: HumanAddr,
+        from: Addr,
+        recipient: Addr,
         amount: Uint128,
         memo: Option<String>,
         padding: Option<String>,
@@ -105,8 +104,8 @@ pub enum HandleMsg {
     Send {
         token_id: String,
         // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
-        from: HumanAddr,
-        recipient: HumanAddr,
+        from: Addr,
+        recipient: Addr,
         recipient_code_hash: Option<String>,
         amount: Uint128,
         msg: Option<Binary>,
@@ -131,7 +130,7 @@ pub enum HandleMsg {
     /// * on which token_ids
     GivePermission {
         /// address being granted/revoked permission
-        allowed_address: HumanAddr,
+        allowed_address: Addr,
         /// token id to apply approval/revocation to.
         /// Additional Spec feature: if == None, perform action for all owner's `token_id`s
         token_id: String,
@@ -153,9 +152,9 @@ pub enum HandleMsg {
     RevokePermission {
         token_id: String,
         /// token owner
-        owner: HumanAddr,
+        owner: Addr,
         /// address which has permission
-        allowed_address: HumanAddr,
+        allowed_address: Addr,
         padding: Option<String>,
     },
     CreateViewingKey {
@@ -172,25 +171,25 @@ pub enum HandleMsg {
         padding: Option<String>,
     },
     AddCurators {
-        add_curators: Vec<HumanAddr>,
+        add_curators: Vec<Addr>,
         padding: Option<String>,
     },
     RemoveCurators {
-        remove_curators: Vec<HumanAddr>,
+        remove_curators: Vec<Addr>,
         padding: Option<String>,
     },
     AddMinters {
         token_id: String,
-        add_minters: Vec<HumanAddr>,
+        add_minters: Vec<Addr>,
         padding: Option<String>,
     },
     RemoveMinters {
         token_id: String,
-        remove_minters: Vec<HumanAddr>,
+        remove_minters: Vec<Addr>,
         padding: Option<String>,
     },
     ChangeAdmin {
-        new_admin: HumanAddr,
+        new_admin: Addr,
         padding: Option<String>,
     },
     /// Permanently breaks admin keys for this contract. No admin function can be called after this
@@ -200,8 +199,8 @@ pub enum HandleMsg {
     /// Requires caller to input current admin address and contract address. These inputs are not strictly 
     /// necessary, but as a safety precaution to reduce the chances of accidentally calling this function.
     RemoveAdmin {
-        current_admin: HumanAddr,
-        contract_address: HumanAddr,
+        current_admin: Addr,
+        contract_address: Addr,
         padding: Option<String>,
     },
     RegisterReceive {
@@ -214,7 +213,7 @@ pub enum HandleMsg {
 /// [HandleMsg](crate::msg::HandleMsg), which has more details
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
-pub enum HandleAnswer {
+pub enum ExecuteAnswer {
     CurateTokenIds { status: ResponseStatus },
     MintTokens { status: ResponseStatus },
     BurnTokens { status: ResponseStatus },
@@ -225,7 +224,7 @@ pub enum HandleAnswer {
     BatchSend { status: ResponseStatus },
     GivePermission { status: ResponseStatus },
     RevokePermission { status: ResponseStatus },
-    CreateViewingKey { key: ViewingKey },
+    CreateViewingKey { key: String },
     SetViewingKey { status: ResponseStatus },
     RevokePermit { status: ResponseStatus },
     AddCurators { status: ResponseStatus },
@@ -252,45 +251,45 @@ pub enum QueryMsg {
     /// returns public information of the SNIP1155 contract
     ContractInfo {  },
     Balance {
-        owner: HumanAddr,
-        viewer: HumanAddr,
+        owner: Addr,
+        viewer: Addr,
         key: String,
         token_id: String,
     },
     AllBalances {
-        owner: HumanAddr,
+        owner: Addr,
         key: String,
         tx_history_page: Option<u32>,
         tx_history_page_size: Option<u32>,
     },
     TransactionHistory {
-        address: HumanAddr,
+        address: Addr,
         key: String,
         page: Option<u32>,
         page_size: u32,
     },
     Permission {
-        owner: HumanAddr,
-        allowed_address: HumanAddr,
+        owner: Addr,
+        allowed_address: Addr,
         key: String,
         token_id: String,
     },
     /// displays all permissions that a given address has granted
     AllPermissions {
         /// address that has granted permissions to others
-        address: HumanAddr,
+        address: Addr,
         key: String,
         page: Option<u32>,
         page_size: u32,
     },
     TokenIdPublicInfo { token_id: String },
     TokenIdPrivateInfo { 
-        address: HumanAddr,
+        address: Addr,
         key: String,
         token_id: String,
     },
     RegisteredCodeHash {
-        contract: HumanAddr
+        contract: Addr
     },
     WithPermit {
         permit: Permit,
@@ -299,19 +298,19 @@ pub enum QueryMsg {
 }
 
 impl QueryMsg {
-    pub fn get_validation_params(&self) -> (Vec<&HumanAddr>, ViewingKey) {
+    pub fn get_validation_params(&self) -> StdResult<(Vec<&Addr>, String)> {
         match self {
-            Self::Balance { owner, viewer, key, .. } => (vec![owner, viewer], ViewingKey(key.clone())),
-            Self::AllBalances { owner, key, .. } => (vec![owner], ViewingKey(key.clone())),
-            Self::TransactionHistory { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            Self::Balance { owner, viewer, key, .. } => Ok((vec![owner, viewer], key.clone())),
+            Self::AllBalances { owner, key, .. } => Ok((vec![owner], key.clone())),
+            Self::TransactionHistory { address, key, .. } => Ok((vec![address], key.clone())),
             Self::Permission {
                 owner,
                 allowed_address,
                 key,
                 ..
-            } => (vec![owner, allowed_address], ViewingKey(key.clone())),
-            Self::AllPermissions { address, key, .. } => (vec![address], ViewingKey(key.clone())),
-            Self::TokenIdPrivateInfo { address, key, .. } => (vec![address], ViewingKey(key.clone())),
+            } => Ok((vec![owner, allowed_address], key.clone())),
+            Self::AllPermissions { address, key, .. } => Ok((vec![address], key.clone())),
+            Self::TokenIdPrivateInfo { address, key, .. } => Ok((vec![address], key.clone())),
             Self::ContractInfo {  } |
             Self::TokenIdPublicInfo { .. } |
             Self::RegisteredCodeHash { .. } |
@@ -324,7 +323,7 @@ impl QueryMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryWithPermit {
     Balance { 
-        owner: HumanAddr, 
+        owner: Addr, 
         token_id: String 
     },
     AllBalances { 
@@ -336,8 +335,8 @@ pub enum QueryWithPermit {
         page_size: u32,
     },
     Permission {
-        owner: HumanAddr,
-        allowed_address: HumanAddr,
+        owner: Addr,
+        allowed_address: Addr,
         token_id: String,
     },
     AllPermissions {
@@ -356,9 +355,9 @@ pub enum QueryAnswer {
     /// returns contract-level information:
     ContractInfo {
         // the address of the admin, or `None` for an admin-free contract
-        admin: Option<HumanAddr>,
+        admin: Option<Addr>,
         /// the list of curators in the contract
-        curators: Vec<HumanAddr>,
+        curators: Vec<Addr>,
         /// the list of all token_ids that have been curated
         all_token_ids: Vec<String>,
     },
@@ -392,14 +391,14 @@ pub enum QueryAnswer {
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
         /// if owner_is_public == false, total_supply = None
-        owner: Option<HumanAddr>
+        owner: Option<Addr>
     },
     TokenIdPrivateInfo {
         token_id_info: StoredTokenInfo,
         /// if public_total_supply == false, total_supply = None
         total_supply: Option<Uint128>,
         /// if owner_is_public == false, total_supply = None
-        owner: Option<HumanAddr>
+        owner: Option<Addr>
     },
     /// returns None if contract has not registered with SNIP1155 contract
     RegisteredCodeHash {
@@ -428,8 +427,8 @@ pub enum ResponseStatus {
 pub struct TransferAction {
     pub token_id: String,
     // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
-    pub from: HumanAddr,
-    pub recipient: HumanAddr,
+    pub from: Addr,
+    pub recipient: Addr,
     pub amount: Uint128,
     pub memo: Option<String>,
 }
@@ -439,8 +438,8 @@ pub struct TransferAction {
 pub struct SendAction {
     pub token_id: String,
     // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
-    pub from: HumanAddr,
-    pub recipient: HumanAddr,
+    pub from: Addr,
+    pub recipient: Addr,
     pub recipient_code_hash: Option<String>,
     pub amount: Uint128,
     pub msg: Option<Binary>,

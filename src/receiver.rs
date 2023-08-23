@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{to_binary, Binary, CosmosMsg, HumanAddr, StdResult, Uint128, WasmMsg};
+use cosmwasm_std::{to_binary, Binary, CosmosMsg, Addr, StdResult, Uint128, WasmMsg};
 
 use crate::{state::RESPONSE_BLOCK_SIZE, msg::space_pad};
 
@@ -12,11 +12,11 @@ use crate::{state::RESPONSE_BLOCK_SIZE, msg::space_pad};
 #[serde(rename_all = "snake_case")]
 pub struct Snip1155ReceiveMsg {
     /// the address that sent the `Send` or `BatchSend` message
-    pub sender: HumanAddr,
+    pub sender: Addr,
     /// unique token_id `String`
     pub token_id: String,
     /// the previous owner of the tokens being transferred
-    pub from: HumanAddr,
+    pub from: Addr,
     /// amount of tokens being transferred
     pub amount: Uint128,
     /// optional memo
@@ -28,9 +28,9 @@ pub struct Snip1155ReceiveMsg {
 
 impl Snip1155ReceiveMsg {
     pub fn new(
-        sender: HumanAddr,
+        sender: Addr,
         token_id: String,
-        from: HumanAddr,
+        from: Addr,
         amount: Uint128,
         memo: Option<String>,
         msg: Option<Binary>,
@@ -56,15 +56,15 @@ impl Snip1155ReceiveMsg {
     /// creates a cosmos_msg sending this struct to the named contract
     pub fn into_cosmos_msg(
         self,
-        callback_code_hash: String,
-        contract_addr: HumanAddr,
+        code_hash: String,
+        contract_addr: Addr,
     ) -> StdResult<CosmosMsg> {
         let msg = self.into_binary()?;
         let execute = WasmMsg::Execute {
             msg,
-            callback_code_hash,
-            contract_addr,
-            send: vec![],
+            code_hash,
+            contract_addr: contract_addr.to_string(),
+            funds: vec![],
         };
         Ok(execute.into())
     }

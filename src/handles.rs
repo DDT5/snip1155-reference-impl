@@ -1,19 +1,21 @@
 use cosmwasm_std::{
-    Env, Extern, Storage, Api, Querier, 
-    InitResponse, HandleResponse, Binary, to_binary, log,
+    DepsMut, Env, MessageInfo, Storage,
+    Response, Binary, to_binary,
     StdResult, StdError,
-    HumanAddr, Uint128,
-    CosmosMsg, 
+    Addr, Uint128,
+    CosmosMsg, entry_point, 
     // debug_print, 
 };
 use secret_toolkit::{
     utils::space_pad, 
-    permit::{RevokedPermits, }
+    permit::RevokedPermits,
+    viewing_key::{ViewingKey, ViewingKeyStore},
+    crypto::sha_256,
 };
 
 use crate::{
     msg::{
-        InitMsg, HandleMsg, HandleAnswer,
+        InstantiateMsg, ExecuteMsg, ExecuteAnswer,
         TransferAction, SendAction,
         ResponseStatus::{Success},  
     },
@@ -22,7 +24,7 @@ use crate::{
         contr_conf_r, contr_conf_w, tkn_info_r, 
         tkn_info_w, balances_w, balances_r, 
         tkn_tot_supply_w, tkn_tot_supply_r,
-        set_receiver_hash, get_receiver_hash, write_viewing_key,
+        set_receiver_hash, get_receiver_hash, 
         state_structs::{ContractConfig, StoredTokenInfo, CurateTokenId, TokenAmount, },
         permissions::{Permission, new_permission, update_permission, may_load_any_permission,},
         txhistory::{store_transfer, store_mint, store_burn, append_new_owner, may_get_current_owner,}, 
@@ -30,11 +32,6 @@ use crate::{
         expiration::Expiration, blockinfo_w,  
     },
     receiver::{Snip1155ReceiveMsg}, 
-    vk::{
-        viewing_key::ViewingKey,
-        rand::sha_256,
-    }, 
-   
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -42,13 +39,15 @@ use crate::{
 /////////////////////////////////////////////////////////////////////////////////
 
 /// instantiation function. See [InitMsg](crate::msg::InitMsg) for the api
-pub fn init<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+#[entry_point]
+pub fn instantiate(
+    deps: &mut DepsMut,
     env: Env,
-    msg: InitMsg,
-) -> StdResult<InitResponse> {
+    info: MessageInfo,
+    msg: InstantiateMsg,
+) -> StdResult<Response> {
     // save latest block info. not necessary once we migrate to CosmWasm v1.0 
-    blockinfo_w(&mut deps.storage).save(&env.block)?;
+    blockinfo_w(deps.storage).save(&env.block)?;
 
     // set admin. If `has_admin` == None => no admin. 
     // If `has_admin` == true && msg.admin == None => admin is the instantiator
@@ -56,12 +55,16 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         false => None,
         true => match msg.admin {
             Some(i) => Some(i),
-            None => Some(env.message.sender.clone()),
+            None => Some(info.sender.clone()),
         },
     };
     
     // create contract config -- save later
-    let prng_seed: Vec<u8> = sha_256(base64::encode(msg.entropy).as_bytes()).to_vec();
+    let prng_seed_hashed = sha_256(&msg.entropy.as_bytes());
+    let prng_seed = prng_seed_hashed.to_vec();
+    
+    ViewingKey::set_seed(deps.storage, &prng_seed);
+
     let mut config = ContractConfig { 
         admin, 
         curators: msg.curators,
@@ -76,6 +79,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
         exec_curate_token_id(
             deps, 
             &env,
+            &info,
             &mut config,
             initial_token,
             None,
@@ -83,69 +87,75 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     }
 
     // save contract config -- where tx_cnt would have increased post initial balances
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
     
-    Ok(InitResponse::default())
+    Ok(Response::default())
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 // Handles
 /////////////////////////////////////////////////////////////////////////////////
 
-/// contract handle function. See [HandleMsg](crate::msg::HandleMsg) and 
-/// [HandleAnswer](crate::msg::HandleAnswer) for the api
-pub fn handle<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+/// contract handle function. See [ExecuteMsg](crate::msg::ExecuteMsg) and 
+/// [ExecuteAnswer](crate::msg::ExecuteAnswer) for the api
+#[entry_point]
+pub fn execute(
+    deps: DepsMut,
     env: Env,
-    msg: HandleMsg,
-) -> StdResult<HandleResponse> {
+    info: MessageInfo,
+    msg: ExecuteMsg,
+) -> StdResult<Response> {
     // allows approx latest block info to be available for queries. Important to enforce
     // allowance expiration. Remove this after BlockInfo becomes available to queries
-    blockinfo_w(&mut deps.storage).save(&env.block)?;
+    blockinfo_w(deps.storage).save(&env.block)?;
 
     let response = match msg {
-        HandleMsg::CurateTokenIds {
+        ExecuteMsg::CurateTokenIds {
             initial_tokens,
             memo,
             padding: _,
          } => try_curate_token_ids(
             deps,
             env,
+            info,
             initial_tokens,
             memo,
         ),
-        HandleMsg::MintTokens {
+        ExecuteMsg::MintTokens {
             mint_tokens,
             memo,
             padding: _
          } => try_mint_tokens(
             deps, 
             env,
+            info,
             mint_tokens,
             memo
         ),
-        HandleMsg::BurnTokens { 
+        ExecuteMsg::BurnTokens { 
             burn_tokens, 
             memo, 
             padding: _ 
         } => try_burn_tokens(
             deps, 
             env, 
+            info,
             burn_tokens, 
             memo
         ),
-        HandleMsg::ChangeMetadata { 
+        ExecuteMsg::ChangeMetadata { 
             token_id,
             public_metadata, 
             private_metadata 
         } => try_change_metadata(
             deps,
             env,
+            info,
             token_id,
             *public_metadata,
             *private_metadata,
         ),
-        HandleMsg::Transfer { 
+        ExecuteMsg::Transfer { 
             token_id,
             from,
             recipient, 
@@ -155,19 +165,21 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_transfer(
             deps,
             env,
+            info,
             token_id,
             from,
             recipient,
             amount,
             memo,
         ),
-        HandleMsg::BatchTransfer { actions, padding: _ 
+        ExecuteMsg::BatchTransfer { actions, padding: _ 
         } => try_batch_transfer(
             deps,
             env,
+            info,
             actions,
         ),
-        HandleMsg::Send { 
+        ExecuteMsg::Send { 
             token_id, 
             from, 
             recipient, 
@@ -179,6 +191,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_send(
             deps,
             env,
+            info,
             SendAction {
                 token_id,
                 from,
@@ -189,13 +202,14 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
                 memo,
             }
         ),
-        HandleMsg::BatchSend { actions, padding: _ 
+        ExecuteMsg::BatchSend { actions, padding: _ 
         } => try_batch_send(
             deps,
             env,
+            info,
             actions,
         ),     
-        HandleMsg::GivePermission {
+        ExecuteMsg::GivePermission {
             allowed_address,
             token_id,
             view_balance,
@@ -208,6 +222,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_give_permission(
             deps,
             env,
+            info,
             allowed_address,
             token_id,
             view_balance,
@@ -217,7 +232,7 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
             transfer,
             transfer_expiry,
             ),
-        HandleMsg::RevokePermission { 
+        ExecuteMsg::RevokePermission { 
             token_id, 
             owner, 
             allowed_address, 
@@ -225,126 +240,136 @@ pub fn handle<S: Storage, A: Api, Q: Querier>(
         } => try_revoke_permission(
             deps,
             env,
+            info,
             token_id,
             owner,
             allowed_address,
         ),
-        HandleMsg::CreateViewingKey { 
+        ExecuteMsg::CreateViewingKey { 
             entropy, 
             padding: _ 
         } => try_create_viewing_key(
             deps, 
             env, 
+            info,
             entropy
         ),
-        HandleMsg::SetViewingKey { 
+        ExecuteMsg::SetViewingKey { 
             key, 
             padding: _ 
         } => try_set_viewing_key(
             deps, 
             env, 
+            info,
             key
         ),
-        HandleMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
+        ExecuteMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
             deps, 
             env,
+            info,
             permit_name,
         ),
-        HandleMsg::AddCurators { add_curators, padding: _ 
+        ExecuteMsg::AddCurators { add_curators, padding: _ 
         } => try_add_curators(
             deps,
             env,
+            info,
             add_curators,
         ),
-        HandleMsg::RemoveCurators { remove_curators, padding: _ 
+        ExecuteMsg::RemoveCurators { remove_curators, padding: _ 
         } => try_remove_curators(
             deps,
             env,
+            info,
             remove_curators,
         ),
-        HandleMsg::AddMinters { token_id, add_minters, padding: _ 
+        ExecuteMsg::AddMinters { token_id, add_minters, padding: _ 
         } => try_add_minters(
             deps,
             env,
+            info,
             token_id, 
             add_minters,
         ),
-        HandleMsg::RemoveMinters { token_id, remove_minters, padding: _ 
+        ExecuteMsg::RemoveMinters { token_id, remove_minters, padding: _ 
         } => try_remove_minters(
             deps,
             env,
+            info,
             token_id, 
             remove_minters,
         ),
-        HandleMsg::ChangeAdmin { new_admin, padding: _ 
+        ExecuteMsg::ChangeAdmin { new_admin, padding: _ 
         } => try_change_admin(
             deps,
             env,
+            info,
             new_admin,
         ),
-        HandleMsg::RemoveAdmin { 
+        ExecuteMsg::RemoveAdmin { 
             current_admin, 
             contract_address, 
             padding: _ 
         } => try_remove_admin(
             deps,
             env,
+            info,
             current_admin,
             contract_address,
         ),   
-        HandleMsg::RegisterReceive { 
+        ExecuteMsg::RegisterReceive { 
             code_hash, 
             padding: _, 
         } => try_register_receive(
             deps, 
             env, 
+            info,
             code_hash
         ),
     };
     pad_response(response)
 }
 
-fn try_curate_token_ids<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_curate_token_ids(
+    mut deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     initial_tokens: Vec<CurateTokenId>,
     memo: Option<String>,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
     // check if sender is a curator
-    verify_curator(&config, &env)?;
+    verify_curator(&config, &info)?;
 
     // curate new token_ids
     for initial_token in initial_tokens {
         exec_curate_token_id(
-            deps, 
+            &mut deps, 
             &env,
+            &info,
             &mut config,
             initial_token, 
             memo.clone(),
         )?;
     } 
 
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::CurateTokenIds { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::CurateTokenIds { status: Success })?))
 }
 
-fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_mint_tokens(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     mint_tokens: Vec<TokenAmount>,
     memo: Option<String>,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
 
     // mint tokens
     for mint_token in mint_tokens {
-        let token_info_op = tkn_info_r(&deps.storage).may_load(mint_token.token_id.as_bytes())?;
+        let token_info_op = tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
         
         // check if token_id exists
         if token_info_op.is_none() {
@@ -361,12 +386,12 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
         }
 
         // check if sender is a minter
-        verify_minter(token_info_op.as_ref().unwrap(), &env)?;
+        verify_minter(token_info_op.as_ref().unwrap(), &info)?;
 
         // add balances
         for add_balance in mint_token.balances {
             exec_change_balance(
-                &mut deps.storage, 
+                deps.storage, 
                 &mint_token.token_id, 
                 None, 
                 Some(&add_balance.address), 
@@ -376,39 +401,36 @@ fn try_mint_tokens<S: Storage, A: Api, Q: Querier>(
 
             // store mint_token
             store_mint(
-                &mut deps.storage, 
+                deps.storage, 
                 &mut config, 
                 &env.block,
                 &mint_token.token_id,
-                deps.api.canonical_address(&env.message.sender)?, 
-                deps.api.canonical_address(&add_balance.address)?, 
+                deps.api.addr_canonicalize(info.sender.as_str())?, 
+                deps.api.addr_canonicalize(add_balance.address.as_str())?, 
                 add_balance.amount, 
                 memo.clone()
             )?;
         }
     }
 
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::MintTokens { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::MintTokens { status: Success })?))
 }
 
 // in the base specifications, this function can be performed by token owner only
-fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_burn_tokens(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     burn_tokens: Vec<TokenAmount>,
     memo: Option<String>,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
     
     // burn tokens
     for burn_token in burn_tokens {
-        let token_info_op = tkn_info_r(&deps.storage).may_load(burn_token.token_id.as_bytes())?;
+        let token_info_op = tkn_info_r(deps.storage).may_load(burn_token.token_id.as_bytes())?;
     
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
@@ -427,7 +449,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
         // remove balances
         for rem_balance in burn_token.balances {
             // in base specification, burner MUST be the owner
-            if rem_balance.address != env.message.sender {
+            if rem_balance.address != info.sender {
                 return Err(StdError::generic_err(format!(
                     "you do not have permission to burn {} tokens from address {}",
                     rem_balance.amount, rem_balance.address
@@ -435,7 +457,7 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
             }
 
             exec_change_balance(
-                &mut deps.storage, 
+                deps.storage, 
                 &burn_token.token_id, 
                 Some(&rem_balance.address), 
                 None,
@@ -445,45 +467,46 @@ fn try_burn_tokens<S: Storage, A: Api, Q: Querier>(
 
             // store burn_token
             store_burn(
-                &mut deps.storage, 
+                deps.storage, 
                 &mut config, 
                 &env.block,
                 &burn_token.token_id,
                 // in base specification, burner MUST be the owner
                 None, 
-                deps.api.canonical_address(&rem_balance.address)?, 
+                deps.api.addr_canonicalize(rem_balance.address.as_str())?, 
                 rem_balance.amount, 
                 memo.clone()
             )?;
         }
     }
 
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::BurnTokens { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::BurnTokens { status: Success })?))
 }
 
-fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_change_metadata(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     token_id: String,
     public_metadata: Option<Metadata>,
     private_metadata: Option<Metadata>,
-) -> StdResult<HandleResponse> {
-    let tkn_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+) -> StdResult<Response> {
+    let tkn_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
     let tkn_conf = match tkn_info_op.clone() {
         None => return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))),
         Some(i) => i.token_config.flatten(),
     };
     
     // define variables for control flow
-    let owner = may_get_current_owner(&deps.storage, &token_id)?;
-    let is_owner = owner.unwrap_or_default() == env.message.sender;
-    let is_minter = verify_minter(tkn_info_op.as_ref().unwrap(), &env).is_ok();
+    let owner = may_get_current_owner(deps.storage, &token_id)?;
+    let is_owner = match owner {
+        Some(owner_addr) => owner_addr == info.sender,
+        None => false,
+    };
+    
+    let is_minter = verify_minter(tkn_info_op.as_ref().unwrap(), &info).is_ok();
 
     // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not 
     let allow_update = is_owner && tkn_conf.owner_may_update_metadata || is_minter && tkn_conf.minter_may_update_metadata;
@@ -498,29 +521,27 @@ fn try_change_metadata<S: Storage, A: Api, Q: Querier>(
             let mut tkn_info = tkn_info_op.unwrap();
             if public_metadata.is_some() { tkn_info.public_metadata = public_metadata };
             if private_metadata.is_some() { tkn_info.private_metadata = private_metadata };
-            tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &tkn_info)?;
+            tkn_info_w(deps.storage).save(token_id.as_bytes(), &tkn_info)?;
         }
     }
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::ChangeMetadata { status: Success })?),
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::ChangeMetadata { status: Success })?))
 }
 
-fn try_transfer<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_transfer(
+    mut deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     token_id: String,
-    from: HumanAddr,
-    recipient: HumanAddr,
+    from: Addr,
+    recipient: Addr,
     amount: Uint128,
     memo: Option<String>,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     impl_transfer(
-        deps, 
+        &mut deps, 
         &env, 
+        &info,
         &token_id, 
         &from, 
         &recipient, 
@@ -528,90 +549,87 @@ fn try_transfer<S: Storage, A: Api, Q: Querier>(
         memo
     )?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::Transfer { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::Transfer { status: Success })?))
 }
 
-fn try_batch_transfer<S: Storage, A:Api, Q:Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_batch_transfer(
+    mut deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     actions: Vec<TransferAction>,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     for action in actions {
+        let from = deps.api.addr_validate(action.from.as_str())?;
+        let recipient = deps.api.addr_validate(action.recipient.as_str())?;
         impl_transfer(
-            deps, 
+            &mut deps, 
             &env, 
+            &info,
             &action.token_id, 
-            &action.from, 
-            &action.recipient, 
+            &from, 
+            &recipient, 
             action.amount, 
             action.memo
         )?;
     }
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::BatchTransfer { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::BatchTransfer { status: Success })?))
 }
 
-fn try_send<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_send(
+    mut deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     action: SendAction,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     // set up cosmos messages
     let mut messages = vec![];
 
     impl_send(
-        deps,
+        &mut deps,
         &env,
+        &info,
         &mut messages,
         action,
     )?;
 
-    Ok(HandleResponse {
-        messages,
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::Send { status: Success })?)
-    })
+    let data = to_binary(&ExecuteAnswer::Send { status: Success })?;
+    let res = Response::new().add_messages(messages).set_data(data);
+    Ok(res)
 }
 
-fn try_batch_send<S: Storage, A:Api, Q:Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_batch_send(
+    mut deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     actions: Vec<SendAction>,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     // declare vector for cosmos messages
     let mut messages = vec![];
 
     for action in actions {
         impl_send(
-            deps,
+            &mut deps,
             &env,
+            &info,
             &mut messages,
             action
         )?;
     }
 
-    Ok(HandleResponse {
-        messages,
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::BatchSend { status: Success })?)
-    })
+    let data = to_binary(&ExecuteAnswer::BatchSend { status: Success })?;
+    let res = Response::new().add_messages(messages).set_data(data);
+    Ok(res)
 }
 
 /// does not check if `token_id` exists so attacker cannot easily figure out if
 /// a `token_id` has been created 
 #[allow(clippy::too_many_arguments)]
-fn try_give_permission<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_give_permission(
+    deps: DepsMut,
     env: Env,
-    allowed_address: HumanAddr,
+    info: MessageInfo,
+    allowed_address: Addr,
     token_id: String,
     view_balance: Option<bool>,
     view_balance_expiry: Option<Expiration>,
@@ -619,11 +637,11 @@ fn try_give_permission<S: Storage, A: Api, Q: Querier>(
     view_private_metadata_expiry: Option<Expiration>,
     transfer: Option<Uint128>,
     transfer_expiry: Option<Expiration>,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     // may_load current permission
     let permission_op = may_load_any_permission(
-        &deps.storage,
-        &env.message.sender,
+        deps.storage,
+        &info.sender,
         &token_id,
         &allowed_address,
     )?;
@@ -659,7 +677,7 @@ fn try_give_permission<S: Storage, A: Api, Q: Querier>(
                 transfer,
                 transfer_expiry,
             );     
-            update_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &updated_permission)?;
+            update_permission(deps.storage, &info.sender, &token_id, &allowed_address, &updated_permission)?;
         },
         None => {
             let default_permission = Permission::default();
@@ -672,160 +690,134 @@ fn try_give_permission<S: Storage, A: Api, Q: Querier>(
                 transfer,
                 transfer_expiry,
             ); 
-            new_permission(&mut deps.storage, &env.message.sender, &token_id, &allowed_address, &updated_permission)?;
+            new_permission(deps.storage, &info.sender, &token_id, &allowed_address, &updated_permission)?;
         }
     };
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::GivePermission { status: Success })?),
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::GivePermission { status: Success })?))
 }
 
 /// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
 /// entry in storage, because it is unecessarily in most use cases, but will require also removing 
 /// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
 /// If permission does not exist, message will return an error. 
-fn try_revoke_permission<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_revoke_permission(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     token_id: String,
-    owner: HumanAddr,
-    allowed_addr: HumanAddr,
-) -> StdResult<HandleResponse> {
+    owner: Addr,
+    allowed_addr: Addr,
+) -> StdResult<Response> {
     // either owner or allowed_address can remove permission
-    if env.message.sender != owner && env.message.sender != allowed_addr {
+    if info.sender != owner && info.sender != allowed_addr {
         return Err(StdError::generic_err(
             "only the owner or address with permission can remove permission"
         ))
     }
     
-    update_permission(&mut deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
+    update_permission(deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RevokePermission { status: Success })?),
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RevokePermission { status: Success })?))
 }
 
-fn try_create_viewing_key<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_create_viewing_key(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     entropy: String,
-) -> StdResult<HandleResponse> {
-    // let constants = ReadonlyConfig::from_storage(&deps.storage).constants()?;
-    let contr_conf = contr_conf_r(&deps.storage).load()?;
-    let prng_seed = contr_conf.prng_seed;
+) -> StdResult<Response> {
+    let key = ViewingKey::create(
+        deps.storage,
+        &info,
+        &env,
+        info.sender.as_str(),
+        entropy.as_ref(),
+    );
 
-    let key = ViewingKey::new(&env, &prng_seed, (&entropy).as_ref());
-
-    let message_sender = deps.api.canonical_address(&env.message.sender)?;
-    write_viewing_key(&mut deps.storage, &message_sender, &key);
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::CreateViewingKey { key })?),
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::CreateViewingKey { key })?))
 }
 
-fn try_set_viewing_key<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_set_viewing_key(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     key: String,
-) -> StdResult<HandleResponse> {
-    let vk = ViewingKey(key);
-
-    let message_sender = deps.api.canonical_address(&env.message.sender)?;
-    write_viewing_key(&mut deps.storage, &message_sender, &vk);
-
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::SetViewingKey { status: Success })?),
-    })
+) -> StdResult<Response> {
+    ViewingKey::set(deps.storage, info.sender.as_str(), key.as_str());
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::SetViewingKey { status: Success })?))
 }
 
-fn try_revoke_permit<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_revoke_permit(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     permit_name: String,
-) -> StdResult<HandleResponse> {
+) -> StdResult<Response> {
     RevokedPermits::revoke_permit(
-        &mut deps.storage,
+        deps.storage,
         PREFIX_REVOKED_PERMITS,
-        &env.message.sender,
+        &info.sender.to_string(),
         &permit_name,
     );
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RevokePermit { status: Success })?),
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RevokePermit { status: Success })?))
 }
 
-fn try_add_curators<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_add_curators(
+    deps: DepsMut,
     env: Env,
-    add_curators: Vec<HumanAddr>,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    info: MessageInfo,
+    add_curators: Vec<Addr>,
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
 
     // verify admin
-    verify_admin(&config, &env)?;
+    verify_admin(&config, &info)?;
 
     // add curators
     for curator in add_curators {
         config.curators.push(curator);
     }
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::AddCurators { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddCurators { status: Success })?))
 }
 
-fn try_remove_curators<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_remove_curators(
+    deps: DepsMut,
     env: Env,
-    remove_curators: Vec<HumanAddr>,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    info: MessageInfo,
+    remove_curators: Vec<Addr>,
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
 
     // verify admin
-    verify_admin(&config, &env)?;
+    verify_admin(&config, &info)?;
 
     // remove curators
     for curator in remove_curators {
         config.curators.retain(|x| x != &curator);
     }
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RemoveCurators { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RemoveCurators { status: Success })?))
 }
 
-fn try_add_minters<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_add_minters(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     token_id: String,
-    add_minters: Vec<HumanAddr>,
-) -> StdResult<HandleResponse> {
-    let contract_config = contr_conf_r(&deps.storage).load()?;
-    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    add_minters: Vec<Addr>,
+) -> StdResult<Response> {
+    let contract_config = contr_conf_r(deps.storage).load()?;
+    let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
     if token_info_op.is_none() { return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))) };
     let mut token_info = token_info_op.unwrap();
 
     // check if either admin
-    let admin_result = verify_admin(&contract_config, &env);
+    let admin_result = verify_admin(&contract_config, &info);
     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
 
     let verified = admin_result.is_ok(); // || curator_result.is_ok();
@@ -841,28 +833,25 @@ fn try_add_minters<S: Storage, A: Api, Q: Querier>(
 
     // save token info with new minters
     token_info.token_config = flattened_token_config.to_enum();  
-    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &token_info)?;
+    tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::AddMinters { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddMinters { status: Success })?))
 }
 
-fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_remove_minters(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     token_id: String,
-    remove_minters: Vec<HumanAddr>,
-) -> StdResult<HandleResponse> {
-    let contract_config = contr_conf_r(&deps.storage).load()?;
-    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    remove_minters: Vec<Addr>,
+) -> StdResult<Response> {
+    let contract_config = contr_conf_r(deps.storage).load()?;
+    let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
     if token_info_op.is_none() { return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))) };
     let mut token_info = token_info_op.unwrap();
 
     // check if either admin or curator
-    let admin_result = verify_admin(&contract_config, &env);
+    let admin_result = verify_admin(&contract_config, &info);
     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
 
     let verified = admin_result.is_ok(); // || curator_result.is_ok();
@@ -878,47 +867,41 @@ fn try_remove_minters<S: Storage, A: Api, Q: Querier>(
     
     // save token info with new minters
     token_info.token_config = flattened_token_config.to_enum();  
-    tkn_info_w(&mut deps.storage).save(token_id.as_bytes(), &token_info)?;
+    tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RemoveMinters { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RemoveMinters { status: Success })?))
 }
 
 
-fn try_change_admin<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_change_admin(
+    deps: DepsMut,
     env: Env,
-    new_admin: HumanAddr,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    info: MessageInfo,
+    new_admin: Addr,
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
 
     // verify admin
-    verify_admin(&config, &env)?;
+    verify_admin(&config, &info)?;
 
     // change admin
     config.admin = Some(new_admin);
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::ChangeAdmin { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::ChangeAdmin { status: Success })?))
 }
 
-fn try_remove_admin<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_remove_admin(
+    deps: DepsMut,
     env: Env,
-    current_admin: HumanAddr,
-    contract_address: HumanAddr,
-) -> StdResult<HandleResponse> {
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    info: MessageInfo,
+    current_admin: Addr,
+    contract_address: Addr,
+) -> StdResult<Response> {
+    let mut config = contr_conf_r(deps.storage).load()?;
 
     // verify admin
-    verify_admin(&config, &env)?;
+    verify_admin(&config, &info)?;
 
     // checks on redundancy inputs, designed to reduce chances of accidentally 
     // calling this function
@@ -928,29 +911,23 @@ fn try_remove_admin<S: Storage, A: Api, Q: Querier>(
     
     // remove admin
     config.admin = None;
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
-    Ok(HandleResponse {
-        messages: vec![],
-        log: vec![],
-        data: Some(to_binary(&HandleAnswer::RemoveAdmin { status: Success })?)
-    })
+    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RemoveAdmin { status: Success })?))
 }
 
-fn try_register_receive<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn try_register_receive(
+    deps: DepsMut,
     env: Env,
+    info: MessageInfo,
     code_hash: String,
-) -> StdResult<HandleResponse> {
-    set_receiver_hash(&mut deps.storage, &env.message.sender, code_hash);
-    let res = HandleResponse {
-        messages: vec![],
-        log: vec![log("register_status", "success")],
-        data: Some(to_binary(&HandleAnswer::RegisterReceive {
-            status: Success,
-        })?),
-    };
-    Ok(res)
+) -> StdResult<Response> {
+    set_receiver_hash(deps.storage, &info.sender, code_hash);
+
+    let data = to_binary(&ExecuteAnswer::RegisterReceive { status: Success })?;
+    Ok(Response::new()
+        .add_attribute("register_status", "success")
+        .set_data(data))
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -958,8 +935,8 @@ fn try_register_receive<S: Storage, A: Api, Q: Querier>(
 /////////////////////////////////////////////////////////////////////////////////
 
 fn pad_response(
-    response: StdResult<HandleResponse>
-) -> StdResult<HandleResponse> {
+    response: StdResult<Response>
+) -> StdResult<Response> {
     response.map(|mut response| {
         response.data = response.data.map(|mut data| {
             space_pad(&mut data.0, RESPONSE_BLOCK_SIZE);
@@ -983,12 +960,12 @@ fn is_valid_symbol(symbol: &str) -> bool {
 
 fn verify_admin(
     contract_config: &ContractConfig,
-    env: &Env,
+    info: &MessageInfo,
 ) -> StdResult<()> {
     let admin_op = &contract_config.admin;
     match admin_op {
         Some(admin) => {
-            if admin != &env.message.sender {
+            if admin != &info.sender {
                 return Err(StdError::generic_err(
                     "This is an admin function",
                 ));
@@ -1005,10 +982,10 @@ fn verify_admin(
 /// verifies if sender is a curator
 fn verify_curator(
     contract_config: &ContractConfig,
-    env: &Env
+    info: &MessageInfo
 ) -> StdResult<()> {
     let curators = &contract_config.curators;
-    if !curators.contains(&env.message.sender) {
+    if !curators.contains(&info.sender) {
         return Err(StdError::generic_err(
             "Only curators are allowed to curate token_ids",
         ));
@@ -1036,10 +1013,10 @@ fn verify_curator(
 /// verifies if sender is a minter of the specific token_id
 fn verify_minter(
     token_info: &StoredTokenInfo,
-    env: &Env
+    info: &MessageInfo
 ) -> StdResult<()> {
     let minters = &token_info.token_config.flatten().minters;
-    if !minters.contains(&env.message.sender) {
+    if !minters.contains(&info.sender) {
         return Err(StdError::generic_err(format!(
             "Only minters are allowed to mint additional tokens for token_id {}",
             token_info.token_id
@@ -1049,15 +1026,16 @@ fn verify_minter(
 }
 
 /// checks if `token_id` is available (ie: not yet created), then creates new `token_id` and initial balances
-fn exec_curate_token_id<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn exec_curate_token_id(
+    deps: &mut DepsMut,
     env: &Env,
+    info: &MessageInfo,
     config: &mut ContractConfig,
     initial_token: CurateTokenId,
     memo: Option<String>,
 ) -> StdResult<()> {
     // check: token_id has not been created yet
-    if tkn_info_r(&deps.storage).may_load(initial_token.token_info.token_id.as_bytes())?.is_some() {
+    if tkn_info_r(deps.storage).may_load(initial_token.token_info.token_id.as_bytes())?.is_some() {
         return Err(StdError::generic_err("token_id already exists. Try a different id String"))
     }
 
@@ -1068,7 +1046,7 @@ fn exec_curate_token_id<S: Storage, A: Api, Q: Querier>(
                 "token_id {} is an NFT; there can only be one NFT. Balances should only have one address",
                 initial_token.token_info.token_id
             )))
-        } else if initial_token.balances[0].amount != Uint128(1) {
+        } else if initial_token.balances[0].amount != Uint128::from(1_u64) {
             return Err(StdError::generic_err(format!(
                 "token_id {} is an NFT; there can only be one NFT. Balances.amount must == 1",
                 initial_token.token_info.token_id
@@ -1093,31 +1071,31 @@ fn exec_curate_token_id<S: Storage, A: Api, Q: Querier>(
 
 
     // create and save new token info
-    tkn_info_w(&mut deps.storage).save(
+    tkn_info_w(deps.storage).save(
         initial_token.token_info.token_id.as_bytes(), 
-        &initial_token.token_info.to_store(&env.message.sender)
+        &initial_token.token_info.to_store(&info.sender)
     )?;
 
     // set initial balances and store mint history
     for balance in initial_token.balances {
         // save new balances
-        balances_w(&mut deps.storage, &initial_token.token_info.token_id)
+        balances_w(deps.storage, &initial_token.token_info.token_id)
         .save(to_binary(&balance.address)?.as_slice(), &balance.amount)?;
         // if is_nft == true, store owner of NFT
         if initial_token.token_info.token_config.flatten().is_nft {
-            append_new_owner(&mut deps.storage, &initial_token.token_info.token_id, &balance.address)?;
+            append_new_owner(deps.storage, &initial_token.token_info.token_id, &balance.address)?;
         }
         // initiate total token supply
-        tkn_tot_supply_w(&mut deps.storage).save(initial_token.token_info.token_id.as_bytes(), &balance.amount)?;
+        tkn_tot_supply_w(deps.storage).save(initial_token.token_info.token_id.as_bytes(), &balance.amount)?;
 
         // store mint_token_id
         store_mint(
-            &mut deps.storage, 
+            deps.storage, 
             config, 
             &env.block,
             &initial_token.token_info.token_id, 
-            deps.api.canonical_address(&env.message.sender)?, 
-            deps.api.canonical_address(&balance.address)?, 
+            deps.api.addr_canonicalize(info.sender.as_str())?, 
+            deps.api.addr_canonicalize(balance.address.as_str())?, 
             balance.amount, 
             memo.clone()
         )?;
@@ -1131,9 +1109,10 @@ fn exec_curate_token_id<S: Storage, A: Api, Q: Querier>(
 
 /// Implements a single `Send` function. Transfers Uint128 amount of a single `token_id`, 
 /// saves transfer history, may register-receive, and creates callback message.
-fn impl_send<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn impl_send(
+    deps: &mut DepsMut,
     env: &Env,
+    info: &MessageInfo,
     messages: &mut Vec<CosmosMsg>,
     action: SendAction,
 ) -> StdResult<()> {
@@ -1150,6 +1129,7 @@ fn impl_send<S: Storage, A: Api, Q: Querier>(
     impl_transfer(
         deps, 
         env, 
+        info,
         &token_id, 
         &from, 
         &recipient, 
@@ -1159,12 +1139,12 @@ fn impl_send<S: Storage, A: Api, Q: Querier>(
 
     // create cosmos message
     try_add_receiver_api_callback(
-        &deps.storage,
+        deps.storage,
         messages,
         recipient,
         recipient_code_hash,
         msg,
-        env.message.sender.clone(),
+        info.sender.clone(),
         token_id,
         from.to_owned(),
         amount,
@@ -1177,22 +1157,23 @@ fn impl_send<S: Storage, A: Api, Q: Querier>(
 /// Implements a single `Transfer` function. Transfers a Uint128 amount of a 
 /// single `token_id` and saves the transfer history. Used by `Transfer` and 
 /// `Send` (via `impl_send`) messages
-fn impl_transfer<S: Storage, A: Api, Q: Querier>(
-    deps: &mut Extern<S, A, Q>,
+fn impl_transfer(
+    deps: &mut DepsMut,
     env: &Env,
+    info: &MessageInfo,
     token_id: &str,
-    from: &HumanAddr,
-    recipient: &HumanAddr,
+    from: &Addr,
+    recipient: &Addr,
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {
     // check if `from` == message sender || has enough allowance to send tokens
     // perform allowance check, and may reduce allowance 
     let mut throw_err = false;
-    if from != &env.message.sender {
+    if from != &info.sender {
         // may_load_active_permission() or may_load_any_permission() both work. The former performs redundancy checks, which are
         // more relevant for authenticated queries (because transfer simply won't work if there is no balance)
-        let permission_op = may_load_any_permission(&deps.storage, from, token_id, &env.message.sender)?;
+        let permission_op = may_load_any_permission(deps.storage, from, token_id, &info.sender)?;
 
         match permission_op {
             // no permission given
@@ -1208,18 +1189,18 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
             ))),
             // success, so need to reduce allowance
             Some(mut perm) if perm.trfer_allowance_perm >= amount => {
-                let new_allowance = Uint128(perm.trfer_allowance_perm.u128()
+                let new_allowance = Uint128::from(perm.trfer_allowance_perm.u128()
                     .checked_sub(amount.u128())
                     .expect("something strange happened"));
                 perm.trfer_allowance_perm = new_allowance;
-                update_permission(&mut deps.storage, from, token_id, &env.message.sender, &perm)?;
+                update_permission(deps.storage, from, token_id, &info.sender, &perm)?;
             },
             Some(_) => unreachable!("impl_transfer permission check: this should not be reachable")
         }
     }
 
     // check that token_id exists
-    let token_info_op = tkn_info_r(&deps.storage).may_load(token_id.as_bytes())?;
+    let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
     if token_info_op.is_none() { throw_err = true }
 
     // combined error message for no token_id or no permission given in one place to make it harder to identify if token_id already exists
@@ -1230,7 +1211,7 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
 
     // transfer tokens
     exec_change_balance(
-        &mut deps.storage, 
+        deps.storage, 
         token_id, 
         Some(from), 
         Some(recipient), 
@@ -1239,19 +1220,19 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
     )?;
 
     // store transaction
-    let mut config = contr_conf_r(&deps.storage).load()?;
+    let mut config = contr_conf_r(deps.storage).load()?;
     store_transfer(
-        &mut deps.storage, 
+        deps.storage, 
         &mut config, 
         &env.block, 
         token_id, 
-        deps.api.canonical_address(from)?, 
+        deps.api.addr_canonicalize(from.as_str())?, 
         None, 
-        deps.api.canonical_address(recipient)?, 
+        deps.api.addr_canonicalize(recipient.as_str())?, 
         amount, 
         memo
     )?;
-    contr_conf_w(&mut deps.storage).save(&config)?;
+    contr_conf_w(deps.storage).save(&config)?;
 
     Ok(())
 }
@@ -1265,11 +1246,11 @@ fn impl_transfer<S: Storage, A: Api, Q: Querier>(
 /// * If `add_to` == None: burn tokens.
 /// * If is_nft == true, then `remove_from` MUST be Some(_).
 /// * If is_nft == true, stores new owner of NFT
-fn exec_change_balance<S: Storage>(
-    storage: &mut S,
+fn exec_change_balance(
+    storage: &mut dyn Storage,
     token_id: &str,
-    remove_from: Option<&HumanAddr>,
-    add_to: Option<&HumanAddr>,
+    remove_from: Option<&Addr>,
+    add_to: Option<&Addr>,
     amount: &Uint128,
     token_info: &StoredTokenInfo,
 ) -> StdResult<()> {
@@ -1281,7 +1262,7 @@ fn exec_change_balance<S: Storage>(
     }
 
     // check whether token_id is an NFT => assert!(amount == 1). 
-    if token_info.token_config.flatten().is_nft && amount != &Uint128(1) {
+    if token_info.token_config.flatten().is_nft && amount != &Uint128::from(1_u64) {
         return Err(StdError::generic_err("NFT amount must == 1"))
     }
 
@@ -1293,7 +1274,7 @@ fn exec_change_balance<S: Storage>(
             return Err(StdError::generic_err("insufficient funds"))
         }    
         balances_w(storage, token_id)
-        .save(to_binary(&from)?.as_slice(), &Uint128(from_new_amount_op.unwrap()))?;
+        .save(to_binary(&from)?.as_slice(), &Uint128::from(from_new_amount_op.unwrap()))?;
 
         // NOTE: if nft, the ownership history remains in storage. Any existing viewing permissions of last owner 
         // will remain too
@@ -1305,7 +1286,7 @@ fn exec_change_balance<S: Storage>(
         let to_existing_bal = match to_existing_bal_op {
             Some(i) => i,
             // if `to` address has no balance yet, initiate zero balance
-            None => Uint128(0),
+            None => Uint128::from(0_u64),
         };
         let to_new_amount_op = to_existing_bal.u128().checked_add(amount.u128());
         if to_new_amount_op.is_none() {
@@ -1314,7 +1295,7 @@ fn exec_change_balance<S: Storage>(
 
         // save new balances
         balances_w(storage, token_id)
-        .save(to_binary(&to)?.as_slice(), &Uint128(to_new_amount_op.unwrap()))?;
+        .save(to_binary(&to)?.as_slice(), &Uint128::from(to_new_amount_op.unwrap()))?;
 
         // if is_nft == true, store new owner of NFT
         if token_info.token_config.flatten().is_nft {
@@ -1330,7 +1311,7 @@ fn exec_change_balance<S: Storage>(
             let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.u128().checked_add(amount.u128());
             let new_amount = match new_amount_op {
-                Some(i) => Uint128(i),
+                Some(i) => Uint128::from(i),
                 None => return Err(StdError::generic_err("total supply exceeds max allowed of 2^128")),
             };
             tkn_tot_supply_w(storage).save(token_info.token_id.as_bytes(), &new_amount)?;
@@ -1339,7 +1320,7 @@ fn exec_change_balance<S: Storage>(
             let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.u128().checked_sub(amount.u128());
             let new_amount = match new_amount_op {
-                Some(i) => Uint128(i),
+                Some(i) => Uint128::from(i),
                 None => return Err(StdError::generic_err("total supply drops below zero")),
             };
             tkn_tot_supply_w(storage).save(token_info.token_id.as_bytes(), &new_amount)?;
@@ -1350,15 +1331,15 @@ fn exec_change_balance<S: Storage>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn try_add_receiver_api_callback<S: Storage>(
-    storage: &S,
+fn try_add_receiver_api_callback(
+    storage: &dyn Storage,
     messages: &mut Vec<CosmosMsg>,
-    recipient: HumanAddr,
+    recipient: Addr,
     recipient_code_hash: Option<String>,
     msg: Option<Binary>,
-    sender: HumanAddr,
+    sender: Addr,
     token_id: String,
-    from: HumanAddr,
+    from: Addr,
     amount: Uint128,
     memo: Option<String>,
 ) -> StdResult<()> {

@@ -13,13 +13,10 @@ test: unit-test
 unit-test:
 	cargo unit-test
 
-# This is a local build with debug-prints activated. Debug prints only show up
-# in the local development chain (see the `start-server` command below)
-# and mainnet won't accept contracts built with the feature enabled.
 .PHONY: build _build
 build: _build compress-wasm
 _build:
-	RUSTFLAGS='-C link-arg=-s' cargo build --release --target wasm32-unknown-unknown --features="debug-print"
+	RUSTFLAGS='-C link-arg=-s' cargo build --release --target wasm32-unknown-unknown 
 
 # This is a build suitable for uploading to mainnet.
 # Calls to `debug_print` get removed by the compiler.

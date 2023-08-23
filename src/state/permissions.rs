@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{
-    Storage, Uint128, HumanAddr, BlockInfo,
+    Storage, Uint128, Addr, BlockInfo,
     StdResult, StdError, 
     to_binary,  
 };
@@ -14,19 +14,21 @@ use cosmwasm_storage::{
 };
 
 use secret_toolkit::{
-    storage::{AppendStore, AppendStoreMut},  
+    storage::{AppendStore}, //AppendStoreMut 
 };
+
+pub static PERMISSION_ID_STORE: AppendStore<PermissionKey> = AppendStore::new(PREFIX_PERMISSION_ID);
 
 /////////////////////////////////////////////////////////////////////////////////
 // Permissions
 /////////////////////////////////////////////////////////////////////////////////
 
 /// saves new permission entry and adds identifier to the list of permissions the owner address has
-pub fn new_permission<S: Storage>(
-    storage: &mut S,
-    owner: &HumanAddr,
+pub fn new_permission(
+    storage: &mut dyn Storage,
+    owner: &Addr,
     token_id: &str,
-    allowed_addr: &HumanAddr,
+    allowed_addr: &Addr,
     // permission_key: &PermissionKey,
     permission: &Permission,
 ) -> StdResult<()> {
@@ -44,11 +46,11 @@ pub fn new_permission<S: Storage>(
 
 // /// updates an existing permission entry. Does not check that existing entry exists, so 
 // /// riskier to use this. But saves gas from potentially loading permission twice
-// pub fn update_permission_unchecked<S: Storage>(
-//     storage: &mut S,
-//     owner: &HumanAddr,
+// pub fn update_permission_unchecked(
+//     storage: &mut dyn Storage,
+//     owner: &Addr,
 //     token_id: &str,
-//     allowed_addr: &HumanAddr,
+//     allowed_addr: &Addr,
 //     permission: &Permission,
 // ) -> StdResult<()> {
 //     permission_w(storage, owner, token_id).save(
@@ -60,16 +62,16 @@ pub fn new_permission<S: Storage>(
 // }
 
 /// updates an existing permission entry. Returns error if permission entry does not aleady exist
-pub fn update_permission<S> (
-    storage: &mut S,
-    owner: &HumanAddr,
+pub fn update_permission(
+    storage: &mut dyn Storage,
+    owner: &Addr,
     token_id: &str,
-    allowed_addr: &HumanAddr,
+    allowed_addr: &Addr,
     permission: &Permission
     // update_action: A,
 ) -> StdResult<()> 
-    where
-    S: Storage, 
+    // where
+    // S: Storage, 
     // A: FnOnce(Option<Permission>) -> StdResult<Permission> 
     {
 
@@ -91,22 +93,22 @@ pub fn update_permission<S> (
 /// returns StdResult<Option<Permission>> for a given [`owner`, `token_id`, `allowed_addr`] combination.
 /// Returns "dormant" permissions we well, ie: where owner doesn't currently own tokens.
 /// If permission does not exist -> returns StdResult<None> 
-pub fn may_load_any_permission<S: Storage>(
-    storage: &S,
-    owner: &HumanAddr,
+pub fn may_load_any_permission(
+    storage: &dyn Storage,
+    owner: &Addr,
     token_id: &str,
-    allowed_addr: &HumanAddr,
+    allowed_addr: &Addr,
 ) -> StdResult<Option<Permission>> {
     permission_r(storage, owner, token_id).may_load(to_binary(allowed_addr)?.as_slice())
 }
 
 // /// returns StdResult<Option<Permission>> for a given [`owner`, `token_id`, `allowed_addr`] combination.
 // /// If (permission does not exist) || (owner no longer owns tokens) () -> returns StdResult<None>
-// pub fn may_load_active_permission<S: Storage>(
-//     storage: &S,
-//     owner: &HumanAddr,
+// pub fn may_load_active_permission(
+//     storage: &dyn Storage,
+//     owner: &Addr,
 //     token_id: &str,
-//     allowed_addr: &HumanAddr,
+//     allowed_addr: &Addr,
 // ) -> StdResult<Option<Permission>> {
 //     let permission = permission_r(storage, owner, token_id).may_load(to_binary(allowed_addr)?.as_slice())?;
 //     let owner_amount = balances_r(storage, token_id).may_load(to_binary(owner)?.as_slice())?;
@@ -121,27 +123,29 @@ pub fn may_load_any_permission<S: Storage>(
 /// Return (Vec<`PermissionKey { token_id, allowed_addr }`>, u64)
 /// returns a list and total number of PermissionKeys for a given owner. The PermissionKeys represents (part of) 
 /// the keys to retrieve all permissions an `owner` has currently granted
-pub fn list_owner_permission_keys<S: Storage>(
-    storage: &S,
-    owner: &HumanAddr,
+pub fn list_owner_permission_keys(
+    storage: &dyn Storage,
+    owner: &Addr,
     page: u32,
     page_size: u32,
 ) -> StdResult<(Vec<PermissionKey>, u64)> {
-    let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
+    let owner_store = PERMISSION_ID_STORE.add_suffix(to_binary(owner)?.as_slice());
 
-    // Try to access the storage of PermissionKeys for the account.
-    // If it doesn't exist yet, return an empty list of transfers.
-    let store = AppendStore::<PermissionKey, _, _>::attach(&store);
-    let store = if let Some(result) = store {
-        result?
-    } else {
-        return Ok((vec![], 0));
-    };
+// let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
+
+// Try to access the storage of PermissionKeys for the account.
+// If it doesn't exist yet, return an empty list of transfers.
+// let store = AppendStore::<PermissionKey, _, _>::attach(&store);
+// let store = if let Some(result) = store {
+//     result?
+// } else {
+//     return Ok((vec![], 0));
+// };
 
     // Take `page_size` starting from the latest entry, potentially skipping `page * page_size`
     // entries from the start.
-    let pkeys_iter = store
-        .iter()
+    let pkeys_iter = owner_store
+        .iter(storage)?
         .rev()
         .skip((page * page_size) as _)
         .take(page_size as _);
@@ -151,26 +155,25 @@ pub fn list_owner_permission_keys<S: Storage>(
         // .map(|pkey| pkey)
         .collect();
     // return `(Vec<PermissionKey> , total_permission)`
-    pkeys.map(|pkeys| (pkeys, store.len() as u64))
+    pkeys.map(|pkeys| (pkeys, owner_store.get_len(storage).unwrap_or_default() as u64))
 }
 
 /// stores a `PermissionKey {token_id: String, allowed_addr: String]` for a given `owner`. Note that 
 /// permission key is [`owner`, `token_id`, `allowed_addr`]. This function does not enforce that the 
 /// list of PermissionKey stored is unique; while this doesn't really matter, the ref implementation's 
 /// functions aim to ensure each entry is unique, for storage efficiency.
-fn append_permission_for_addr<S: Storage>(
-    storage: &mut S,
-    owner: &HumanAddr,
+fn append_permission_for_addr(
+    storage: &mut dyn Storage,
+    owner: &Addr,
     token_id: &str,
-    allowed_addr: &HumanAddr,
+    allowed_addr: &Addr,
 ) -> StdResult<()> {
     let permission_key = PermissionKey {
         token_id: token_id.to_string(),
         allowed_addr: allowed_addr.clone(),
     };
-    let mut store = PrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
-    let mut store = AppendStoreMut::attach_or_create(&mut store)?;
-    store.push(&permission_key)
+    let owner_store = PERMISSION_ID_STORE.add_suffix(to_binary(owner)?.as_slice());
+    owner_store.push(storage, &permission_key)
 }
 
 /// struct to store permission for a `[token_id, owner, allowed_addr]` combination
@@ -197,5 +200,5 @@ impl Permission {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct PermissionKey {
     pub token_id: String,
-    pub allowed_addr: HumanAddr,
+    pub allowed_addr: Addr,
 }

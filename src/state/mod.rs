@@ -6,19 +6,15 @@ pub mod expiration;
 mod save_load_functions;
 
 use cosmwasm_std::{
-    Storage, BlockInfo, Uint128, HumanAddr, CanonicalAddr, 
+    Storage, BlockInfo, Uint128, Addr, CanonicalAddr, 
     StdResult, StdError,
-    ReadonlyStorage, to_binary, 
+    to_binary, 
 };
 
 use cosmwasm_storage::{
     PrefixedStorage, ReadonlyPrefixedStorage, 
     bucket, bucket_read, Bucket, ReadonlyBucket,
     singleton, singleton_read, ReadonlySingleton, Singleton, 
-};
-
-use crate::{
-    vk::viewing_key::{ViewingKey},
 };
 
 use self::{
@@ -48,7 +44,6 @@ pub const PREFIX_NFT_OWNER: &[u8] = b"nftowner";
 pub const PREFIX_PERMISSIONS: &[u8] = b"permissions";
 /// prefix for storing permission identifier (ID) for a given address
 pub const PREFIX_PERMISSION_ID: &[u8] = b"permid";
-pub const PREFIX_VIEW_KEY: &[u8] = b"s1155viewkey";
 pub const PREFIX_REVOKED_PERMITS: &str = "revokedperms";
 pub const PREFIX_RECEIVERS: &[u8] = b"s1155receivers";
 
@@ -60,20 +55,20 @@ pub const PREFIX_RECEIVERS: &[u8] = b"s1155receivers";
 
 
 /// Contract configuration: stores information on this contract
-pub fn contr_conf_w<S: Storage>(storage: &mut S) -> Singleton<S, ContractConfig> {
+pub fn contr_conf_w(storage: &mut dyn Storage) -> Singleton<ContractConfig> {
     singleton(storage, CONTR_CONF)
 }
 /// Contract configuration: reads information on this contract
-pub fn contr_conf_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, ContractConfig> {
+pub fn contr_conf_r(storage: &dyn Storage) -> ReadonlySingleton<ContractConfig> {
     singleton_read( storage, CONTR_CONF)
 }
 
 /// Saves BlockInfo of latest tx. Should not be necessary after env becomes available to queries
-pub fn blockinfo_w<S: Storage>(storage: &mut S) -> Singleton<S, BlockInfo> {
+pub fn blockinfo_w(storage: &mut dyn Storage) -> Singleton<BlockInfo> {
     singleton(storage, BLOCK_KEY)
 }
 /// Reads BlockInfo of latest tx. Should not be necessary after env becomes available to queries
-pub fn blockinfo_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, BlockInfo> {
+pub fn blockinfo_r(storage: &dyn Storage) -> ReadonlySingleton<BlockInfo> {
     singleton_read(storage, BLOCK_KEY)
 }
 
@@ -82,21 +77,21 @@ pub fn blockinfo_r<S: Storage>(storage: &S) -> ReadonlySingleton<S, BlockInfo> {
 /////////////////////////////////////////////////////////////////////////////////
 
 /// token_id configs. Key is `token_id.as_bytes()`
-pub fn tkn_info_w<S: Storage>(storage: &mut S) -> Bucket<S, StoredTokenInfo> {
-    bucket(TKN_INFO, storage)
+pub fn tkn_info_w(storage: &mut dyn Storage) -> Bucket<StoredTokenInfo> {
+    bucket(storage, TKN_INFO)
 }
 /// token_id configs. Key is `token_id.as_bytes()`
-pub fn tkn_info_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, StoredTokenInfo> {
-    bucket_read(TKN_INFO, storage)
+pub fn tkn_info_r(storage: &dyn Storage) -> ReadonlyBucket<StoredTokenInfo> {
+    bucket_read(storage, TKN_INFO)
 }
 
 /// total supply of a token_id. Key is `token_id.as_bytes()`
-pub fn tkn_tot_supply_w<S: Storage>(storage: &mut S) -> Bucket<S, Uint128> {
-    bucket(TKN_TOTAL_SUPPLY, storage)
+pub fn tkn_tot_supply_w(storage: &mut dyn Storage) -> Bucket<Uint128> {
+    bucket(storage, TKN_TOTAL_SUPPLY)
 }
 /// total supply of a token_id. Key is `token_id.as_bytes()`
-pub fn tkn_tot_supply_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Uint128> {
-    bucket_read(TKN_TOTAL_SUPPLY, storage)
+pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
+    bucket_read(storage, TKN_TOTAL_SUPPLY)
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -104,68 +99,53 @@ pub fn tkn_tot_supply_r<S: Storage>(storage: &S) -> ReadonlyBucket<S, Uint128> {
 /////////////////////////////////////////////////////////////////////////////////
 
 /// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
-/// be [`token_id`, `owner`: to_binary(&HumanAddr)?.as_slice()]  
+/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
 /// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
-pub fn balances_w<'a, 'b, S: Storage>(
-    storage: &'a mut S,
+pub fn balances_w<'a, 'b,>(
+    storage: &'a mut dyn Storage,
     token_id: &'b str
-) -> Bucket<'a, S, Uint128> {
-    Bucket::multilevel(&[BALANCES, token_id.as_bytes()], storage)
+) -> Bucket<'a, Uint128> {
+    Bucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
 /// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
-/// be [`token_id`, `owner`: to_binary(&HumanAddr)?.as_slice()]  
-pub fn balances_r<'a, 'b, S: Storage>(
-    storage: &'a S,
+/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
+pub fn balances_r<'a, 'b,>(
+    storage: &'a dyn Storage,
     token_id: &'b str
-) -> ReadonlyBucket<'a, S, Uint128> {
-    ReadonlyBucket::multilevel(&[BALANCES, token_id.as_bytes()], storage)
+) -> ReadonlyBucket<'a, Uint128> {
+    ReadonlyBucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
 
 /// private functions.
 /// To store permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&HumanAddr)?.as_slice()` 
-fn permission_w<'a, S: Storage>(
-    storage: &'a mut S,
-    owner: &'a HumanAddr,
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
+fn permission_w<'a,>(
+    storage: &'a mut dyn Storage,
+    owner: &'a Addr,
     token_id: &'a str,
-) -> Bucket<'a, S, Permission> {
+) -> Bucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    Bucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
+    Bucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
 }
 /// private functions.
 /// To read permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&HumanAddr)?.as_slice()` 
-fn permission_r<'a, S: Storage>(
-    storage: &'a S,
-    owner: &'a HumanAddr,
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
+fn permission_r<'a,>(
+    storage: &'a dyn Storage, // &'a (dyn Storage + 'a), // &'a S,
+    owner: &'a Addr,
     token_id: &'a str,
-) -> ReadonlyBucket<'a, S, Permission> {
+) -> ReadonlyBucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    ReadonlyBucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
+    ReadonlyBucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
 }
 #[cfg(test)]
-pub fn perm_r<'a, S: Storage>(
-    storage: &'a S,
-    owner: &'a HumanAddr,
+pub fn perm_r<'a,>(
+    storage: &'a dyn Storage,
+    owner: &'a Addr,
     token_id: &'a str,
-) -> ReadonlyBucket<'a, S, Permission> {
+) -> ReadonlyBucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    ReadonlyBucket::multilevel(&[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()], storage)
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////
-// Viewing Keys
-/////////////////////////////////////////////////////////////////////////////////
-
-pub fn write_viewing_key<S: Storage>(store: &mut S, owner: &CanonicalAddr, key: &ViewingKey) {
-    let mut vk_store = PrefixedStorage::new(PREFIX_VIEW_KEY, store);
-    vk_store.set(owner.as_slice(), &key.to_hashed());
-}
-
-pub fn read_viewing_key<S: Storage>(store: &S, owner: &CanonicalAddr) -> Option<Vec<u8>> {
-    let vk_store = ReadonlyPrefixedStorage::new(PREFIX_VIEW_KEY, store);
-    vk_store.get(owner.as_slice())
+    ReadonlyBucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
 }
 
 
@@ -173,19 +153,19 @@ pub fn read_viewing_key<S: Storage>(store: &S, owner: &CanonicalAddr) -> Option<
 // Receiver Interface
 /////////////////////////////////////////////////////////////////////////////////
 
-pub fn get_receiver_hash<S: ReadonlyStorage>(
-    store: &S,
-    account: &HumanAddr,
+pub fn get_receiver_hash(
+    store: &dyn Storage,
+    account: &Addr,
 ) -> Option<StdResult<String>> {
-    let store = ReadonlyPrefixedStorage::new(PREFIX_RECEIVERS, store);
+    let store = ReadonlyPrefixedStorage::new(store, PREFIX_RECEIVERS);
     store.get(account.as_str().as_bytes()).map(|data| {
         String::from_utf8(data)
             .map_err(|_err| StdError::invalid_utf8("stored code hash was not a valid String"))
     })
 }
 
-pub fn set_receiver_hash<S: Storage>(store: &mut S, account: &HumanAddr, code_hash: String) {
-    let mut store = PrefixedStorage::new(PREFIX_RECEIVERS, store);
+pub fn set_receiver_hash(store: &mut dyn Storage, account: &Addr, code_hash: String) {
+    let mut store = PrefixedStorage::new(store, PREFIX_RECEIVERS);
     store.set(account.as_str().as_bytes(), code_hash.as_bytes());
 }
 
