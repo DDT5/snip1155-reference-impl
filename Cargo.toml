@@ -42,7 +42,9 @@ secret-toolkit = { version = "0.9.0", default-features = false, features = [
   "storage", "viewing-key", "permit", "serialization", 
   #"crypto", "utils"
 ] }
-# getrandom = { version = "0.2", features = ["js"] }
+getrandom = { version = "0.2.10", features = ["js"] }
+
+
 
 [dev-dependencies]
 cosmwasm-schema = "1.1.8"

@@ -41,7 +41,7 @@ use crate::{
 /// instantiation function. See [InitMsg](crate::msg::InitMsg) for the api
 #[entry_point]
 pub fn instantiate(
-    deps: &mut DepsMut,
+    mut deps:  DepsMut,
     env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
@@ -77,7 +77,7 @@ pub fn instantiate(
     // set initial balances
     for initial_token in msg.initial_tokens {
         exec_curate_token_id(
-            deps, 
+           &mut deps, 
             &env,
             &info,
             &mut config,
