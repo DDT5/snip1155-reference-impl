@@ -1,11 +1,10 @@
 import axios from "axios";
-import { Wallet, SecretNetworkClient, Tx } from "secretjs";
+import { Wallet, SecretNetworkClient, TxResponse } from "secretjs";
 import { Account, ContractInfo } from "./int_utils";
-import { AminoWallet } from "secretjs/dist/wallet_amino";
 
 /** creates new accounts by funding from genesis account `a` */ 
 export const initClient = async () => {
-  let grpcWebUrl = "http://localhost:9091"; //endpoint
+  let endpoint = "http://localhost:1317" //endpoint
   let chainId = "secretdev-1";
 
   let accounts: Account[] = [];
@@ -20,17 +19,15 @@ export const initClient = async () => {
 
   for (let i = 0; i < mnemonics.length; i++) {
     const mnemonic = mnemonics[i];
-    const walletAmino = new AminoWallet(mnemonic);
+    const wallet = new Wallet(mnemonic);
     accounts[i] = {
-      address: walletAmino.address,
+      address: wallet.address,
       mnemonic: mnemonic,
-      walletAmino,
-      walletProto: new Wallet(mnemonic),
-      secretjs: await SecretNetworkClient.create({
-        grpcWebUrl,
-        wallet: walletAmino,
-        walletAddress: walletAmino.address,
+      secretjs: new SecretNetworkClient({
+        url: endpoint,
         chainId,
+        wallet: wallet,
+        walletAddress: wallet.address,
       }),
     };
     // console.log(`Genesis wallet ${i} with address: ${walletAmino.address}`);
@@ -43,17 +40,14 @@ export const initClient = async () => {
   // Generate additional accounts
   const numNewAcc = 3;
   for (let i = 4; i <= 4 - 1 + numNewAcc; i++) {
-    const wallet = new AminoWallet();
+    const wallet = new Wallet();
     const [{ address }] = await wallet.getAccounts();
-    const walletProto = new Wallet(wallet.mnemonic);
 
     accounts[i] = {
       address: address,
       mnemonic: wallet.mnemonic,
-      walletAmino: wallet,
-      walletProto: walletProto,
-      secretjs: await SecretNetworkClient.create({
-        grpcWebUrl,
+      secretjs: new SecretNetworkClient({
+        url: endpoint,
         chainId,
         wallet: wallet,
         walletAddress: address,
@@ -66,7 +60,7 @@ export const initClient = async () => {
 
   const { secretjs } = accounts[0];
 
-  let tx: Tx;
+  let tx: TxResponse;
   try {
     tx = await secretjs.tx.bank.multiSend(
       {
@@ -120,7 +114,7 @@ export async function generatePermit(
 /** The faucet drips 1_000_000_000 uscrt at a time. */
 async function fillUpFromFaucet(
   client: SecretNetworkClient,
-  targetBalance: Number
+  targetBalance: number
 ) {
   let balance = await getScrtBalance(client);
   while (Number(balance) < targetBalance) {
@@ -143,5 +137,10 @@ export async function getScrtBalance(userCli: SecretNetworkClient): Promise<stri
     address: userCli.address,
     denom: "uscrt",
   });
-  return balanceResponse.balance!.amount;
+  
+  if (balanceResponse?.balance?.amount === undefined) {
+    throw new Error(`Failed to get balance for address: ${userCli.address}`)
+  }
+
+  return balanceResponse.balance.amount;
 }

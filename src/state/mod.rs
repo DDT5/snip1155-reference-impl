@@ -6,7 +6,7 @@ pub mod expiration;
 mod save_load_functions;
 
 use cosmwasm_std::{
-    Storage, BlockInfo, Uint128, Addr, CanonicalAddr, 
+    Storage, BlockInfo, Uint128, Addr, 
     StdResult, StdError,
     to_binary, 
 };
@@ -20,7 +20,7 @@ use cosmwasm_storage::{
 use self::{
     state_structs::{ContractConfig, StoredTokenInfo},
     permissions::Permission,
-    expiration::{Expiration},
+    expiration::Expiration,
 };
 
 
@@ -101,17 +101,17 @@ pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
 /// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
 /// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
 /// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
-pub fn balances_w<'a, 'b,>(
+pub fn balances_w<'a>(
     storage: &'a mut dyn Storage,
-    token_id: &'b str
+    token_id: &str
 ) -> Bucket<'a, Uint128> {
     Bucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
 /// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
 /// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
-pub fn balances_r<'a, 'b,>(
+pub fn balances_r<'a,>(
     storage: &'a dyn Storage,
-    token_id: &'b str
+    token_id: &str
 ) -> ReadonlyBucket<'a, Uint128> {
     ReadonlyBucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }

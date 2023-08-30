@@ -2,15 +2,13 @@ use cosmwasm_std::{Uint128, Addr, Binary, StdResult};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    state::{
+use crate::state::{
         state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo, OwnerBalance}, 
         permissions::{PermissionKey, Permission,},
         txhistory::Tx, 
         metadata::Metadata, 
-        expiration::Expiration,
-    }, 
-};
+     expiration::Expiration,
+    };
 
 use secret_toolkit::permit::Permit;
 

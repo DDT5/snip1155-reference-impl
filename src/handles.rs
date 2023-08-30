@@ -17,7 +17,7 @@ use crate::{
     msg::{
         InstantiateMsg, ExecuteMsg, ExecuteAnswer,
         TransferAction, SendAction,
-        ResponseStatus::{Success},  
+        ResponseStatus::Success,  
     },
     state::{
         RESPONSE_BLOCK_SIZE, PREFIX_REVOKED_PERMITS, 
@@ -31,7 +31,7 @@ use crate::{
         metadata::Metadata, 
         expiration::Expiration, blockinfo_w,  
     },
-    receiver::{Snip1155ReceiveMsg}, 
+    receiver::Snip1155ReceiveMsg, 
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -60,7 +60,7 @@ pub fn instantiate(
     };
     
     // create contract config -- save later
-    let prng_seed_hashed = sha_256(&msg.entropy.as_bytes());
+    let prng_seed_hashed = sha_256(msg.entropy.as_bytes());
     let prng_seed = prng_seed_hashed.to_vec();
     
     ViewingKey::set_seed(deps.storage, &prng_seed);
@@ -487,7 +487,7 @@ fn try_burn_tokens(
 
 fn try_change_metadata(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     token_id: String,
     public_metadata: Option<Metadata>,
@@ -528,6 +528,7 @@ fn try_change_metadata(
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::ChangeMetadata { status: Success })?))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_transfer(
     mut deps: DepsMut,
     env: Env,
@@ -627,7 +628,7 @@ fn try_batch_send(
 #[allow(clippy::too_many_arguments)]
 fn try_give_permission(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     allowed_address: Addr,
     token_id: String,
@@ -703,7 +704,7 @@ fn try_give_permission(
 /// If permission does not exist, message will return an error. 
 fn try_revoke_permission(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     token_id: String,
     owner: Addr,
@@ -740,7 +741,7 @@ fn try_create_viewing_key(
 
 fn try_set_viewing_key(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     key: String,
 ) -> StdResult<Response> {
@@ -750,14 +751,14 @@ fn try_set_viewing_key(
 
 fn try_revoke_permit(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     permit_name: String,
 ) -> StdResult<Response> {
     RevokedPermits::revoke_permit(
         deps.storage,
         PREFIX_REVOKED_PERMITS,
-        &info.sender.to_string(),
+        info.sender.as_ref(),
         &permit_name,
     );
 
@@ -766,7 +767,7 @@ fn try_revoke_permit(
 
 fn try_add_curators(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     add_curators: Vec<Addr>,
 ) -> StdResult<Response> {
@@ -786,7 +787,7 @@ fn try_add_curators(
 
 fn try_remove_curators(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     remove_curators: Vec<Addr>,
 ) -> StdResult<Response> {
@@ -806,7 +807,7 @@ fn try_remove_curators(
 
 fn try_add_minters(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     token_id: String,
     add_minters: Vec<Addr>,
@@ -840,7 +841,7 @@ fn try_add_minters(
 
 fn try_remove_minters(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     token_id: String,
     remove_minters: Vec<Addr>,
@@ -875,7 +876,7 @@ fn try_remove_minters(
 
 fn try_change_admin(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     new_admin: Addr,
 ) -> StdResult<Response> {
@@ -893,7 +894,7 @@ fn try_change_admin(
 
 fn try_remove_admin(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     current_admin: Addr,
     contract_address: Addr,
@@ -918,7 +919,7 @@ fn try_remove_admin(
 
 fn try_register_receive(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     code_hash: String,
 ) -> StdResult<Response> {
@@ -955,7 +956,8 @@ fn is_valid_symbol(symbol: &str) -> bool {
     let len = symbol.len();
     let len_is_valid = (3..=6).contains(&len);
 
-    len_is_valid && symbol.bytes().all(|byte| (b'A'..=b'Z').contains(&byte))
+    // len_is_valid && symbol.bytes().all(|byte| (b'A'..=b'Z').contains(&byte))
+    len_is_valid && symbol.bytes().all(|byte| byte.is_ascii_uppercase())
 }
 
 fn verify_admin(
@@ -1157,6 +1159,7 @@ fn impl_send(
 /// Implements a single `Transfer` function. Transfers a Uint128 amount of a 
 /// single `token_id` and saves the transfer history. Used by `Transfer` and 
 /// `Send` (via `impl_send`) messages
+#[allow(clippy::too_many_arguments)]
 fn impl_transfer(
     deps: &mut DepsMut,
     env: &Env,
@@ -1257,12 +1260,12 @@ fn exec_change_balance(
     // check whether token_id is an NFT => cannot mint. This should not be reachable in standard implementation, 
     // as the calling function would have checked that enable_mint == false, which needs to be true for NFTs.
     // This is a redundancy check to make sure
-    if token_info.token_config.flatten().is_nft && remove_from == None {
+    if token_info.token_config.flatten().is_nft && remove_from.is_none() {
         return Err(StdError::generic_err("NFTs can only be minted once using `mint_token_ids`"))
     }
 
     // check whether token_id is an NFT => assert!(amount == 1). 
-    if token_info.token_config.flatten().is_nft && amount != &Uint128::from(1_u64) {
+    if token_info.token_config.flatten().is_nft && amount != Uint128::from(1_u64) {
         return Err(StdError::generic_err("NFT amount must == 1"))
     }
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use cosmwasm_std::{
-    Deps, Env, BlockInfo, 
+    Deps, BlockInfo, 
     Binary, to_binary, 
     StdResult, StdError,
     Addr, Uint128,
@@ -11,7 +11,7 @@ use cosmwasm_std::{
 };
 use secret_toolkit::{
     permit::{Permit, TokenPermissions, validate, },
-    viewing_key::{ViewingKey, ViewingKeyStore, VIEWING_KEY_SIZE},
+    viewing_key::{ViewingKey, ViewingKeyStore},
 };
 
 use crate::{
@@ -39,7 +39,7 @@ use crate::{
 #[entry_point]
 pub fn query(
     deps: Deps,
-    _env: Env,
+    // _env: Env,
     msg: QueryMsg,
 ) -> StdResult<Binary> {
     match msg {
@@ -155,7 +155,7 @@ fn query_token_id_public_info(
 ) -> StdResult<Binary> {
     let tkn_info_op= tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
     match tkn_info_op {
-        None => return Err(StdError::generic_err(format!(
+        None => Err(StdError::generic_err(format!(
             "token_id {} does not exist",
             token_id
         ))),

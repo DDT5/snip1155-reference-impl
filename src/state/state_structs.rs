@@ -10,9 +10,7 @@ use cosmwasm_std::{
 use self::metadata::Metadata;
 
 #[cfg(test)]
-use crate::{
-    state::metadata::{Extension},
-};
+use crate::state::metadata::Extension;
 
 
 /////////////////////////////////////////////////////////////////////////////////

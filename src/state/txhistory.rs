@@ -356,7 +356,14 @@ pub fn may_get_current_owner(
 ) -> StdResult<Option<Addr>> {
     let token_id_store = NFT_OWNER_STORE.add_suffix(token_id.as_bytes());
         
-    let pos = token_id_store.get_len(storage)?.saturating_sub(1);
-    let current_owner = token_id_store.get_at(storage, pos)?;
-    Ok(Some(current_owner))
+    let len = token_id_store.get_len(storage)?;
+    match len {
+        0 => Ok(None),
+        x if x>0 => {
+            let pos = token_id_store.get_len(storage)?.saturating_sub(1);
+            let current_owner = token_id_store.get_at(storage, pos)?;
+            Ok(Some(current_owner))
+        },
+        _ => unreachable!(),
+    }
 }

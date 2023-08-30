@@ -12,18 +12,22 @@ check:
 .PHONY: clippy
 clippy:
 	cargo clippy
-
+	
 PHONY: test
 test: unit-test
 
 .PHONY: unit-test
 unit-test:
-	cargo unit-test
+	RUST_BACKTRACE=1 cargo test
+
+.PHONY: unit-test-nocapture
+unit-test-nocapture:
+	RUST_BACKTRACE=1 cargo test -- --nocapture
 
 # Integration test
 # .ONESHELL:
 .PHONY: integration-test
-integration-test: build _integration-test
+integration-test: compile _integration-test
 _integration-test:
 	@# this line below doesn't work, but the point is you need to use npm v16
 	@#. ${HOME}/.nvm/nvm.sh && nvm use 16
@@ -61,7 +65,7 @@ schema:
 .PHONY: start-server
 start-server:
 	docker start -a localsecret || true 
-	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
+	docker run -it -p 9091:9091 -p 26657:26657 -p 26656:26656 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
 
 .PHONY: stop-server
 stop-server:
@@ -71,7 +75,7 @@ stop-server:
 reset-server:
 	docker stop localsecret || true
 	docker rm localsecret || true
-	docker run -it -p 9091:9091 -p 26657:26657 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
+	docker run -it -p 9091:9091 -p 26657:26657 -p 26656:26656 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret
 
 # server needs to be running on another terminal
 .PHONY: speedup-server
@@ -88,8 +92,8 @@ clean:
 	-rm -rf ./tests/node_modules
 	cd ./tests/example-receiver && $(MAKE) clean	
 
-.PHONY: build-receiver
-build-receiver:
+.PHONY: compile-receiver
+compile-receiver:
 	cd ./tests/example-receiver && $(MAKE) build
 
 .PHONY: doc

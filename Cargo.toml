@@ -1,6 +1,6 @@
 [package]
 name = "snip1155-reference-impl"
-version = "0.2.0-alpha.1"
+version = "0.2.1"
 authors = ["DDT5"]
 edition = "2018"
 
@@ -46,4 +46,5 @@ getrandom = { version = "0.2.10", features = ["js"] }
 
 [dev-dependencies]
 cosmwasm-schema = "1.1.8"
-# serde_json = "1.0.8"
+serde_json = "1.0.8"
+secret-toolkit = { version = "0.9.0", default-features = false, features = ["crypto"] }

@@ -1,4 +1,4 @@
-import { SecretNetworkClient, toUtf8, fromUtf8, Tx, toBase64, Permit } from "secretjs";
+import { SecretNetworkClient, toUtf8, fromUtf8, toBase64, Permit, TxResponse } from "secretjs";
 import fs from "fs";
 import assert from "assert";
 import { initClient, generatePermit } from "./int_helpers";
@@ -59,7 +59,7 @@ const initializeContract = async (
 
   const uploadReceipt = await client.tx.compute.storeCode(
     {
-      wasmByteCode: wasmCode,
+      wasm_byte_code: wasmCode,
       sender: client.address,
       source: "",
       builder: "",
@@ -86,16 +86,19 @@ const initializeContract = async (
   const codeId = Number(codeIdKv!.value);
   console.log("Contract codeId: ", codeId);
 
-  const contractCodeHash = await client.query.compute.codeHash(codeId);
+  const contractCodeHash = (await client.query.compute.codeHashByCodeId({code_id: String(codeId)})).code_hash;
+  if (contractCodeHash === undefined) {
+    throw new Error(`Failed to get code hash`);
+  }
   console.log(`Contract hash: ${contractCodeHash}`);
 
   // instantiate contract
   const contract = await client.tx.compute.instantiateContract(
     {
       sender: client.address,
-      codeId,
-      initMsg: initMsg, 
-      codeHash: contractCodeHash,
+      code_id: codeId,
+      init_msg: initMsg, 
+      code_hash: contractCodeHash,
       // label: "My contract" + Math.ceil(Math.random() * 10000), // The label should be unique for every contract, add random string in order to maintain uniqueness
       label: "Contract " + Math.ceil(Math.random() * 10000) + client.address.slice(6),  // using random number 0..10000 is not big enough, sometimes has collision
     },
@@ -262,10 +265,10 @@ async function execHandle(
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg,
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -391,7 +394,7 @@ async function setViewingKeyAll(
   env: jsEnv,
 ) {
   for (const contr of env.contracts) {
-    let tx: Promise<Tx>;
+    let tx: Promise<TxResponse>;
     for (let i=0; i<env.accounts.length; i++) {
         tx = setViewingKey(env.accounts[i], contr, "vkey"+i);
         if (i == env.accounts.length-1) { 
@@ -408,7 +411,7 @@ async function transfer(
   from: Account,
   recipient: Account,
   amount: string,
-): Promise<Tx> {
+): Promise<TxResponse> {
 
   const msg = {
     transfer: { 
@@ -432,7 +435,7 @@ async function send(
   recipient_contract: ContractInfo,
   amount: string,
   msg?: string,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const message = {
     send: { 
       token_id,
@@ -459,7 +462,7 @@ async function givePermission(
   view_private_metadata_expiry?: object,
   transfer?: string,
   transfer_expiry?: object,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const msg = {
     give_permission: { 
       allowed_address: allowed_address.address,
@@ -488,8 +491,8 @@ async function execQuery(
   const { secretjs } = sender;
 
   const response = (await secretjs.query.compute.queryContract({
-    contractAddress: contract.address,
-    codeHash: contract.hash,
+    contract_address: contract.address,
+    code_hash: contract.hash,
     query: msg,
   }));
 
@@ -707,17 +710,17 @@ async function queryRegisteredCodeHash(
 async function receiverIncrement(
   sender: Account,
   contract: ContractInfo,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg: {
         increment: {  },
       },
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -734,17 +737,17 @@ async function receiverReset(
   sender: Account,
   contract: ContractInfo,
   number: number,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg: {
         reset: { count: number }
       },
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -762,20 +765,20 @@ async function receiverRegister(
   contract: ContractInfo,
   reg_addr: string,
   reg_hash: string,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg: {
         register: {
           reg_addr,
           reg_hash,
          },
       },
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -796,13 +799,13 @@ async function receiverSnip1155Receive(
   amount: string,
   memo?: string,
   msg?: string, 
-): Promise<Tx> {
+): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg: {
         snip1155_receive: { 
           sender: sender.address,
@@ -813,7 +816,7 @@ async function receiverSnip1155Receive(
           msg
         }
       },
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -829,17 +832,17 @@ async function receiverSnip1155Receive(
 async function receiverFail(
   sender: Account,
   contract: ContractInfo,
-): Promise<Tx> {
+): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
     {
       sender: secretjs.address,
-      contractAddress: contract.address,
-      codeHash: contract.hash,
+      contract_address: contract.address,
+      code_hash: contract.hash,
       msg: {
         fail: {  }
       },
-      sentFunds: [],
+      sent_funds: [],
     },
     {
       broadcastCheckIntervalMs: 100,
@@ -860,8 +863,8 @@ async function queryRecieverGetCount(
   type QueryResponse = { count: number };
 
   const response = (await secretjs.query.compute.queryContract({
-    contractAddress: contract.address,
-    codeHash: contract.hash,
+    contract_address: contract.address,
+    code_hash: contract.hash,
     query: { get_count: {  } },
   })) as QueryResponse;
 

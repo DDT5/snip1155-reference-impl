@@ -1,5 +1,4 @@
 import { SecretNetworkClient, Wallet, Permit, ViewingKey } from "secretjs";
-import { AminoWallet } from "secretjs/dist/wallet_amino";
 
 export type jsEnv = {
   accounts: Account[];
@@ -9,8 +8,6 @@ export type jsEnv = {
 export type Account = {
   address: string;
   mnemonic: string;
-  walletAmino: AminoWallet;
-  walletProto: Wallet;
   secretjs: SecretNetworkClient;
 };
 
