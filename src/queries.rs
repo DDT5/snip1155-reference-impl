@@ -6,7 +6,7 @@ use cosmwasm_std::{
     StdResult, StdError,
     Addr, Uint128,
     entry_point,
-    Timestamp, 
+    Timestamp, Env, 
     // debug_print, 
 };
 use secret_toolkit::{
@@ -39,7 +39,7 @@ use crate::{
 #[entry_point]
 pub fn query(
     deps: Deps,
-    // _env: Env,
+    _env: Env,
     msg: QueryMsg,
 ) -> StdResult<Binary> {
     match msg {

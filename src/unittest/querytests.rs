@@ -38,7 +38,7 @@ fn test_q_init() -> StdResult<()> {
 
     // check contract info
     let msg = QueryMsg::ContractInfo {  };
-    let q_result = query(deps.as_ref(), msg);
+    let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
@@ -56,7 +56,7 @@ fn test_q_init() -> StdResult<()> {
 
     // query balance
     let msg = QueryMsg::Balance { owner: addr0.clone(), viewer: addr0, key: "vkey".to_string(), token_id: "0".to_string() };
-    let q_result = query(deps.as_ref(), msg);
+    let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128::new(1000)),
@@ -76,7 +76,7 @@ fn test_query_tokenid_public_info_sanity() -> StdResult<()> {
 
     // view public info of fungible token
     let msg = QueryMsg::TokenIdPublicInfo { token_id: "0".to_string() };
-    let q_result = query(deps.as_ref(), msg);
+    let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, total_supply, owner 
@@ -107,7 +107,7 @@ fn test_query_registered_code_hash() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info, msg_reg_receive)?;
 
     let msg_q_code_hash = QueryMsg::RegisteredCodeHash { contract: addr.a() };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_code_hash)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_code_hash)?)?;
     match q_answer {
         QueryAnswer::RegisteredCodeHash { code_hash } => assert_eq!(code_hash, Some(addr.a_hash())),
         _ => panic!("query error")
@@ -128,7 +128,7 @@ fn test_query_balance() -> StdResult<()> {
 
     // cannot view balance without viewing keys
     let msg0_q_bal0_novk = QueryMsg::Balance { owner: addr.a(), viewer: addr.a(), key: "vkeya".to_string(), token_id: "0".to_string() };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg0_q_bal0_novk)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg0_q_bal0_novk)?)?;
     match q_answer {
         QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
         _ => panic!("query error")
@@ -140,7 +140,7 @@ fn test_query_balance() -> StdResult<()> {
 
     // ii) query
     let msg0_q_bal0 = QueryMsg::Balance { owner: addr.a(), viewer: addr.a(), key: vks.a(), token_id: "0".to_string() };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg0_q_bal0.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg0_q_bal0.clone())?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128::new(1000)),
         _ => panic!("query error")
@@ -148,7 +148,7 @@ fn test_query_balance() -> StdResult<()> {
 
     // addr1 cannot view a's balance with b's viewing keys
     let msg1_q_bal0 = QueryMsg::Balance { owner: addr.a(), viewer: addr.b(), key: vks.a(), token_id: "0".to_string() };
-    let mut q_result = query(deps.as_ref(), msg1_q_bal0.clone());
+    let mut q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0.clone());
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // `b` cannot view `a`'s balance using `b` viewing keys, if `a` gives wrong permission
@@ -161,7 +161,7 @@ fn test_query_balance() -> StdResult<()> {
         padding: None, 
     };  
     execute(deps.as_mut(), mock_env(), info.clone(), msg_perm_1_wrong)?;
-    q_result = query(deps.as_ref(), msg1_q_bal0.clone());
+    q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0.clone());
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // `b` can view `a`'s balance using `b` viewing keys, once `a` gives correct permission
@@ -176,7 +176,7 @@ fn test_query_balance() -> StdResult<()> {
         padding: None, 
     };
     execute(deps.as_mut(), env.clone(), info.clone(), msg_perm_1)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg1_q_bal0.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg1_q_bal0.clone())?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128::new(1000)),
         _ => panic!("query error")
@@ -184,12 +184,12 @@ fn test_query_balance() -> StdResult<()> {
 
     // `b` cannot view `a`'s token_id "0a" balance, because only got permission for token_id "0"...
     let msg1_q_bal0_0a = QueryMsg::Balance { owner: addr.a(), viewer: addr.b(), key: vks.b(), token_id: "0a".to_string() };
-    q_result = query(deps.as_ref(), msg1_q_bal0_0a);
+    q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0_0a);
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // ... but `a` can still view its own tokens
     let msg0_q_bal0_0a = QueryMsg::Balance { owner: addr.a(), viewer: addr.a(), key: vks.a(), token_id: "0a".to_string() };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg0_q_bal0_0a)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg0_q_bal0_0a)?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128::new(800)),
         _ => panic!("query error")
@@ -197,23 +197,23 @@ fn test_query_balance() -> StdResult<()> {
 
     // `c` cannot view `a`'s balance, because `a` gave permission only to `b`
     let msg2_q_bal0 = QueryMsg::Balance { owner: addr.a(), viewer: addr.c(), key: vks.c(), token_id: "0a".to_string() };
-    q_result = query(deps.as_ref(), msg2_q_bal0);
+    q_result = query(deps.as_ref(), mock_env(), msg2_q_bal0);
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // `b` cannot view `a`'s balance using `b` viewing keys, because [correct] permission expired
     // i) add block height
     env.block.height += 2;
-    q_result = query(deps.as_ref(), msg1_q_bal0.clone());
+    q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0.clone());
     assert!(q_result.is_ok());
     // ii) a handle must happen in order to trigger the block height change (won't be required once upgraded to CosmWasm v1.0)
     let random_msg = ExecuteMsg::AddCurators { add_curators: vec![], padding: None };
     execute(deps.as_mut(), env, info, random_msg)?;
     // iii) query now
-    q_result = query(deps.as_ref(), msg1_q_bal0);
+    q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0);
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // `a` can still view owns own balance, even after permission given to `b` has expired
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg0_q_bal0)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg0_q_bal0)?)?;
     match q_answer {
         QueryAnswer::Balance { amount } => assert_eq!(amount, Uint128::new(1000)),
         _ => panic!("query error")
@@ -236,7 +236,7 @@ fn test_query_all_balance() -> StdResult<()> {
 
     // addr.b cannot query addr.a's AllBalance
     let msg = QueryMsg::AllBalances { owner: addr.a(), key: vks.b(), tx_history_page: None, tx_history_page_size: None };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg)?)?;
     match q_answer {
         QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
         _ => panic!("query error")
@@ -244,7 +244,7 @@ fn test_query_all_balance() -> StdResult<()> {
 
     // addr.a can query AllBalance
     let msg_q_allbal = QueryMsg::AllBalances { owner: addr.a(), key: vks.a(), tx_history_page: None, tx_history_page_size: None };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_allbal.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allbal.clone())?)?;
     match q_answer {
         QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
             OwnerBalance { token_id: "0".to_string(), amount: Uint128::new(1000) },
@@ -263,7 +263,7 @@ fn test_query_all_balance() -> StdResult<()> {
     };
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_mint)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_allbal.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allbal.clone())?)?;
     match q_answer {
         QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
             OwnerBalance { token_id: "0".to_string(), amount: Uint128::new(1100) },
@@ -286,7 +286,7 @@ fn test_query_all_balance() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info, msg_curate)?;
 
     // returns all balances in token_id alphabetical order
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_allbal)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allbal)?)?;
     match q_answer {
         QueryAnswer::AllBalances(i) => assert_eq!(i, vec![
             OwnerBalance { token_id: "0".to_string(), amount: Uint128::new(1100) },
@@ -316,7 +316,7 @@ fn test_query_transaction_history() -> StdResult<()> {
 
     // query tx history
     let msg_tx_hist_a_a = QueryMsg::TransactionHistory { address: addr.a(), key: vks.a(), page: None, page_size: 10u32 };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_tx_hist_a_a.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_tx_hist_a_a.clone())?)?;
     match q_answer {
         QueryAnswer::TransactionHistory { txs, total } => {
             match &txs[0].action {
@@ -335,7 +335,7 @@ fn test_query_transaction_history() -> StdResult<()> {
     // curate more tokens
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
     // query tx history
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_tx_hist_a_a)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_tx_hist_a_a)?)?;
     if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
         if let TxAction::Mint { minter, recipient, amount } = &txs[0].action {
             assert_eq!(minter, &addr.a());
@@ -366,7 +366,7 @@ fn test_query_transaction_history() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info.clone(), msg_trans)?;
 
     let msg_tx_hist_b_b = QueryMsg::TransactionHistory { address: addr.b(), key: vks.b(), page: None, page_size: 10u32 };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_tx_hist_b_b.clone())?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_tx_hist_b_b.clone())?)?;
     if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
         if let TxAction::Transfer { from, sender, recipient, amount } = &txs[0].action {  
             assert_eq!(from, &addr.a());
@@ -398,7 +398,7 @@ fn test_query_transaction_history() -> StdResult<()> {
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info, msg_burn)?;
 
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_tx_hist_b_b)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_tx_hist_b_b)?)?;
     if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
         if let TxAction::Burn { burner, owner, amount } = &txs[0].action {
             assert_eq!(burner, &None);
@@ -440,7 +440,7 @@ fn test_query_permission() -> StdResult<()> {
 
     // query permission fails: no viewing key
     let msg_q = QueryMsg::Permission { owner: addr0.clone(), allowed_address: addr1.clone(), key: "vkey".to_string(), token_id: "0".to_string() };
-    let q_result = query(deps.as_ref(), msg_q.clone());
+    let q_result = query(deps.as_ref(), mock_env(), msg_q.clone());
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::ViewingKeyError { msg } => assert!(msg.contains("Wrong viewing key for this address or viewing key not set")),
@@ -453,7 +453,7 @@ fn test_query_permission() -> StdResult<()> {
     let msg_vk = ExecuteMsg::SetViewingKey { key: "vkey".to_string(), padding: None };
     execute(deps.as_mut(), mock_env(), info.clone(), msg_vk)?;
     // ii) query permissions
-    let q_result = query(deps.as_ref(), msg_q);
+    let q_result = query(deps.as_ref(), mock_env(), msg_q);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Permission(perm
@@ -474,7 +474,7 @@ fn test_query_permission() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info, msg_vk2)?;
     // ii) query permissions
     let msg_q2 = QueryMsg::Permission { owner: addr0, allowed_address: addr1, key: "vkey2".to_string(), token_id: "0".to_string() };
-    let q_result = query(deps.as_ref(), msg_q2);
+    let q_result = query(deps.as_ref(), mock_env(), msg_q2);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Permission(perm
@@ -542,7 +542,7 @@ fn test_query_all_permissions() -> StdResult<()> {
     
     // addr.a() query AllPermissions
     let msg_q_allperm_a = QueryMsg::AllPermissions { address: addr.a(), key: vks.a(), page: None, page_size: 10u32 };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_allperm_a)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allperm_a)?)?;
     if let QueryAnswer::AllPermissions { permission_keys, permissions, total } = q_answer {
         assert_eq!(permission_keys.into_iter().rev().map(|key| key.allowed_addr).collect::<Vec<Addr>>(), 
             vec![addr.b(), addr.c(), addr.d()]);
@@ -563,7 +563,7 @@ fn test_query_all_permissions() -> StdResult<()> {
 
     // addr.b() query AllPermissions -> nothing because can only see list of all permissions as granter
     let msg_q_allperm_a = QueryMsg::AllPermissions { address: addr.b(), key: vks.b(), page: None, page_size: 10u32 };
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), msg_q_allperm_a)?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allperm_a)?)?;
     if let QueryAnswer::AllPermissions { permission_keys, permissions, total } = q_answer {
         assert_eq!(permission_keys, vec![]);
         assert_eq!(permissions, vec![]);
@@ -587,7 +587,7 @@ fn test_query_tokenid_private_info_sanity() -> StdResult<()> {
 
     // view private info of fungible token
     let msg = QueryMsg::TokenIdPrivateInfo { address: addr.a(), key: vks.a(), token_id: "0".to_string() };
-    let q_result = query(deps.as_ref(), msg);
+    let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::TokenIdPrivateInfo { token_id_info, total_supply, owner 

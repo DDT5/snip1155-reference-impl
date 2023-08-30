@@ -1056,7 +1056,7 @@ fn test_revoke_permission_sanity() -> StdResult<()> {
 
     let vks = generate_viewing_keys(&mut deps, mock_env(), info.clone(), vec![addr.a(), addr.b()])?;
 
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::Permission { 
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission { 
         owner: addr.a(), 
         allowed_address: addr.b(), 
         key: vks.a(), 
@@ -1078,7 +1078,7 @@ fn test_revoke_permission_sanity() -> StdResult<()> {
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info, msg_revoke)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::Permission { 
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission { 
         owner: addr.a(), 
         allowed_address: addr.b(), 
         key: vks.a(), 
@@ -1187,7 +1187,7 @@ fn test_add_remove_curators() -> StdResult<()> {
     for _ in 0..2 {
         execute(deps.as_mut(), mock_env(), info.clone(), msg_add_curators.clone())?;
     }
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::ContractInfo {  })?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::ContractInfo {  })?)?;
     match q_answer {
         QueryAnswer::ContractInfo { curators, .. } => {
             assert_eq!(curators, vec![addr.a(), addr.b(), addr.c(), addr.b(), addr.c(), addr.b(), addr.c()])
@@ -1199,7 +1199,7 @@ fn test_add_remove_curators() -> StdResult<()> {
     let msg_remove_curators = ExecuteMsg::RemoveCurators { remove_curators: vec![addr.a(), addr.b()], padding: None };
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_remove_curators)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::ContractInfo {  })?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::ContractInfo {  })?)?;
     match q_answer {
         QueryAnswer::ContractInfo { curators, .. } => {
             assert_eq!(curators, vec![addr.c(), addr.c(), addr.c()])
@@ -1286,7 +1286,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
 
     // check minter list is unchanged 
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.curator, addr.b());
@@ -1305,7 +1305,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_add_minter_cd)?;
 
-    let mut q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    let mut q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c(), addr.d(), addr.d()]);
@@ -1358,7 +1358,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     };
     info.sender = addr.c();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata)?;
-    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.public_metadata.unwrap().token_uri, Some("new public uri".to_string()))
@@ -1377,7 +1377,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_remove_minter_c);
     assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
     // check minter list is unchanged
-    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.token_config.flatten().minters, vec![addr.a(), addr.c(), addr.d(), addr.d()]);
@@ -1390,7 +1390,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     let msg_remove_minter_acd = ExecuteMsg::RemoveMinters { token_id: "test0".to_string(), remove_minters: vec![addr.a(), addr.c(), addr.d()], padding: None };
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_remove_minter_acd)?;
-    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
+    q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
             assert_eq!(token_id_info.token_config.flatten().minters, Vec::<Addr>::new());
@@ -1456,7 +1456,7 @@ fn test_remove_admin() -> StdResult<()> {
     let (_init_result, mut deps) = init_helper_default();
 
     // check admin from contract_info 
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::ContractInfo {  })?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::ContractInfo {  })?)?;
     match q_answer {
         QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
             assert_eq!(admin, Some(addr.a()));
@@ -1502,7 +1502,7 @@ fn test_remove_admin() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("This contract has no admin"));
 
     // check that contract_info shows no admin
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), QueryMsg::ContractInfo {  })?)?;
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::ContractInfo {  })?)?;
     match q_answer {
         QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
             assert_eq!(admin, None);
