@@ -80,7 +80,7 @@ jobs:
       - name: Start sccache server
         run: sccache --start-server
       - name: Compile code
-        run: make build
+        run: make compile
       - name: ${{ matrix.make.name }}
         run: ${{ matrix.make.task }}
       - name: Print sccache stats

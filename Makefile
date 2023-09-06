@@ -39,6 +39,8 @@ compile: _compile contract.wasm.gz
 _compile:
 	cargo build --target wasm32-unknown-unknown --locked
 	cp ./target/wasm32-unknown-unknown/debug/*.wasm ./contract.wasm
+	@# The following line is not necessary, may work only on linux (extra size optimization)
+	wasm-opt -Oz ./target/wasm32-unknown-unknown/release/*.wasm -o ./contract.wasm
 
 .PHONY: compile-optimized _compile-optimized
 compile-optimized: _compile-optimized contract.wasm.gz
