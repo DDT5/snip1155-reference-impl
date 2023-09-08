@@ -2,7 +2,7 @@
 name = "snip1155-reference-impl"
 version = "0.2.1"
 authors = ["DDT5"]
-edition = "2018"
+edition = "2021"
 
 exclude = [
   # Those files are rust-optimizer artifacts. You might want to commit them for convenience but they should not be part of the source code publication.
