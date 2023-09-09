@@ -3,9 +3,9 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{to_binary, Binary, CosmosMsg, Addr, StdResult, Uint128, WasmMsg};
+use cosmwasm_std::{to_binary, Addr, Binary, CosmosMsg, StdResult, Uint256, WasmMsg};
 
-use crate::{state::RESPONSE_BLOCK_SIZE, msg::space_pad};
+use crate::{msg::space_pad, state::RESPONSE_BLOCK_SIZE};
 
 /// Snip1155ReceiveMsg should be de/serialized under `Snip1155Receive()` variant in a HandleMsg
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -18,7 +18,7 @@ pub struct Snip1155ReceiveMsg {
     /// the previous owner of the tokens being transferred
     pub from: Addr,
     /// amount of tokens being transferred
-    pub amount: Uint128,
+    pub amount: Uint256,
     /// optional memo
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memo: Option<String>,
@@ -31,7 +31,7 @@ impl Snip1155ReceiveMsg {
         sender: Addr,
         token_id: String,
         from: Addr,
-        amount: Uint128,
+        amount: Uint256,
         memo: Option<String>,
         msg: Option<Binary>,
     ) -> Self {
@@ -54,11 +54,7 @@ impl Snip1155ReceiveMsg {
     }
 
     /// creates a cosmos_msg sending this struct to the named contract
-    pub fn into_cosmos_msg(
-        self,
-        code_hash: String,
-        contract_addr: Addr,
-    ) -> StdResult<CosmosMsg> {
+    pub fn into_cosmos_msg(self, code_hash: String, contract_addr: Addr) -> StdResult<CosmosMsg> {
         let msg = self.into_binary()?;
         let execute = WasmMsg::Execute {
             msg,

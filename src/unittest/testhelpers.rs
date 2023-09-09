@@ -1,26 +1,14 @@
-use std::any::Any;
 use cosmwasm_storage::ReadonlyPrefixedStorage;
-use secret_toolkit::viewing_key::{ViewingKeyStore, ViewingKey};
+use secret_toolkit::viewing_key::{ViewingKey, ViewingKeyStore};
 use serde::de::DeserializeOwned;
+use std::any::Any;
 
-use super::super::{
-    handles::*,
-    msg::*,
-    state::*,
-    state::state_structs::*,
-};
+use super::super::{handles::*, msg::*, state::state_structs::*, state::*};
 
 use cosmwasm_std::{
-    testing::*, 
-    StdResult, StdError, Response,
-    CosmosMsg, WasmMsg,
-    Env, OwnedDeps, MessageInfo, Storage, 
-    Addr, 
-    Uint128, 
-    to_binary, from_binary,
+    from_binary, testing::*, to_binary, Addr, CosmosMsg, Env, MessageInfo, OwnedDeps, Response,
+    StdError, StdResult, Storage, Uint256, WasmMsg,
 };
-
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Helper functions
@@ -64,7 +52,12 @@ impl Addrs {
 /// inits 3 addresses
 pub fn init_addrs() -> Addrs {
     let addr_strs = vec!["addr0", "addr1", "addr2", "addr3"];
-    let hashes = vec!["addr0_hash".to_string(), "addr1_hash".to_string(), "addr2_hash".to_string(), "addr3_hash".to_string()];
+    let hashes = vec![
+        "addr0_hash".to_string(),
+        "addr1_hash".to_string(),
+        "addr2_hash".to_string(),
+        "addr3_hash".to_string(),
+    ];
     let mut addrs: Vec<Addr> = vec![];
     for addr in addr_strs {
         addrs.push(Addr::unchecked(addr.to_string()));
@@ -99,7 +92,7 @@ pub fn init_helper_default() -> (
 /// * 1 NFT token_id 2 to addr2
 /// * 1 NFT token_id 2a to addr2
 pub fn curate_addtl_default(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, 
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     info: MessageInfo,
 ) -> StdResult<()> {
@@ -114,7 +107,7 @@ pub fn curate_addtl_default(
     curate0a.token_info.name = "token0a".to_string();
     curate0a.token_info.symbol = "TKNO".to_string();
     curate0a.balances[0].address = addr0;
-    curate0a.balances[0].amount = Uint128::new(800);
+    curate0a.balances[0].amount = Uint256::from(800u128);
 
     // fungible token_id "1"
     let mut curate1 = CurateTokenId::default();
@@ -122,7 +115,7 @@ pub fn curate_addtl_default(
     curate1.token_info.name = "token1".to_string();
     curate1.token_info.symbol = "TKNA".to_string();
     curate1.balances[0].address = addr1;
-    curate1.balances[0].amount = Uint128::new(500);
+    curate1.balances[0].amount = Uint256::from(500u128);
 
     // NFT "2"
     let mut curate2 = CurateTokenId::default();
@@ -130,20 +123,30 @@ pub fn curate_addtl_default(
     curate2.token_info.name = "token2".to_string();
     curate2.token_info.symbol = "TKNB".to_string();
     curate2.token_info.token_config = TknConfig::default_nft();
-    curate2.balances = vec![TokenIdBalance { address: addr2.clone(), amount: Uint128::new(1) }];
-    
+    curate2.balances = vec![TokenIdBalance {
+        address: addr2.clone(),
+        amount: Uint256::from(1u128),
+    }];
+
     // NFT "2a"
     let mut curate2a = CurateTokenId::default();
     curate2a.token_info.token_id = "2a".to_string();
     curate2a.token_info.name = "token2a".to_string();
     curate2a.token_info.symbol = "TKNBA".to_string();
     curate2a.token_info.token_config = TknConfig::default_nft();
-    curate2a.balances = vec![TokenIdBalance { address: addr2, amount: Uint128::new(1) }];
+    curate2a.balances = vec![TokenIdBalance {
+        address: addr2,
+        amount: Uint256::from(1u128),
+    }];
 
     // batch curate token_id "0a", "1", NFT "2" and NFT "3"
-    let msg = ExecuteMsg::CurateTokenIds{initial_tokens: vec![curate0a, curate1, curate2, curate2a], memo: None, padding: None };
+    let msg = ExecuteMsg::CurateTokenIds {
+        initial_tokens: vec![curate0a, curate1, curate2, curate2a],
+        memo: None,
+        padding: None,
+    };
     execute(deps.as_mut(), env, info, msg)?;
-    
+
     Ok(())
 }
 
@@ -165,56 +168,80 @@ pub fn _extract_log(resp: StdResult<Response>) -> String {
 }
 
 /// checks token balance. Token_id input takes `&str` input, which converts to `String`  
-pub fn chk_bal(
-    storage: &dyn Storage,
-    token_id_str: &str,
-    address: &Addr,
-) -> Option<Uint128> {
+pub fn chk_bal(storage: &dyn Storage, token_id_str: &str, address: &Addr) -> Option<Uint256> {
     balances_r(storage, token_id_str)
-    .may_load(to_binary(&address).unwrap().as_slice()).unwrap()
+        .may_load(to_binary(&address).unwrap().as_slice())
+        .unwrap()
 }
 
-pub fn extract_cosmos_msg<U: DeserializeOwned>(message: &CosmosMsg) -> StdResult<(U, Option<Addr>, &String)> {
+pub fn extract_cosmos_msg<U: DeserializeOwned>(
+    message: &CosmosMsg,
+) -> StdResult<(U, Option<Addr>, &String)> {
     let (receiver_addr, receiver_hash, msg) = match message {
         CosmosMsg::Wasm(i) => match i {
-            WasmMsg::Execute{contract_addr, code_hash, msg, ..
+            WasmMsg::Execute {
+                contract_addr,
+                code_hash,
+                msg,
+                ..
             } => (Some(contract_addr), code_hash, msg),
             WasmMsg::Instantiate { code_hash, msg, .. } => (None, code_hash, msg),
-            _ => return Err(StdError::generic_err("unable to extract msg from CosmosMsg"))
+            _ => {
+                return Err(StdError::generic_err(
+                    "unable to extract msg from CosmosMsg",
+                ))
+            }
         },
-        _ => return Err(StdError::generic_err("unable to extract msg from CosmosMsg"))
+        _ => {
+            return Err(StdError::generic_err(
+                "unable to extract msg from CosmosMsg",
+            ))
+        }
     };
     let decoded_msg: U = from_binary(msg).unwrap();
-    Ok((decoded_msg, receiver_addr.map(Addr::unchecked), receiver_hash))
+    Ok((
+        decoded_msg,
+        receiver_addr.map(Addr::unchecked),
+        receiver_hash,
+    ))
 }
 
 /// generates an array of viewing keys (as Strings)
 pub fn generate_viewing_keys(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
-    info: MessageInfo, 
-    addresses: Vec<Addr>
+    info: MessageInfo,
+    addresses: Vec<Addr>,
 ) -> StdResult<Vks> {
     let mut vks: Vec<String> = vec![];
     let mut info = info;
     for address in addresses {
         info.sender = address;
-        let msg = ExecuteMsg::CreateViewingKey { entropy: "askdjlm".to_string(), padding: None };
+        let msg = ExecuteMsg::CreateViewingKey {
+            entropy: "askdjlm".to_string(),
+            padding: None,
+        };
         let response = execute(deps.as_mut(), env.clone(), info.to_owned(), msg)?;
         let vk = from_binary::<ExecuteAnswer>(&response.data.unwrap())?;
         if let ExecuteAnswer::CreateViewingKey { key } = vk {
             vks.push(key.to_string())
-        } else { 
-            return Err(StdError::generic_err("no viewing key generated"))
+        } else {
+            return Err(StdError::generic_err("no viewing key generated"));
         }
     }
 
     for i in 0..vks.len() {
-        if i == 0 { continue };
-        assert_ne!(vks[i], vks[i-1], "viewing keys of two different addresses are similar");
+        if i == 0 {
+            continue;
+        };
+        assert_ne!(
+            vks[i],
+            vks[i - 1],
+            "viewing keys of two different addresses are similar"
+        );
     }
 
-    Ok(Vks {vks})
+    Ok(Vks { vks })
 }
 
 /// Unfortunately only reads the sha_256 hash of the viewing key. Contract does not store viewing key
@@ -224,7 +251,7 @@ pub fn read_viewing_key_hash(store: &dyn Storage, owner: &str) -> Option<Vec<u8>
 }
 
 pub struct Vks {
-    vks: Vec<String>
+    vks: Vec<String>,
 }
 
 impl Vks {

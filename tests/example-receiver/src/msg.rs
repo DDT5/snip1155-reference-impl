@@ -1,4 +1,4 @@
-use cosmwasm_std::{Binary, HumanAddr, Uint128};
+use cosmwasm_std::{Binary, HumanAddr, Uint256};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ pub enum HandleMsg {
         sender: HumanAddr,
         token_id: String,
         from: HumanAddr,
-        amount: Uint128,
+        amount: Uint256,
         memo: Option<String>,
         msg: Binary,
     },
@@ -56,7 +56,7 @@ impl Snip1155Msg {
     pub fn register_receive(code_hash: String) -> Self {
         Snip1155Msg::RegisterReceive {
             code_hash,
-            padding: None, 
+            padding: None,
         }
     }
 }

@@ -1138,7 +1138,7 @@ When a the `Send` or `BatchSend` function is called, the SNIP1155 sends a callba
     sender: "<HumanAddr that called the transaction>",
     token_id: "<String representing unique token_id being sent>",
     from: "<HumanAddr of the current owner of the tokens>",
-    amount: "<Amount of tokens sent in Uint128>",
+    amount: "<Amount of tokens sent in Uint256>",
     memo?: "<optional String>",
     msg?: "<optional message in Binary>"
   }
@@ -1167,7 +1167,7 @@ Some of the messages detailed in this document contain a "status" field. This fi
 While errors during execution of contract functions should usually result in a proper and detailed error response, the "failure" status is reserved for cases where a contract might choose to obfuscate the exact cause of failure, or otherwise indicate that while nothing failed to happen, the operation itself could not be completed for some valid reason.
 
 ### Balances and amounts <!-- omit in toc --> 
-Note that all amounts are represented as numerical strings (the Uint128 type). Handling decimals is left to the UI.
+Note that all amounts are represented as numerical strings (the Uint256 type). Handling decimals is left to the UI.
 
 
 

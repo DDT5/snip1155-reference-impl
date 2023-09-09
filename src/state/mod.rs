@@ -1,28 +1,22 @@
-pub mod state_structs;
-pub mod permissions;
-pub mod txhistory;
-pub mod metadata;
 pub mod expiration;
+pub mod metadata;
+pub mod permissions;
 mod save_load_functions;
+pub mod state_structs;
+pub mod txhistory;
 
-use cosmwasm_std::{
-    Storage, BlockInfo, Uint128, Addr, 
-    StdResult, StdError,
-    to_binary, 
-};
+use cosmwasm_std::{to_binary, Addr, BlockInfo, StdError, StdResult, Storage, Uint256};
 
 use cosmwasm_storage::{
-    PrefixedStorage, ReadonlyPrefixedStorage, 
-    bucket, bucket_read, Bucket, ReadonlyBucket,
-    singleton, singleton_read, ReadonlySingleton, Singleton, 
+    bucket, bucket_read, singleton, singleton_read, Bucket, PrefixedStorage, ReadonlyBucket,
+    ReadonlyPrefixedStorage, ReadonlySingleton, Singleton,
 };
 
 use self::{
-    state_structs::{ContractConfig, StoredTokenInfo},
-    permissions::Permission,
     expiration::Expiration,
+    permissions::Permission,
+    state_structs::{ContractConfig, StoredTokenInfo},
 };
-
 
 pub const RESPONSE_BLOCK_SIZE: usize = 256;
 
@@ -47,12 +41,9 @@ pub const PREFIX_PERMISSION_ID: &[u8] = b"permid";
 pub const PREFIX_REVOKED_PERMITS: &str = "revokedperms";
 pub const PREFIX_RECEIVERS: &[u8] = b"s1155receivers";
 
-
-
 /////////////////////////////////////////////////////////////////////////////////
 // Singletons
 /////////////////////////////////////////////////////////////////////////////////
-
 
 /// Contract configuration: stores information on this contract
 pub fn contr_conf_w(storage: &mut dyn Storage) -> Singleton<ContractConfig> {
@@ -60,7 +51,7 @@ pub fn contr_conf_w(storage: &mut dyn Storage) -> Singleton<ContractConfig> {
 }
 /// Contract configuration: reads information on this contract
 pub fn contr_conf_r(storage: &dyn Storage) -> ReadonlySingleton<ContractConfig> {
-    singleton_read( storage, CONTR_CONF)
+    singleton_read(storage, CONTR_CONF)
 }
 
 /// Saves BlockInfo of latest tx. Should not be necessary after env becomes available to queries
@@ -86,11 +77,11 @@ pub fn tkn_info_r(storage: &dyn Storage) -> ReadonlyBucket<StoredTokenInfo> {
 }
 
 /// total supply of a token_id. Key is `token_id.as_bytes()`
-pub fn tkn_tot_supply_w(storage: &mut dyn Storage) -> Bucket<Uint128> {
+pub fn tkn_tot_supply_w(storage: &mut dyn Storage) -> Bucket<Uint256> {
     bucket(storage, TKN_TOTAL_SUPPLY)
 }
 /// total supply of a token_id. Key is `token_id.as_bytes()`
-pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
+pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint256> {
     bucket_read(storage, TKN_TOTAL_SUPPLY)
 }
 
@@ -98,65 +89,76 @@ pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
 // Multi-level Buckets
 /////////////////////////////////////////////////////////////////////////////////
 
-/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to
 /// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
-/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
-pub fn balances_w<'a>(
-    storage: &'a mut dyn Storage,
-    token_id: &str
-) -> Bucket<'a, Uint128> {
+/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply`
+pub fn balances_w<'a>(storage: &'a mut dyn Storage, token_id: &str) -> Bucket<'a, Uint256> {
     Bucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
-/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to
 /// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
-pub fn balances_r<'a,>(
-    storage: &'a dyn Storage,
-    token_id: &str
-) -> ReadonlyBucket<'a, Uint128> {
+pub fn balances_r<'a>(storage: &'a dyn Storage, token_id: &str) -> ReadonlyBucket<'a, Uint256> {
     ReadonlyBucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
 
 /// private functions.
 /// To store permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
-fn permission_w<'a,>(
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()`
+fn permission_w<'a>(
     storage: &'a mut dyn Storage,
     owner: &'a Addr,
     token_id: &'a str,
 ) -> Bucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    Bucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
+    Bucket::multilevel(
+        storage,
+        &[
+            PREFIX_PERMISSIONS,
+            owner_bin.as_slice(),
+            token_id.as_bytes(),
+        ],
+    )
 }
 /// private functions.
 /// To read permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
-fn permission_r<'a,>(
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()`
+fn permission_r<'a>(
     storage: &'a dyn Storage, // &'a (dyn Storage + 'a), // &'a S,
     owner: &'a Addr,
     token_id: &'a str,
 ) -> ReadonlyBucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    ReadonlyBucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
+    ReadonlyBucket::multilevel(
+        storage,
+        &[
+            PREFIX_PERMISSIONS,
+            owner_bin.as_slice(),
+            token_id.as_bytes(),
+        ],
+    )
 }
 #[cfg(test)]
-pub fn perm_r<'a,>(
+pub fn perm_r<'a>(
     storage: &'a dyn Storage,
     owner: &'a Addr,
     token_id: &'a str,
 ) -> ReadonlyBucket<'a, Permission> {
     let owner_bin = to_binary(owner).unwrap();
-    ReadonlyBucket::multilevel(storage, &[PREFIX_PERMISSIONS, owner_bin.as_slice(), token_id.as_bytes()])
+    ReadonlyBucket::multilevel(
+        storage,
+        &[
+            PREFIX_PERMISSIONS,
+            owner_bin.as_slice(),
+            token_id.as_bytes(),
+        ],
+    )
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Receiver Interface
 /////////////////////////////////////////////////////////////////////////////////
 
-pub fn get_receiver_hash(
-    store: &dyn Storage,
-    account: &Addr,
-) -> Option<StdResult<String>> {
+pub fn get_receiver_hash(store: &dyn Storage, account: &Addr) -> Option<StdResult<String>> {
     let store = ReadonlyPrefixedStorage::new(store, PREFIX_RECEIVERS);
     store.get(account.as_str().as_bytes()).map(|data| {
         String::from_utf8(data)
@@ -168,5 +170,3 @@ pub fn set_receiver_hash(store: &mut dyn Storage, account: &Addr, code_hash: Str
     let mut store = PrefixedStorage::new(store, PREFIX_RECEIVERS);
     store.set(account.as_str().as_bytes(), code_hash.as_bytes());
 }
-
-

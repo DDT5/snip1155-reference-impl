@@ -1,7 +1,6 @@
 use cosmwasm_std::{
-    from_binary, to_binary, Api, Binary, Context, CosmosMsg, Env, Extern,
-    HandleResponse, HumanAddr, InitResponse, Querier, StdError, StdResult, Storage, Uint128,
-    WasmMsg,
+    from_binary, to_binary, Api, Binary, Context, CosmosMsg, Env, Extern, HandleResponse,
+    HumanAddr, InitResponse, Querier, StdError, StdResult, Storage, Uint256, WasmMsg,
 };
 
 use crate::msg::{CountResponse, HandleMsg, InitMsg, QueryMsg, Snip1155Msg};
@@ -111,7 +110,7 @@ pub fn try_receive<S: Storage, A: Api, Q: Querier>(
     _sender: HumanAddr,
     _token_id: String,
     _from: HumanAddr,
-    _amount: Uint128,
+    _amount: Uint256,
     msg: Binary,
 ) -> StdResult<HandleResponse> {
     let msg: HandleMsg = from_binary(&msg)?;
@@ -123,7 +122,9 @@ pub fn try_receive<S: Storage, A: Api, Q: Querier>(
     }
 
     let state = config_read(&deps.storage).load()?;
-    if !state.known_snip_1155.contains(&env.message.sender) && state.owner != deps.api.canonical_address(&env.message.sender)? {
+    if !state.known_snip_1155.contains(&env.message.sender)
+        && state.owner != deps.api.canonical_address(&env.message.sender)?
+    {
         return Err(StdError::generic_err(format!(
             "{} is not receiver creator, or a known SNIP-1155 coin that this contract registered to",
             env.message.sender

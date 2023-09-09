@@ -3,15 +3,12 @@ use super::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{
-    Uint128, Addr,
-};
+use cosmwasm_std::{Addr, Uint256};
 
 use self::metadata::Metadata;
 
 #[cfg(test)]
 use crate::state::metadata::Extension;
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Contract and Token Id configs
@@ -21,7 +18,7 @@ use crate::state::metadata::Extension;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ContractConfig {
     pub admin: Option<Addr>,
-    /// These are contract-level curators that can curate new token_ids and mint initial balances. They cannot 
+    /// These are contract-level curators that can curate new token_ids and mint initial balances. They cannot
     /// mint additional tokens of existing token_ids, unless they are also minters of the specific
     /// fungible token
     pub curators: Vec<Addr>,
@@ -44,12 +41,12 @@ pub struct TokenInfoMsg {
 
 impl TokenInfoMsg {
     pub fn to_store(&self, curator: &Addr) -> StoredTokenInfo {
-        StoredTokenInfo { 
-            token_id: self.token_id.clone(), 
-            name: self.name.clone(), 
-            symbol: self.symbol.clone(), 
-            token_config: self.token_config.clone(), 
-            public_metadata: self.public_metadata.clone(), 
+        StoredTokenInfo {
+            token_id: self.token_id.clone(),
+            name: self.name.clone(),
+            symbol: self.symbol.clone(),
+            token_config: self.token_config.clone(),
+            public_metadata: self.public_metadata.clone(),
             private_metadata: self.private_metadata.clone(),
             curator: curator.clone(),
         }
@@ -68,15 +65,13 @@ pub struct StoredTokenInfo {
     pub curator: Addr,
 }
 
-
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TknConfig {
     /// no `owner_may_update_metadata`because there can be multiple owners
     Fungible {
         minters: Vec<Addr>,
-        /// Decimals play no part in the contract logic of the base specification of SNIP1155, 
+        /// Decimals play no part in the contract logic of the base specification of SNIP1155,
         /// as there are no `deposit` and `redeem` features as seen in SNIP20. The UI application
         /// has discretion in handling decimals
         decimals: u8,
@@ -95,20 +90,20 @@ pub enum TknConfig {
         enable_burn: bool,
         owner_may_update_metadata: bool,
         minter_may_update_metadata: bool,
-    }
+    },
 }
 
 impl TknConfig {
     /// Combines variables in the TknConfig enum into a single struct for easier handling in contract logic.
     pub fn flatten(&self) -> TknConfigFlat {
         match self {
-            TknConfig::Fungible { 
+            TknConfig::Fungible {
                 minters,
-                decimals, 
-                public_total_supply, 
-                enable_mint, 
-                enable_burn, 
-                minter_may_update_metadata 
+                decimals,
+                public_total_supply,
+                enable_mint,
+                enable_burn,
+                minter_may_update_metadata,
             } => {
                 TknConfigFlat {
                     is_nft: false,
@@ -122,14 +117,14 @@ impl TknConfig {
                     /// there can be multiple owners, so owners cannot update metadata
                     owner_may_update_metadata: false,
                 }
-            },
-            TknConfig::Nft { 
+            }
+            TknConfig::Nft {
                 minters,
-                public_total_supply, 
-                owner_is_public, 
-                enable_burn, 
-                owner_may_update_metadata, 
-                minter_may_update_metadata
+                public_total_supply,
+                owner_is_public,
+                enable_burn,
+                owner_may_update_metadata,
+                minter_may_update_metadata,
             } => {
                 TknConfigFlat {
                     is_nft: true,
@@ -144,31 +139,31 @@ impl TknConfig {
                     minter_may_update_metadata: *minter_may_update_metadata,
                     owner_may_update_metadata: *owner_may_update_metadata,
                 }
-            },
-        } 
+            }
+        }
     }
 
     // note that default is normally `false`. These default to `true` is for unit testing purposes
     #[cfg(test)]
     pub fn default_fungible() -> Self {
-        TknConfig::Fungible { 
+        TknConfig::Fungible {
             minters: vec![Addr::unchecked("addr0".to_string())],
             decimals: 6_u8,
-            public_total_supply: true, 
+            public_total_supply: true,
             enable_mint: true,
-            enable_burn: true, 
-            minter_may_update_metadata: true, 
+            enable_burn: true,
+            minter_may_update_metadata: true,
         }
     }
 
     #[cfg(test)]
     pub fn default_nft() -> Self {
-        TknConfig::Nft { 
+        TknConfig::Nft {
             minters: vec![],
-            public_total_supply: true, 
+            public_total_supply: true,
             owner_is_public: true,
-            enable_burn: true, 
-            owner_may_update_metadata: true, 
+            enable_burn: true,
+            owner_may_update_metadata: true,
             minter_may_update_metadata: true,
         }
     }
@@ -191,30 +186,25 @@ pub struct TknConfigFlat {
 impl TknConfigFlat {
     pub fn to_enum(&self) -> TknConfig {
         match self.is_nft {
-            true => {
-                TknConfig::Nft { 
-                    minters: self.minters.clone(),
-                    public_total_supply: self.public_total_supply, 
-                    owner_is_public: self.owner_is_public, 
-                    enable_burn: self.enable_burn, 
-                    owner_may_update_metadata: self.owner_may_update_metadata,
-                    minter_may_update_metadata: self.minter_may_update_metadata,
-                }
+            true => TknConfig::Nft {
+                minters: self.minters.clone(),
+                public_total_supply: self.public_total_supply,
+                owner_is_public: self.owner_is_public,
+                enable_burn: self.enable_burn,
+                owner_may_update_metadata: self.owner_may_update_metadata,
+                minter_may_update_metadata: self.minter_may_update_metadata,
             },
-            false => {
-                TknConfig::Fungible { 
-                    minters: self.minters.clone(), 
-                    decimals: self.decimals, 
-                    public_total_supply: self.public_total_supply, 
-                    enable_mint: self.enable_mint, 
-                    enable_burn: self.enable_burn, 
-                    minter_may_update_metadata: self.minter_may_update_metadata 
-                }
+            false => TknConfig::Fungible {
+                minters: self.minters.clone(),
+                decimals: self.decimals,
+                public_total_supply: self.public_total_supply,
+                enable_mint: self.enable_mint,
+                enable_burn: self.enable_burn,
+                minter_may_update_metadata: self.minter_may_update_metadata,
             },
         }
     }
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Other structs, enums and functions
@@ -229,24 +219,24 @@ pub struct CurateTokenId {
 #[cfg(test)]
 impl Default for CurateTokenId {
     fn default() -> Self {
-        Self { 
-            token_info: TokenInfoMsg { 
-                token_id: "0".to_string(), 
-                name: "token0".to_string(), 
-                symbol: "TKN".to_string(), 
+        Self {
+            token_info: TokenInfoMsg {
+                token_id: "0".to_string(),
+                name: "token0".to_string(),
+                symbol: "TKN".to_string(),
                 token_config: TknConfig::default_fungible(),
                 public_metadata: Some(Metadata {
                     token_uri: Some("public uri".to_string()),
                     extension: Some(Extension::default()),
-                }), 
+                }),
                 private_metadata: Some(Metadata {
                     token_uri: Some("private uri".to_string()),
                     extension: Some(Extension::default()),
-                }),  
-            }, 
-            balances: vec![TokenIdBalance { 
-                address: Addr::unchecked("addr0".to_string()), 
-                amount: Uint128::from(1000_u64) 
+                }),
+            },
+            balances: vec![TokenIdBalance {
+                address: Addr::unchecked("addr0".to_string()),
+                amount: Uint256::from(1000_u64),
             }],
         }
     }
@@ -256,23 +246,23 @@ impl Default for CurateTokenId {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenAmount {
     pub token_id: String,
-    /// For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the 
-    /// owner's address. This design decision is to allow `BurnToken` to apply to other addresses, 
+    /// For BurnToken, only `Balance.amount` is relevant. `Balance.address` need to be the
+    /// owner's address. This design decision is to allow `BurnToken` to apply to other addresses,
     /// possible in the additional specifications
     pub balances: Vec<TokenIdBalance>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenIdBalance {
-    /// For BurnToken, `address` needs to be the owner's address. This design decision is 
-    /// to allow `BurnToken` to apply to other addresses, possible in the additional 
+    /// For BurnToken, `address` needs to be the owner's address. This design decision is
+    /// to allow `BurnToken` to apply to other addresses, possible in the additional
     /// specifications
     pub address: Addr,
-    pub amount: Uint128,
+    pub amount: Uint256,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct OwnerBalance {
     pub token_id: String,
-    pub amount: Uint128,
+    pub amount: Uint256,
 }
