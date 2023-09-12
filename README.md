@@ -5,6 +5,7 @@ This repository contains the [SNIP1155 Base Specifications](#base-specifications
 
 **This is a work in progress**
 
+This particular repo is used as lb-token contract for liquidity book
 
 ## Table of contents <!-- omit in toc --> 
 - [Abstract](#abstract)
