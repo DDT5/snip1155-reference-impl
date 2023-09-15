@@ -24,6 +24,7 @@ pub struct InstantiateMsg {
     /// if `has_admin` == `false`, this field will be ignore (ie: there will be no admin)
     pub admin: Option<Addr>,
     /// sets initial list of curators, which can create new token_ids
+    pub lb_token_minter: Option<Addr>,
     pub curators: Vec<Addr>,
     /// curates initial list of tokens
     pub initial_tokens: Vec<CurateTokenId>,
@@ -204,6 +205,10 @@ pub enum ExecuteMsg {
         code_hash: String,
         padding: Option<String>,
     },
+    ChangeLbTokenMinter {
+        minter: Addr,
+        padding: Option<String>,
+    },
 }
 
 /// Handle answers in the `data` field of `HandleResponse`. See
@@ -231,6 +236,7 @@ pub enum ExecuteAnswer {
     ChangeAdmin { status: ResponseStatus },
     RemoveAdmin { status: ResponseStatus },
     RegisterReceive { status: ResponseStatus },
+    ChangeLbTokenMinter { status: ResponseStatus },
 }
 
 /////////////////////////////////////////////////////////////////////////////////
