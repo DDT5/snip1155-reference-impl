@@ -410,8 +410,10 @@ fn test_change_metadata_nft() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
@@ -662,8 +664,10 @@ fn test_change_metadata_fungible() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
@@ -2181,8 +2185,10 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
 
@@ -2199,8 +2205,10 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
 
@@ -2217,8 +2225,10 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
 
@@ -2236,8 +2246,10 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
 

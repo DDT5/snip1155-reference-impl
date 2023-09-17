@@ -82,8 +82,10 @@ pub fn init_helper_default() -> (
         initial_tokens: vec![CurateTokenId::default()],
         entropy: "seedentropy".to_string(),
         lb_pair_info: LbPair {
-            token1: "tkn1".to_string(),
-            token2: "tkn2".to_string(),
+            name: String::new(),
+            symbol: String::new(),
+            lb_pair_address: Addr::unchecked("address"),
+            decimals: 18,
         },
     };
 

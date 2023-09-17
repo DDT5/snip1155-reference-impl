@@ -90,7 +90,7 @@ pub fn instantiate(
         tx_cnt: 0u64,
         prng_seed: prng_seed.to_vec(),
         contract_address: env.contract.address.clone(),
-        lb_pair: msg.lb_pair_info,
+        lb_pair_info: msg.lb_pair_info,
     };
 
     // set initial balances
@@ -308,14 +308,11 @@ fn try_mint_tokens(
             let curate_token = CurateTokenId {
                 token_info: TokenInfoMsg {
                     token_id: mint_token.token_id.clone(),
-                    name: format!(
-                        "{}-{}-lb-token-{}",
-                        &config.lb_pair.token1, &config.lb_pair.token1, mint_token.token_id
-                    ),
-                    symbol: format!("LBT"),
+                    name: format!("{}-{}", &config.lb_pair_info.name, mint_token.token_id),
+                    symbol: format!("{}", &config.lb_pair_info.symbol),
                     token_config: TknConfig::Fungible {
                         minters: Vec::new(), // No need for minter curator will be the minter
-                        decimals: 18,
+                        decimals: config.lb_pair_info.decimals,
                         public_total_supply: true,
                         enable_mint: true,
                         enable_burn: true,
