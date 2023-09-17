@@ -6,6 +6,7 @@ use cosmwasm_std::{
     Addr,
     Binary,
     CosmosMsg,
+    Deps,
     DepsMut,
     Env,
     MessageInfo,
@@ -35,7 +36,9 @@ use crate::{
         metadata::Metadata,
         permissions::{may_load_any_permission, new_permission, update_permission, Permission},
         set_receiver_hash,
-        state_structs::{ContractConfig, CurateTokenId, StoredTokenInfo, TokenAmount},
+        state_structs::{
+            ContractConfig, CurateTokenId, StoredTokenInfo, TknConfig, TokenAmount, TokenInfoMsg,
+        },
         tkn_info_r, tkn_info_w, tkn_tot_supply_r, tkn_tot_supply_w,
         txhistory::{
             append_new_owner, may_get_current_owner, store_burn, store_mint, store_transfer,
@@ -87,6 +90,7 @@ pub fn instantiate(
         tx_cnt: 0u64,
         prng_seed: prng_seed.to_vec(),
         contract_address: env.contract.address.clone(),
+        lb_pair: msg.lb_pair_info,
     };
 
     // set initial balances
@@ -225,16 +229,16 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             remove_curators,
             padding: _,
         } => try_remove_curators(deps, env, info, remove_curators),
-        ExecuteMsg::AddMinters {
-            token_id,
-            add_minters,
-            padding: _,
-        } => try_add_minters(deps, env, info, token_id, add_minters),
-        ExecuteMsg::RemoveMinters {
-            token_id,
-            remove_minters,
-            padding: _,
-        } => try_remove_minters(deps, env, info, token_id, remove_minters),
+        // ExecuteMsg::AddMinters {
+        //     token_id,
+        //     add_minters,
+        //     padding: _,
+        // } => try_add_minters(deps, env, info, token_id, add_minters),
+        // ExecuteMsg::RemoveMinters {
+        //     token_id,
+        //     remove_minters,
+        //     padding: _,
+        // } => try_remove_minters(deps, env, info, token_id, remove_minters),
         ExecuteMsg::ChangeAdmin {
             new_admin,
             padding: _,
@@ -285,7 +289,7 @@ fn try_curate_token_ids(
 }
 
 fn try_mint_tokens(
-    deps: DepsMut,
+    mut deps: DepsMut,
     env: Env,
     info: MessageInfo,
     mint_tokens: Vec<TokenAmount>,
@@ -293,15 +297,46 @@ fn try_mint_tokens(
 ) -> StdResult<Response> {
     let mut config = contr_conf_r(deps.storage).load()?;
 
+    verify_curator(&config, &info)?;
+
     // mint tokens
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
 
         // check if token_id exists
         if token_info_op.is_none() {
-            return Err(StdError::generic_err(
-                "token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
-            ));
+            let curate_token = CurateTokenId {
+                token_info: TokenInfoMsg {
+                    token_id: mint_token.token_id.clone(),
+                    name: format!(
+                        "{}-{}-lb-token-{}",
+                        &config.lb_pair.token1, &config.lb_pair.token1, mint_token.token_id
+                    ),
+                    symbol: format!("LBT"),
+                    token_config: TknConfig::Fungible {
+                        minters: Vec::new(), // No need for minter curator will be the minter
+                        decimals: 18,
+                        public_total_supply: true,
+                        enable_mint: true,
+                        enable_burn: true,
+                        minter_may_update_metadata: false,
+                    },
+                    public_metadata: None,
+                    private_metadata: None,
+                },
+                balances: mint_token.balances,
+            };
+
+            exec_curate_token_id(
+                &mut deps,
+                &env,
+                &info,
+                &mut config,
+                curate_token,
+                memo.clone(),
+            )?;
+
+            continue;
         }
 
         // check if enable_mint == true
@@ -318,7 +353,7 @@ fn try_mint_tokens(
         }
 
         // check if sender is a minter
-        verify_minter(token_info_op.as_ref().unwrap(), &info)?;
+        // verify_minter(token_info_op.as_ref().unwrap(), &info)?;
 
         // add balances
         for add_balance in mint_token.balances {
@@ -785,91 +820,91 @@ fn try_remove_curators(
     )
 }
 
-fn try_add_minters(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    token_id: String,
-    add_minters: Vec<Addr>,
-) -> StdResult<Response> {
-    let contract_config = contr_conf_r(deps.storage).load()?;
-    let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
-    if token_info_op.is_none() {
-        return Err(StdError::generic_err(format!(
-            "token_id {} does not exist",
-            token_id
-        )));
-    };
-    let mut token_info = token_info_op.unwrap();
+// fn try_add_minters(
+//     deps: DepsMut,
+//     _env: Env,
+//     info: MessageInfo,
+//     token_id: String,
+//     add_minters: Vec<Addr>,
+// ) -> StdResult<Response> {
+//     let contract_config = contr_conf_r(deps.storage).load()?;
+//     let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
+//     if token_info_op.is_none() {
+//         return Err(StdError::generic_err(format!(
+//             "token_id {} does not exist",
+//             token_id
+//         )));
+//     };
+//     let mut token_info = token_info_op.unwrap();
 
-    // check if either admin
-    let admin_result = verify_admin(&contract_config, &info);
-    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
+//     // check if either admin
+//     let admin_result = verify_admin(&contract_config, &info);
+//     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
 
-    let verified = admin_result.is_ok(); // || curator_result.is_ok();
-    if !verified {
-        return Err(StdError::generic_err(
-            "You need to be the admin to add or remove minters",
-        ));
-    }
+//     let verified = admin_result.is_ok(); // || curator_result.is_ok();
+//     if !verified {
+//         return Err(StdError::generic_err(
+//             "You need to be the admin to add or remove minters",
+//         ));
+//     }
 
-    // add minters
-    let mut flattened_token_config = token_info.token_config.flatten();
-    for minter in add_minters {
-        flattened_token_config.minters.push(minter)
-    }
+//     // add minters
+//     let mut flattened_token_config = token_info.token_config.flatten();
+//     for minter in add_minters {
+//         flattened_token_config.minters.push(minter)
+//     }
 
-    // save token info with new minters
-    token_info.token_config = flattened_token_config.to_enum();
-    tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
+//     // save token info with new minters
+//     token_info.token_config = flattened_token_config.to_enum();
+//     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
-    Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddMinters { status: Success })?))
-}
+//     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddMinters { status: Success })?))
+// }
 
-fn try_remove_minters(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    token_id: String,
-    remove_minters: Vec<Addr>,
-) -> StdResult<Response> {
-    let contract_config = contr_conf_r(deps.storage).load()?;
-    let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
-    if token_info_op.is_none() {
-        return Err(StdError::generic_err(format!(
-            "token_id {} does not exist",
-            token_id
-        )));
-    };
-    let mut token_info = token_info_op.unwrap();
+// fn try_remove_minters(
+//     deps: DepsMut,
+//     _env: Env,
+//     info: MessageInfo,
+//     token_id: String,
+//     remove_minters: Vec<Addr>,
+// ) -> StdResult<Response> {
+//     let contract_config = contr_conf_r(deps.storage).load()?;
+//     let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
+//     if token_info_op.is_none() {
+//         return Err(StdError::generic_err(format!(
+//             "token_id {} does not exist",
+//             token_id
+//         )));
+//     };
+//     let mut token_info = token_info_op.unwrap();
 
-    // check if either admin or curator
-    let admin_result = verify_admin(&contract_config, &info);
-    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
+//     // check if either admin or curator
+//     let admin_result = verify_admin(&contract_config, &info);
+//     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
 
-    let verified = admin_result.is_ok(); // || curator_result.is_ok();
-    if !verified {
-        return Err(StdError::generic_err(
-            "You need to be the admin to add or remove minters",
-        ));
-    }
+//     let verified = admin_result.is_ok(); // || curator_result.is_ok();
+//     if !verified {
+//         return Err(StdError::generic_err(
+//             "You need to be the admin to add or remove minters",
+//         ));
+//     }
 
-    // remove minters
-    let mut flattened_token_config = token_info.token_config.flatten();
-    for minter in remove_minters {
-        flattened_token_config.minters.retain(|x| x != &minter);
-    }
+//     // remove minters
+//     let mut flattened_token_config = token_info.token_config.flatten();
+//     for minter in remove_minters {
+//         flattened_token_config.minters.retain(|x| x != &minter);
+//     }
 
-    // save token info with new minters
-    token_info.token_config = flattened_token_config.to_enum();
-    tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
+//     // save token info with new minters
+//     token_info.token_config = flattened_token_config.to_enum();
+//     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
-    Ok(
-        Response::new().set_data(to_binary(&ExecuteAnswer::RemoveMinters {
-            status: Success,
-        })?),
-    )
-}
+//     Ok(
+//         Response::new().set_data(to_binary(&ExecuteAnswer::RemoveMinters {
+//             status: Success,
+//         })?),
+//     )
+// }
 
 fn try_change_admin(
     deps: DepsMut,

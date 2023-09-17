@@ -6,7 +6,7 @@ use crate::state::{
     expiration::Expiration,
     metadata::Metadata,
     permissions::{Permission, PermissionKey},
-    state_structs::{CurateTokenId, OwnerBalance, StoredTokenInfo, TokenAmount},
+    state_structs::{CurateTokenId, LbPair, OwnerBalance, StoredTokenInfo, TokenAmount},
     txhistory::Tx,
 };
 
@@ -29,6 +29,7 @@ pub struct InstantiateMsg {
     pub initial_tokens: Vec<CurateTokenId>,
     /// for `create_viewing_key` function
     pub entropy: String,
+    pub lb_pair_info: LbPair,
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -175,16 +176,16 @@ pub enum ExecuteMsg {
         remove_curators: Vec<Addr>,
         padding: Option<String>,
     },
-    AddMinters {
-        token_id: String,
-        add_minters: Vec<Addr>,
-        padding: Option<String>,
-    },
-    RemoveMinters {
-        token_id: String,
-        remove_minters: Vec<Addr>,
-        padding: Option<String>,
-    },
+    // AddMinters {
+    //     token_id: String,
+    //     add_minters: Vec<Addr>,
+    //     padding: Option<String>,
+    // },
+    // RemoveMinters {
+    //     token_id: String,
+    //     remove_minters: Vec<Addr>,
+    //     padding: Option<String>,
+    // },
     ChangeAdmin {
         new_admin: Addr,
         padding: Option<String>,
