@@ -35,7 +35,7 @@ use crate::{
         metadata::Metadata,
         permissions::{may_load_any_permission, new_permission, update_permission, Permission},
         set_receiver_hash,
-        state_structs::{ContractConfig, CurateTokenId, StoredTokenInfo, TknConfig, TokenAmount},
+        state_structs::{ContractConfig, CurateTokenId, StoredTokenInfo, TokenAmount},
         tkn_info_r, tkn_info_w, tkn_tot_supply_r, tkn_tot_supply_w,
         txhistory::{
             append_new_owner, may_get_current_owner, store_burn, store_mint, store_transfer,
@@ -69,11 +69,6 @@ pub fn instantiate(
         },
     };
 
-    let lb_token_minter = match msg.lb_token_minter {
-        None => info.sender.clone(),
-        Some(i) => i,
-    };
-
     // create contract config -- save later
     let prng_seed_hashed = sha_256(msg.entropy.as_bytes());
     let prng_seed = prng_seed_hashed.to_vec();
@@ -92,7 +87,6 @@ pub fn instantiate(
         tx_cnt: 0u64,
         prng_seed: prng_seed.to_vec(),
         contract_address: env.contract.address.clone(),
-        lb_token_minter,
     };
 
     // set initial balances
@@ -119,11 +113,11 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
     blockinfo_w(deps.storage).save(&env.block)?;
 
     let response = match msg {
-        // ExecuteMsg::CurateTokenIds {
-        //     initial_tokens,
-        //     memo,
-        //     padding: _,
-        // } => try_curate_token_ids(deps, env, info, initial_tokens, memo),
+        ExecuteMsg::CurateTokenIds {
+            initial_tokens,
+            memo,
+            padding: _,
+        } => try_curate_token_ids(deps, env, info, initial_tokens, memo),
         ExecuteMsg::MintTokens {
             mint_tokens,
             memo,
@@ -250,14 +244,10 @@ pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> S
             contract_address,
             padding: _,
         } => try_remove_admin(deps, env, info, current_admin, contract_address),
-        ExecuteMsg::ChangeLbTokenMinter { minter, padding: _ } => {
-            try_change_lb_token_minter(deps, env, info, minter)
-        }
         ExecuteMsg::RegisterReceive {
             code_hash,
             padding: _,
         } => try_register_receive(deps, env, info, code_hash),
-        _ => todo!(),
     };
     pad_response(response)
 }
@@ -302,55 +292,33 @@ fn try_mint_tokens(
     memo: Option<String>,
 ) -> StdResult<Response> {
     let mut config = contr_conf_r(deps.storage).load()?;
-    //TODO if the minter is allowed to mint
-
-    verify_lb_token_admin(&config.lb_token_minter.clone(), &info)?;
 
     // mint tokens
     for mint_token in mint_tokens {
-        let mut token_info_op =
-            tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
+        let token_info_op = tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
 
         // check if token_id exists
         if token_info_op.is_none() {
-            // return Err(StdError::generic_err(
-            //     "token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
-            // ));
-            let raw_token_info = StoredTokenInfo {
-                token_id: mint_token.token_id.clone(),
-                name: mint_token.token_id.clone(),
-                symbol: mint_token.token_id.clone(),
-                token_config: TknConfig::Fungible {
-                    minters: Vec::new(), // TODO: add global_mint
-                    decimals: 6,         //TODO: check this
-                    public_total_supply: true,
-                    enable_mint: true,
-                    enable_burn: true,
-                    minter_may_update_metadata: false,
-                },
-                public_metadata: None,
-                private_metadata: None,
-                curator: Addr::unchecked("".to_string()), // doesn't matter
-            };
-            tkn_info_w(deps.storage).save(mint_token.token_id.as_bytes(), &raw_token_info)?;
-            token_info_op = Some(raw_token_info);
+            return Err(StdError::generic_err(
+                "token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
+            ));
         }
 
-        // Doesn't matter cause we're minting directly
-        // // check if enable_mint == true
-        // if !token_info_op
-        //     .clone()
-        //     .unwrap()
-        //     .token_config
-        //     .flatten()
-        //     .enable_mint
-        // {
-        //     return Err(StdError::generic_err(
-        //         "minting is not enabled for this token_id",
-        //     ));
-        // }
+        // check if enable_mint == true
+        if !token_info_op
+            .clone()
+            .unwrap()
+            .token_config
+            .flatten()
+            .enable_mint
+        {
+            return Err(StdError::generic_err(
+                "minting is not enabled for this token_id",
+            ));
+        }
 
         // check if sender is a minter
+        verify_minter(token_info_op.as_ref().unwrap(), &info)?;
 
         // add balances
         for add_balance in mint_token.balances {
@@ -392,8 +360,6 @@ fn try_burn_tokens(
 ) -> StdResult<Response> {
     let mut config = contr_conf_r(deps.storage).load()?;
 
-    verify_lb_token_admin(&config.lb_token_minter.clone(), &info)?;
-
     // burn tokens
     for burn_token in burn_tokens {
         let token_info_op = tkn_info_r(deps.storage).may_load(burn_token.token_id.as_bytes())?;
@@ -415,12 +381,12 @@ fn try_burn_tokens(
         // remove balances
         for rem_balance in burn_token.balances {
             // in base specification, burner MUST be the owner
-            // if rem_balance.address != info.sender {
-            //     return Err(StdError::generic_err(format!(
-            //         "you do not have permission to burn {} tokens from address {}",
-            //         rem_balance.amount, rem_balance.address
-            //     )));
-            // }
+            if rem_balance.address != info.sender {
+                return Err(StdError::generic_err(format!(
+                    "you do not have permission to burn {} tokens from address {}",
+                    rem_balance.amount, rem_balance.address
+                )));
+            }
 
             exec_change_balance(
                 deps.storage,
@@ -923,28 +889,6 @@ fn try_change_admin(
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::ChangeAdmin { status: Success })?))
 }
 
-fn try_change_lb_token_minter(
-    deps: DepsMut,
-    _env: Env,
-    info: MessageInfo,
-    new_minter: Addr,
-) -> StdResult<Response> {
-    let mut config = contr_conf_r(deps.storage).load()?;
-
-    // verify admin
-    verify_admin(&config, &info)?;
-
-    // change admin
-    config.lb_token_minter = new_minter;
-    contr_conf_w(deps.storage).save(&config)?;
-
-    Ok(
-        Response::new().set_data(to_binary(&ExecuteAnswer::ChangeLbTokenMinter {
-            status: Success,
-        })?),
-    )
-}
-
 fn try_remove_admin(
     deps: DepsMut,
     _env: Env,
@@ -1062,16 +1006,6 @@ fn verify_minter(token_info: &StoredTokenInfo, info: &MessageInfo) -> StdResult<
         return Err(StdError::generic_err(format!(
             "Only minters are allowed to mint additional tokens for token_id {}",
             token_info.token_id
-        )));
-    }
-    Ok(())
-}
-
-/// verifies if sender is a minter of the specific token_id
-fn verify_lb_token_admin(minter: &Addr, info: &MessageInfo) -> StdResult<()> {
-    if minter.ne(&info.sender) {
-        return Err(StdError::generic_err(format!(
-            "Only minters are allowed to mint/burn tokens"
         )));
     }
     Ok(())
@@ -1341,7 +1275,7 @@ fn exec_change_balance(
     }
 
     // check whether token_id is an NFT => assert!(amount == 1).
-    if token_info.token_config.flatten().is_nft && amount != Uint256::from(1u128) {
+    if token_info.token_config.flatten().is_nft && amount != Uint256::from(1_u64) {
         return Err(StdError::generic_err("NFT amount must == 1"));
     }
 
@@ -1368,7 +1302,7 @@ fn exec_change_balance(
         let to_existing_bal = match to_existing_bal_op {
             Some(i) => i,
             // if `to` address has no balance yet, initiate zero balance
-            None => Uint256::from(0u128),
+            None => Uint256::from(0_u64),
         };
         let to_new_amount_op = to_existing_bal.checked_add(*amount);
         if to_new_amount_op.is_err() {
@@ -1394,9 +1328,7 @@ fn exec_change_balance(
         (None, None) => (),
         (Some(_), Some(_)) => (),
         (None, Some(_)) => {
-            let old_amount = tkn_tot_supply_r(storage)
-                .load(token_info.token_id.as_bytes())
-                .unwrap_or_default();
+            let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.checked_add(*amount);
             let new_amount = match new_amount_op {
                 Ok(i) => Uint256::from(i),
@@ -1409,9 +1341,7 @@ fn exec_change_balance(
             tkn_tot_supply_w(storage).save(token_info.token_id.as_bytes(), &new_amount)?;
         }
         (Some(_), None) => {
-            let old_amount = tkn_tot_supply_r(storage)
-                .load(token_info.token_id.as_bytes())
-                .unwrap_or_default();
+            let old_amount = tkn_tot_supply_r(storage).load(token_info.token_id.as_bytes())?;
             let new_amount_op = old_amount.checked_sub(*amount);
             let new_amount = match new_amount_op {
                 Ok(i) => Uint256::from(i),

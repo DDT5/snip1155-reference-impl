@@ -21,7 +21,6 @@ pub struct ContractConfig {
     /// These are contract-level curators that can curate new token_ids and mint initial balances. They cannot
     /// mint additional tokens of existing token_ids, unless they are also minters of the specific
     /// fungible token
-    pub lb_token_minter: Addr,
     pub curators: Vec<Addr>,
     pub token_id_list: Vec<String>,
     pub tx_cnt: u64,
