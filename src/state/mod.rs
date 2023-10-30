@@ -6,15 +6,15 @@ pub mod expiration;
 mod save_load_functions;
 
 use cosmwasm_std::{
-    Storage, BlockInfo, Uint128, Addr, 
+    Storage, BlockInfo, Uint128, Addr,
     StdResult, StdError,
-    to_binary, 
+    to_binary,
 };
 
 use cosmwasm_storage::{
-    PrefixedStorage, ReadonlyPrefixedStorage, 
+    PrefixedStorage, ReadonlyPrefixedStorage,
     bucket, bucket_read, Bucket, ReadonlyBucket,
-    singleton, singleton_read, ReadonlySingleton, Singleton, 
+    singleton, singleton_read, ReadonlySingleton, Singleton,
 };
 
 use self::{
@@ -98,17 +98,17 @@ pub fn tkn_tot_supply_r(storage: &dyn Storage) -> ReadonlyBucket<Uint128> {
 // Multi-level Buckets
 /////////////////////////////////////////////////////////////////////////////////
 
-/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
-/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
-/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply` 
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to
+/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]
+/// When using `balances_w` make sure to also check if need to change `current owner` of an nft and `total_supply`
 pub fn balances_w<'a>(
     storage: &'a mut dyn Storage,
     token_id: &str
 ) -> Bucket<'a, Uint128> {
     Bucket::multilevel(storage, &[BALANCES, token_id.as_bytes()])
 }
-/// Multilevel bucket to store balances for each token_id & addr combination. Key is to 
-/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]  
+/// Multilevel bucket to store balances for each token_id & addr combination. Key is to
+/// be [`token_id`, `owner`: to_binary(&Addr)?.as_slice()]
 pub fn balances_r<'a,>(
     storage: &'a dyn Storage,
     token_id: &str
@@ -118,7 +118,7 @@ pub fn balances_r<'a,>(
 
 /// private functions.
 /// To store permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()`
 fn permission_w<'a,>(
     storage: &'a mut dyn Storage,
     owner: &'a Addr,
@@ -129,7 +129,7 @@ fn permission_w<'a,>(
 }
 /// private functions.
 /// To read permission. key is to be [`owner`, `token_id`, `allowed_addr`]
-/// `allowed_addr` is `to_binary(&Addr)?.as_slice()` 
+/// `allowed_addr` is `to_binary(&Addr)?.as_slice()`
 fn permission_r<'a,>(
     storage: &'a dyn Storage, // &'a (dyn Storage + 'a), // &'a S,
     owner: &'a Addr,

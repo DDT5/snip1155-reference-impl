@@ -21,14 +21,14 @@ interface TknConfFungible { "fungible": {
   minters: string[],
   decimals: number,
   public_total_supply: boolean,
-  enable_mint: boolean, 
-  enable_burn: boolean, 
+  enable_mint: boolean,
+  enable_burn: boolean,
   minter_may_update_metadata: boolean,
 }}
 
 interface TknConfNft { "nft": {
   public_total_supply: boolean,
-  enable_burn: boolean, 
+  enable_burn: boolean,
   owner_may_update_metadata: boolean,
 }}
 
@@ -97,7 +97,7 @@ const initializeContract = async (
     {
       sender: client.address,
       code_id: codeId,
-      init_msg: initMsg, 
+      init_msg: initMsg,
       code_hash: contractCodeHash,
       // label: "My contract" + Math.ceil(Math.random() * 10000), // The label should be unique for every contract, add random string in order to maintain uniqueness
       label: "Contract " + Math.ceil(Math.random() * 10000) + client.address.slice(6),  // using random number 0..10000 is not big enough, sometimes has collision
@@ -140,75 +140,75 @@ async function initDefault(): Promise<jsEnv> {
     }
   };
 
-  const initMsgDefault = { 
+  const initMsgDefault = {
     has_admin: true,
     curators: [accounts[0].address],
     initial_tokens: [
       {
-        token_info: { 
-          token_id: "0", 
-          name: "token0", 
-          symbol: "TKN", 
+        token_info: {
+          token_id: "0",
+          name: "token0",
+          symbol: "TKN",
           token_config: { fungible: {
               minters: [accounts[0].address],
-              decimals: 6,  
+              decimals: 6,
               public_total_supply: true,
-              enable_mint: true, 
-              enable_burn: true, 
+              enable_mint: true,
+              enable_burn: true,
               minter_may_update_metadata: true,
           }},
           public_metadata,
           private_metadata,
-        }, 
-        balances: [{ 
-            address: accounts[0].address, 
-            amount: "1000" 
+        },
+        balances: [{
+            address: accounts[0].address,
+            amount: "1000"
         }]
       },
       {
-        token_info: { 
-          token_id: "1", 
-          name: "token1", 
-          symbol: "TKNA", 
+        token_info: {
+          token_id: "1",
+          name: "token1",
+          symbol: "TKNA",
           token_config: { fungible: {
               minters: [accounts[0].address],
-              decimals: 6,   
+              decimals: 6,
               public_total_supply: false,
-              enable_mint: false, 
-              enable_burn: false, 
+              enable_mint: false,
+              enable_burn: false,
               minter_may_update_metadata: true,
           }},
-        }, 
-        balances: [{ 
-            address: accounts[0].address, 
-            amount: "1000" 
+        },
+        balances: [{
+            address: accounts[0].address,
+            amount: "1000"
         }]
       },
       {
-        token_info: { 
-          token_id: "2", 
-          name: "nftname", 
-          symbol: "NFT", 
+        token_info: {
+          token_id: "2",
+          name: "nftname",
+          symbol: "NFT",
           token_config: { nft: {
               minters: [],
               public_total_supply: true,
               owner_is_public: true,
-              enable_burn: true, 
+              enable_burn: true,
               owner_may_update_metadata: true,
               minter_may_update_metadata: true,
           }},
           public_metadata,
           private_metadata,
-        }, 
-        balances: [{ 
-            address: accounts[0].address, 
-            amount: "1" 
+        },
+        balances: [{
+            address: accounts[0].address,
+            amount: "1"
         }]
       },
     ],
     entropy: "entropyhere"
   };
-  
+
   const [contractHash, contractAddress] = await initializeContract(
     secretjs,
     "contract.wasm.gz",
@@ -223,7 +223,7 @@ async function initDefault(): Promise<jsEnv> {
   const env: jsEnv = {
     accounts,
     contracts: [contract],
-  }; 
+  };
 
   return env;
 }
@@ -231,7 +231,7 @@ async function initDefault(): Promise<jsEnv> {
 async function initDefaultWithReceiver() {
   // upload and instantiate SNIP1155 contract
   let env: jsEnv = await initDefault();
-  
+
   // upload and instantiate receiver
   const { secretjs } = env.accounts[0];
   const receiverInitMsg = {
@@ -247,7 +247,7 @@ async function initDefaultWithReceiver() {
     address: contractAddress
   };
   env.contracts.push(receiverContract);
-  
+
   return env;
 }
 
@@ -277,7 +277,7 @@ async function execHandle(
   );
 
   if (handle_description === undefined) { handle_description = "handle"}
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`${handle_description} used ${tx.gasUsed} gas`);
   return tx
 }
@@ -302,8 +302,8 @@ async function curateTokenIds(
         minters,
         decimals: 6,
         public_total_supply: true,
-        enable_mint: true, 
-        enable_burn: true, 
+        enable_mint: true,
+        enable_burn: true,
         minter_may_update_metadata: true
       }} as TknConfFungible;
     } else if (is_nft === true) {
@@ -311,25 +311,25 @@ async function curateTokenIds(
         minters,
         public_total_supply: true,
         owner_is_public: true,
-        enable_burn: true, 
+        enable_burn: true,
         owner_may_update_metadata: true,
         minter_may_update_metadata: true
       }} as TknConfNft;
-    } 
+    }
   }
 
   const msg = {
-    curate_token_ids: { 
+    curate_token_ids: {
       initial_tokens: [{
-        token_info: { 
-          token_id, 
-          name: token_name, 
-          symbol: token_symbol, 
+        token_info: {
+          token_id,
+          name: token_name,
+          symbol: token_symbol,
           token_config: tkn_conf,
-        }, 
-        balances: [{ 
-            address: init_mint_to_address, 
-            amount: init_mint_amount 
+        },
+        balances: [{
+            address: init_mint_to_address,
+            amount: init_mint_amount
         }]
       }]
     },
@@ -346,9 +346,9 @@ async function mintTokens(
   balances: Balance[],
 ) {
   const msg = {
-    mint_tokens: { 
+    mint_tokens: {
       mint_tokens: [{
-        token_id, 
+        token_id,
         balances,
       }]
     },
@@ -365,9 +365,9 @@ async function burnTokens(
   balances: Balance[],
 ) {
   const msg = {
-    burn_tokens: { 
+    burn_tokens: {
       burn_tokens: [{
-        token_id, 
+        token_id,
         balances,
       }]
     },
@@ -397,7 +397,7 @@ async function setViewingKeyAll(
     let tx: Promise<TxResponse>;
     for (let i=0; i<env.accounts.length; i++) {
         tx = setViewingKey(env.accounts[i], contr, "vkey"+i);
-        if (i == env.accounts.length-1) { 
+        if (i == env.accounts.length-1) {
           await tx;
         }
     };
@@ -414,11 +414,11 @@ async function transfer(
 ): Promise<TxResponse> {
 
   const msg = {
-    transfer: { 
+    transfer: {
       token_id,
       from: from.address,
       recipient: recipient.address,
-      amount, 
+      amount,
     },
   };
 
@@ -437,12 +437,12 @@ async function send(
   msg?: string,
 ): Promise<TxResponse> {
   const message = {
-    send: { 
+    send: {
       token_id,
       from: from.address,
       recipient: recipient_contract.address,
       recipient_code_hash: recipient_contract.hash,
-      amount, 
+      amount,
       msg
     },
   };
@@ -464,7 +464,7 @@ async function givePermission(
   transfer_expiry?: object,
 ): Promise<TxResponse> {
   const msg = {
-    give_permission: { 
+    give_permission: {
       allowed_address: allowed_address.address,
       token_id,
       view_balance,
@@ -499,7 +499,7 @@ async function execQuery(
   if (JSON.stringify(response).includes('parse_err"')) {
     throw new Error(`Query parse_err: ${JSON.stringify(response)}`);
   }
-  
+
   return response;
 }
 
@@ -508,7 +508,7 @@ async function queryContractInfo(
   contract: ContractInfo,
 ) {
   const { secretjs } = sender;
-  type QueryResponse = { contract_info: { 
+  type QueryResponse = { contract_info: {
     admin: string,
     curators: string[],
     all_token_ids: string[],
@@ -548,7 +548,7 @@ async function queryBalanceQPermit(
   // type QueryResponse = { balance: { amount: string }};
   let permit: Permit = await generatePermit(sender, contract);
 
-  const msg = { with_permit: { 
+  const msg = { with_permit: {
     permit,
     query: { balance: {
       owner,
@@ -568,7 +568,7 @@ async function queryTransactionHistory(
   page?: number,
 ) {
   // type QueryResponse = { };
-  const msg = { transaction_history: { 
+  const msg = { transaction_history: {
     address,
     key,
     page,
@@ -589,13 +589,13 @@ async function queryTransactionHistoryQPermit(
   const msg = { with_permit: {
     permit,
     query: {
-      transaction_history: { 
+      transaction_history: {
         page,
         page_size,
       }
     }
-  }}; 
-    
+  }};
+
   const response = await execQuery(account, contract, msg); // as QueryResponse;
   return response;
 }
@@ -609,7 +609,7 @@ async function queryPermission(
   token_id: string,
 ) {
   type QueryResponse = { permission: Permission };
-  const msg = { permission: { 
+  const msg = { permission: {
     owner,
     allowed_address,
     key,
@@ -628,7 +628,7 @@ async function queryAllPermissions(
   page?: number,
 ) {
   // type QueryResponse = { };
-  const msg = { all_permissions: { 
+  const msg = { all_permissions: {
     address,
     key,
     page,
@@ -696,7 +696,7 @@ async function queryRegisteredCodeHash(
   input_contract: string,
 ) {
   type QueryResponse = { registered_code_hash: { code_hash?: string } };
-  const msg = { registered_code_hash: { 
+  const msg = { registered_code_hash: {
     contract: input_contract,
   }};
   const response = await execQuery(account, contract, msg) as QueryResponse;
@@ -728,7 +728,7 @@ async function receiverIncrement(
     }
   );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`Increment [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
@@ -755,7 +755,7 @@ async function receiverReset(
     }
   );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`Reset [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
@@ -786,7 +786,7 @@ async function receiverRegister(
     }
   );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`Register [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
@@ -798,7 +798,7 @@ async function receiverSnip1155Receive(
   from: string,
   amount: string,
   memo?: string,
-  msg?: string, 
+  msg?: string,
 ): Promise<TxResponse> {
   const { secretjs } = sender;
   const tx = await secretjs.tx.compute.executeContract(
@@ -807,7 +807,7 @@ async function receiverSnip1155Receive(
       contract_address: contract.address,
       code_hash: contract.hash,
       msg: {
-        snip1155_receive: { 
+        snip1155_receive: {
           sender: sender.address,
           token_id,
           from,
@@ -824,7 +824,7 @@ async function receiverSnip1155Receive(
     }
   );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`Snip1155Receive [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
@@ -850,7 +850,7 @@ async function receiverFail(
     }
   );
 
-  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0])); 
+  //const parsedTxData = JSON.parse(fromUtf8(tx.data[0]));
   console.log(`Fail [receiver contract] used ${tx.gasUsed} gas`);
   return tx
 }
@@ -873,7 +873,7 @@ async function queryRecieverGetCount(
       `Query failed with the following err: ${JSON.stringify(response)}`
     );
   }
-  
+
   return response.count;
 }
 
@@ -925,21 +925,21 @@ async function testIntializationSanity(
   );
 
   // public token info
-  const tknId0 = await queryTokenIdPublicInfo(acc0, contract, "0"); 
+  const tknId0 = await queryTokenIdPublicInfo(acc0, contract, "0");
   const tknId0String = JSON.stringify(tknId0);
   assert(tknId0String.includes('"token_id":"0"'));
   assert(tknId0String.includes('"token_config":{"fungible"'));
   assert(tknId0String.includes('"public_total_supply":true'));
   assert(tknId0String.includes('"total_supply":"1000"'));
 
-  const tknId1 = await queryTokenIdPublicInfo(acc0, contract, "1"); 
+  const tknId1 = await queryTokenIdPublicInfo(acc0, contract, "1");
   const tknId1String = JSON.stringify(tknId1);
   assert(tknId1String.includes('"token_id":"1"'));
   assert(tknId1String.includes('"token_config":{"fungible"'));
   assert(tknId1String.includes('"public_total_supply":false'));
   assert(tknId1String.includes('"total_supply":null'));
 
-  const tknId2 = await await queryTokenIdPublicInfo(acc0, contract, "2"); 
+  const tknId2 = await await queryTokenIdPublicInfo(acc0, contract, "2");
   const tknId2String = JSON.stringify(tknId2);
   assert(tknId2String.includes('"token_id":"2"'));
   assert(tknId2String.includes('"token_config":{"nft"'));
@@ -979,7 +979,7 @@ async function testCurateTokenIds(
   tx = await curateTokenIds(minter, contract, "test2b", "a new nft", "NFTA", true, minter.address, "2", []);
   assert(tx.rawLog.includes("token_id test2b is an NFT; there can only be one NFT. Balances.amount must == 1"));
   bal = await queryBalance(minter, contract, minter.address, "vkey", "test2a"); assert(bal === "0");
-  bal = await queryBalance(minter, contract, minter.address, "vkey", "test2b"); assert(bal === "0");  
+  bal = await queryBalance(minter, contract, minter.address, "vkey", "test2b"); assert(bal === "0");
 }
 
 async function testMintBurnTokens(
@@ -987,19 +987,19 @@ async function testMintBurnTokens(
 ): Promise<void> {
   const contract = env.contracts[0];
   let Bal = {
-    address: env.accounts[0].address, 
-    amount: "1" 
+    address: env.accounts[0].address,
+    amount: "1"
   } as Balance;
   let Bal1 = {
-    address: env.accounts[1].address, 
-    amount: "100" 
+    address: env.accounts[1].address,
+    amount: "100"
   } as Balance;
 
   // mint ------------------
   // cannot mint if not a minter
   let tx = await mintTokens(env.accounts[1], contract, "0", [Bal]);
   assert(tx.rawLog.includes('Only minters are allowed to mint'));
-  
+
   // cannot mint non-existent token_ids
   tx = await mintTokens(env.accounts[0], contract, "na", [Bal]);
   assert(tx.rawLog.includes("token_id does not exist. Cannot mint non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"));
@@ -1011,7 +1011,7 @@ async function testMintBurnTokens(
   // cannot mint if enable_mint == false
   tx = await mintTokens(env.accounts[0], contract, "1", [Bal]);
   assert(tx.rawLog.includes('minting is not enabled for this token_id'));
-  
+
   // success: can mint
   tx = await mintTokens(env.accounts[0], contract, "0", [Bal]);
   assert(tx.code === 0);
@@ -1110,7 +1110,7 @@ async function testReceiverSanity(
 ): Promise<void> {
   const account = env.accounts[0];
   const receiver = env.contracts[1];
-  
+
   let count = await queryRecieverGetCount(account, receiver);
   assert(count === 10);
   let tx = await receiverIncrement(account, receiver);
@@ -1126,15 +1126,15 @@ async function testReceiverSanity(
 
   const msg = { reset: { count: 30 }};
   const msg_bin = toBase64(toUtf8(JSON.stringify(msg)));
-  
+
   // cannot receive if not registered
   tx = await receiverSnip1155Receive(env.accounts[1], receiver, "0", "0", "0", undefined, msg_bin);
-  assert(tx.rawLog.includes("is not receiver creator, or a known SNIP-1155 coin that this contract registered to"));  
+  assert(tx.rawLog.includes("is not receiver creator, or a known SNIP-1155 coin that this contract registered to"));
 
   // can call SNIP1155Receive (owner is authorized)
   tx = await receiverSnip1155Receive(account, receiver, "0", "0", "0", undefined, msg_bin);
   assert(tx.code === 0);
-  count = await queryRecieverGetCount(account, receiver); assert(count === 30); 
+  count = await queryRecieverGetCount(account, receiver); assert(count === 30);
 }
 
 
@@ -1144,7 +1144,7 @@ async function testRegreceiveSend(
   const account = env.accounts[0];
   const snip1155 = env.contracts[0];
   const receiver = env.contracts[1];
-  
+
   const msg = { increment: {  }};
   const msg_bin = toBase64(toUtf8(JSON.stringify(msg)));
 
@@ -1157,7 +1157,7 @@ async function testRegreceiveSend(
   assert(tx.code === 0);
   await setViewingKey(account, snip1155, "vkey");
   let bal = await queryBalance(account, snip1155, account.address, "vkey", "0"); assert(bal === "990");
-  let count = await queryRecieverGetCount(account, receiver); assert(count === 11); 
+  let count = await queryRecieverGetCount(account, receiver); assert(count === 11);
 }
 
 async function testQueries(
@@ -1191,8 +1191,8 @@ async function testQueries(
     }
   };
   assert(JSON.stringify(q_perm).includes(JSON.stringify(expPerm)));
-  
-  // acc1 (grantee) can also view permission: test using Q permits 
+
+  // acc1 (grantee) can also view permission: test using Q permits
   let permit: Permit = await generatePermit(acc1, snip1155);
   let msg = { with_permit: {
     permit,
@@ -1207,13 +1207,13 @@ async function testQueries(
   type QueryResponse = { permission: Permission };
   q_perm = await execQuery(acc0, snip1155, msg) as QueryResponse;
   assert(JSON.stringify(q_perm).includes(JSON.stringify(expPerm)));
-  
+
   // cannot query using permit not from owner or allowed_address
   permit = await generatePermit(acc2, snip1155);
   msg.with_permit.permit = permit;
-  q_perm = await execQuery(acc0, snip1155, msg) as QueryResponse; 
+  q_perm = await execQuery(acc0, snip1155, msg) as QueryResponse;
   const err_msg = `Cannot query permission. Requires permit for either owner \\"${acc0.address}\\" or viewer||spender \\"${acc1.address}\\", got permit for \\"${acc2.address}\\"`;
-  assert(JSON.stringify(q_perm).includes(err_msg));  
+  assert(JSON.stringify(q_perm).includes(err_msg));
 
   // transactionHistory --------------------------------
   tx = await transfer(acc0, snip1155, "0", acc0, acc1, "50");
@@ -1228,7 +1228,7 @@ async function testQueries(
   qp = await queryTransactionHistoryQPermit(acc1, snip1155, 10);
   assert(JSON.stringify(q).includes('"total":1'));
   assert(JSON.stringify(q) === JSON.stringify(qp));
-  
+
   // cannot view another account's history
   q = await queryTransactionHistory(acc1, snip1155, acc0.address, "vkey1", 10);
   assert(JSON.stringify(q).includes("Wrong viewing key for this address or viewing key not set"))
@@ -1262,8 +1262,8 @@ async function testQueries(
     }
   ];
   assert(JSON.stringify(q).includes(JSON.stringify(expPerms)));
-  
-  // grantee cannot see list of permissions that the account has been granted 
+
+  // grantee cannot see list of permissions that the account has been granted
   // not in base specification
   q = await queryAllPermissionsQPermit(acc1, snip1155, 5);
   assert(JSON.stringify(q).includes('{"all_permissions":{"permission_keys":[],"permissions":[],"total":0}}'));
@@ -1321,42 +1321,42 @@ async function testQueries(
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes("you do have have permission to view private token info"));
 
-  // if granted WRONG permission, 
+  // if granted WRONG permission,
   // i) can see public token info, but not private info (private metadata). owner viewable because it is configured as public info
   // ii) cannot see balance
   tx = await givePermission(acc0, snip1155, acc1, "2", undefined, undefined, undefined, undefined, "100", undefined);
-  assert(tx.code === 0); 
+  assert(tx.code === 0);
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('"private_metadata":null'));
-  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));
   q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
   assert(JSON.stringify(q).includes("you do have have permission to view balance"));
 
   // can view balance ONLY, has no effect on the TokenIdPrivateInfo query
   tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, undefined, undefined, "0", undefined,);
-  assert(tx.code === 0); 
+  assert(tx.code === 0);
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('"private_metadata":null'));
-  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));
   q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
   assert(JSON.stringify(q).includes('"amount":"1"'));
 
   // can view only private metadata if granted only that permission
   tx = await givePermission(acc0, snip1155, acc1, "2", false, undefined, true, undefined, "0", undefined);
-  assert(tx.code === 0); 
+  assert(tx.code === 0);
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
-  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));
   q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
   assert(JSON.stringify(q).includes("you do have have permission to view balance"));
 
   // can view private info if granted all permissions -- checks that leaving a field blank
   // (ie: priv_metadata viewership is undefined, or `None` in Rust), leaves setting unchanged
   tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, undefined, undefined, "0", undefined);
-  assert(tx.code === 0); 
+  assert(tx.code === 0);
   q = await queryTokenIdPrivateInfoQPermit(acc1, snip1155, "2",);
   assert(JSON.stringify(q).includes('{"token_uri":"private_token_uri","extension":{"image":null,"image_data":"some image data"'));
-  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));  
+  assert(JSON.stringify(q).includes(`"owner":"${acc0.address}"`));
   q = await queryBalanceQPermit(acc1, snip1155, acc0.address, "2",);
   assert(JSON.stringify(q).includes('"amount":"1"'));
 
@@ -1366,7 +1366,7 @@ async function testQueries(
 
   // cannot query token_id private info on fungible tokens, even if given permission by owner, because it has no `owner`
   tx = await givePermission(acc0, snip1155, acc1, "2", true, undefined, true, undefined, "10", undefined);
-  assert(tx.code === 0); 
+  assert(tx.code === 0);
   q = await queryTokenIdPrivateInfoQPermit(acc2, snip1155, "0");
   assert(JSON.stringify(q).includes('{"generic_err":{"msg":"you do have have permission to view private token info"}}'));
 
@@ -1419,5 +1419,5 @@ async function runTest(
   await runTest(testQueries, env);
 
   console.log("All tests COMPLETED SUCCESSFULLY")
-  
+
 })();

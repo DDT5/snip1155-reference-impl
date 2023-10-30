@@ -31,7 +31,7 @@ export function getValueFromRawLog(
     if (!rawLog) {
       return "";
     }
-  
+
     for (const l of JSON.parse(rawLog)) {
       for (const e of l.events) {
         for (const a of e.attributes) {
@@ -41,6 +41,6 @@ export function getValueFromRawLog(
         }
       }
     }
-  
+
     return "";
   }

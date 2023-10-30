@@ -1,13 +1,13 @@
 use std::collections::BTreeSet;
 
 use cosmwasm_std::{
-    Deps, BlockInfo, 
-    Binary, to_binary, 
+    Deps, BlockInfo,
+    Binary, to_binary,
     StdResult, StdError,
     Addr, Uint128,
     entry_point,
-    Timestamp, Env, 
-    // debug_print, 
+    Timestamp, Env,
+    // debug_print,
 };
 use secret_toolkit::{
     permit::{Permit, TokenPermissions, validate, },
@@ -16,17 +16,17 @@ use secret_toolkit::{
 
 use crate::{
     msg::{
-        QueryMsg, QueryWithPermit, QueryAnswer, 
+        QueryMsg, QueryWithPermit, QueryAnswer,
     },
     state::{
-        PREFIX_REVOKED_PERMITS, 
-        contr_conf_r, tkn_info_r, 
-        balances_r, 
+        PREFIX_REVOKED_PERMITS,
+        contr_conf_r, tkn_info_r,
+        balances_r,
         tkn_tot_supply_r,
-        get_receiver_hash, 
+        get_receiver_hash,
         state_structs::OwnerBalance,
         permissions::{PermissionKey, Permission, may_load_any_permission, list_owner_permission_keys, },
-        txhistory::{get_txs,may_get_current_owner, }, blockinfo_r, 
+        txhistory::{get_txs,may_get_current_owner, }, blockinfo_r,
     },
 };
 
@@ -34,7 +34,7 @@ use crate::{
 // Queries
 /////////////////////////////////////////////////////////////////////////////////
 
-/// contract query function. See [QueryMsg](crate::msg::QueryMsg) and 
+/// contract query function. See [QueryMsg](crate::msg::QueryMsg) and
 /// [QueryAnswer](crate::msg::QueryAnswer) for the api
 #[entry_point]
 pub fn query(
@@ -49,7 +49,7 @@ pub fn query(
         QueryMsg::WithPermit { permit, query } => permit_queries(deps, permit, query),
         QueryMsg::Balance { .. } |
         QueryMsg::AllBalances { .. } |
-        QueryMsg::TransactionHistory { .. } | 
+        QueryMsg::TransactionHistory { .. } |
         QueryMsg::Permission { .. } |
         QueryMsg::AllPermissions { .. } |
         QueryMsg::TokenIdPrivateInfo { .. } => viewing_keys_queries(deps, msg),
@@ -76,11 +76,11 @@ fn permit_queries(
 
     // Permit validated! We can now execute the query.
     match query {
-        QueryWithPermit::Balance { owner, token_id 
+        QueryWithPermit::Balance { owner, token_id
         } => query_balance(deps, &owner, &account, token_id),
         QueryWithPermit::AllBalances { tx_history_page, tx_history_page_size,
         } => query_all_balances(deps, &account, tx_history_page, tx_history_page_size),
-        QueryWithPermit::TransactionHistory { page, page_size 
+        QueryWithPermit::TransactionHistory { page, page_size
         } => query_transactions(deps, &account, page.unwrap_or(0), page_size),
         QueryWithPermit::Permission { owner, allowed_address, token_id } => {
             if account != owner.as_str() && account != allowed_address.as_str() {
@@ -92,9 +92,9 @@ fn permit_queries(
 
             query_permission(deps, token_id, owner, allowed_address)
         },
-        QueryWithPermit::AllPermissions { page, page_size 
+        QueryWithPermit::AllPermissions { page, page_size
         } => query_all_permissions(deps, &account, page.unwrap_or(0), page_size),
-        QueryWithPermit::TokenIdPrivateInfo { token_id 
+        QueryWithPermit::TokenIdPrivateInfo { token_id
         } => query_token_id_private_info(deps, &account, token_id),
     }
 }
@@ -109,7 +109,7 @@ fn viewing_keys_queries(
         let result = ViewingKey::check(deps.storage, address.as_str(), key.as_str());
         if result.is_ok() {
             return match msg {
-                QueryMsg::Balance { owner, viewer, token_id, .. 
+                QueryMsg::Balance { owner, viewer, token_id, ..
                 } => query_balance(deps, &owner, &viewer, token_id),
                 QueryMsg::AllBalances { tx_history_page, tx_history_page_size, ..
                 } => query_all_balances(deps, address, tx_history_page, tx_history_page_size),
@@ -118,11 +118,11 @@ fn viewing_keys_queries(
                     page_size,
                     ..
                 } => query_transactions(deps, address, page.unwrap_or(0), page_size),
-                QueryMsg::Permission { owner, allowed_address, token_id, .. 
+                QueryMsg::Permission { owner, allowed_address, token_id, ..
                 } => query_permission(deps, token_id, owner, allowed_address),
-                QueryMsg::AllPermissions { page, page_size, .. 
+                QueryMsg::AllPermissions { page, page_size, ..
                 } => query_all_permissions(deps, address, page.unwrap_or(0), page_size),
-                QueryMsg::TokenIdPrivateInfo { address, token_id, .. 
+                QueryMsg::TokenIdPrivateInfo { address, token_id, ..
                 } => query_token_id_private_info(deps, &address, token_id),
                 QueryMsg::ContractInfo {  } |
                 QueryMsg::TokenIdPublicInfo { .. } |
@@ -141,10 +141,10 @@ fn query_contract_info(
     deps: Deps,
 ) -> StdResult<Binary> {
     let contr_conf = contr_conf_r(deps.storage).load()?;
-    let response = QueryAnswer::ContractInfo { 
-        admin: contr_conf.admin, 
-        curators: contr_conf.curators, 
-        all_token_ids: contr_conf.token_id_list, 
+    let response = QueryAnswer::ContractInfo {
+        admin: contr_conf.admin,
+        curators: contr_conf.curators,
+        all_token_ids: contr_conf.token_id_list,
     };
     to_binary(&response)
 }
@@ -167,15 +167,15 @@ fn query_token_id_public_info(
                 None
             };
 
-            // add public supply if public_total_supply == true 
-            let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply { 
+            // add public supply if public_total_supply == true
+            let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply {
                 Some(tkn_tot_supply_r(deps.storage).load(token_id.as_bytes())?)
             } else { None };
 
-            // private_metadata always == None for public info query 
+            // private_metadata always == None for public info query
             tkn_info.private_metadata = None;
             let response = QueryAnswer::TokenIdPublicInfo { token_id_info: tkn_info, total_supply, owner };
-            to_binary(&response) 
+            to_binary(&response)
         },
     }
 }
@@ -194,7 +194,7 @@ fn query_token_id_private_info(
     }
 
     let mut tkn_info = tkn_info_op.unwrap();
-    
+
     // add owner if owner_is_public == true
     let owner: Option<Addr> =  if tkn_info.token_config.flatten().owner_is_public {
         may_get_current_owner(deps.storage, &token_id)?
@@ -212,15 +212,15 @@ fn query_token_id_private_info(
         };
 
     // If request owns at least 1 token, can view `private_metadata`. Otherwise check viewership permissions (permission only applicable to nfts, as
-    // fungible tokens have no current `owner`). 
+    // fungible tokens have no current `owner`).
     if !viewer_owns_some_tokens {
         let permission_op = may_load_any_permission(
-            deps.storage, 
+            deps.storage,
             // if no owner, = "" ie blank string => will not have any permission
-            owner.as_ref().unwrap_or(&Addr::unchecked("".to_string())), 
-            &token_id, 
+            owner.as_ref().unwrap_or(&Addr::unchecked("".to_string())),
+            &token_id,
             viewer
-        )?; 
+        )?;
         match permission_op {
             None => return Err(StdError::generic_err("you do have have permission to view private token info")),
             Some(perm) => {
@@ -231,15 +231,15 @@ fn query_token_id_private_info(
                     random: None,
                 });
                 if !perm.check_view_pr_metadata_perm(&block) { tkn_info.private_metadata = None };
-            },       
+            },
         }
     }
 
     // add public supply if public_total_supply == true
-    let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply { 
+    let total_supply: Option<Uint128> = if tkn_info.token_config.flatten().public_total_supply {
         Some(tkn_tot_supply_r(deps.storage).load(token_id.as_bytes())?)
     } else { None };
-    
+
     let response = QueryAnswer::TokenIdPrivateInfo { token_id_info: tkn_info, total_supply, owner };
     to_binary(&response)
 }
@@ -267,9 +267,9 @@ fn query_balance(
 ) -> StdResult<Binary> {
     if owner != viewer {
         let permission_op = may_load_any_permission(
-            deps.storage, 
-            owner, 
-            &token_id, 
+            deps.storage,
+            owner,
+            &token_id,
             viewer,
         )?;
         match permission_op {
@@ -307,25 +307,25 @@ fn query_all_balances(
 ) -> StdResult<Binary> {
     let address = deps.api.addr_canonicalize(account.as_str())?;
     let (txs, _total) = get_txs(
-        deps.api, 
-        deps.storage, 
-        &address, 
-        tx_history_page.unwrap_or(0u32), 
+        deps.api,
+        deps.storage,
+        &address,
+        tx_history_page.unwrap_or(0u32),
         tx_history_page_size.unwrap_or(u32::MAX)
     )?;
 
     // create unique list of token_ids that owner has potentially owned. BtreeSet used (rather than Hashset) to have a predictable order
     let token_ids = txs.into_iter().map(|tx| tx.token_id).collect::<BTreeSet<_>>();
 
-    // get balances for this list of token_ids, only if balance == Some(_), ie: user has had some balance before 
+    // get balances for this list of token_ids, only if balance == Some(_), ie: user has had some balance before
     let mut balances: Vec<OwnerBalance> = vec![];
     for token_id in token_ids.into_iter() {
         let amount = balances_r(deps.storage, &token_id).may_load(to_binary(account).unwrap().as_slice()).unwrap();
         if let Some(i) = amount {
             balances.push(OwnerBalance { token_id, amount: i })
-        } 
+        }
     }
-    
+
     let response = QueryAnswer::AllBalances(balances);
     to_binary(&response)
 }
@@ -366,20 +366,20 @@ fn query_all_permissions(
 ) -> StdResult<Binary> {
     let (permission_keys, total) = list_owner_permission_keys(deps.storage, account, page, page_size)?;
     let mut permissions: Vec<Permission> = vec![];
-    let mut valid_pkeys: Vec<PermissionKey> = vec![]; 
+    let mut valid_pkeys: Vec<PermissionKey> = vec![];
     for pkey in permission_keys {
         let permission = may_load_any_permission(
-            deps.storage, 
+            deps.storage,
             account,
             &pkey.token_id,
             &pkey.allowed_addr,
         )?;
-        if let Some(i) = permission { 
+        if let Some(i) = permission {
             permissions.push(i);
             valid_pkeys.push(pkey);
         };
     }
-    
+
     let response = QueryAnswer::AllPermissions { permission_keys: valid_pkeys, permissions, total };
     to_binary(&response)
 }

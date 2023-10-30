@@ -3,10 +3,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::state::{
-        state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo, OwnerBalance}, 
+        state_structs::{CurateTokenId, TokenAmount, StoredTokenInfo, OwnerBalance},
         permissions::{PermissionKey, Permission,},
-        txhistory::Tx, 
-        metadata::Metadata, 
+        txhistory::Tx,
+        metadata::Metadata,
      expiration::Expiration,
     };
 
@@ -24,7 +24,7 @@ pub struct InstantiateMsg {
     /// if `admin` == `None` && `has_admin` == `true`, the instantiator will be admin
     /// if `has_admin` == `false`, this field will be ignore (ie: there will be no admin)
     pub admin: Option<Addr>,
-    /// sets initial list of curators, which can create new token_ids 
+    /// sets initial list of curators, which can create new token_ids
     pub curators: Vec<Addr>,
     /// curates initial list of tokens
     pub initial_tokens: Vec<CurateTokenId>,
@@ -36,14 +36,14 @@ pub struct InstantiateMsg {
 // Handle Messages
 /////////////////////////////////////////////////////////////////////////////////
 
-/// Handle messages to SNIP1155 contract. 
-/// 
+/// Handle messages to SNIP1155 contract.
+///
 /// Mostly responds with `HandleAnswer { <variant_name>: { status: success }}` if successful.
 /// See [HandleAnswer](crate::msg::HandleAnswer) for the response messages for each variant.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
-    /// curates new token_ids. Only curators can access this function. 
+    /// curates new token_ids. Only curators can access this function.
     CurateTokenIds {
         initial_tokens: Vec<CurateTokenId>,
         memo: Option<String>,
@@ -69,14 +69,14 @@ pub enum ExecuteMsg {
     /// allows owner or minter to change metadata if allowed by token_id configuration.
     ChangeMetadata {
         token_id: String,
-        /// does not attempt to change if left blank. Can effectively remove metadata by setting 
+        /// does not attempt to change if left blank. Can effectively remove metadata by setting
         /// metadata to `Some(Metadata {token_uri: None, extension: None})`
-        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference 
+        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference
         /// between variants. Not strictly necessary.
         public_metadata: Box<Option<Metadata>>,
-        /// does not attempt to change if left blank. Can effectively remove metadata by setting 
+        /// does not attempt to change if left blank. Can effectively remove metadata by setting
         /// metadata to `Some(Metadata {token_uri: None, extension: None})`
-        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference 
+        /// used Box<T> to reduce the total size of the enum variant, to decrease size difference
         /// between variants. Not strictly necessary.
         private_metadata: Box<Option<Metadata>>,
     },
@@ -85,7 +85,7 @@ pub enum ExecuteMsg {
     /// to addr2, if addr0 gives addr3 enough transfer allowance.
     Transfer {
         token_id: String,
-        // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+        // equivalent to `owner` in SNIP20. Tokens are sent from this address.
         from: Addr,
         recipient: Addr,
         amount: Uint128,
@@ -97,11 +97,11 @@ pub enum ExecuteMsg {
         actions: Vec<TransferAction>,
         padding: Option<String>,
     },
-    /// similar to transfer, but also sends a cosmos message. The recipient needs to be a contract that 
-    /// has a SNIP1155Receive handle function. See [receiver](crate::receiver) for more information. 
+    /// similar to transfer, but also sends a cosmos message. The recipient needs to be a contract that
+    /// has a SNIP1155Receive handle function. See [receiver](crate::receiver) for more information.
     Send {
         token_id: String,
-        // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+        // equivalent to `owner` in SNIP20. Tokens are sent from this address.
         from: Addr,
         recipient: Addr,
         recipient_code_hash: Option<String>,
@@ -115,14 +115,14 @@ pub enum ExecuteMsg {
         actions: Vec<SendAction>,
         padding: Option<String>,
     },
-    /// allows an owner of token_ids to change transfer or viewership permissions to other addresses.  
-    /// 
+    /// allows an owner of token_ids to change transfer or viewership permissions to other addresses.
+    ///
     /// The base specification has three types of permissions:
     /// * view balance permission: owner can allow another address to view owner's balance of specific token_ids
     /// * view private metadata: owner can allow another address to view private metadata of specific token_ids
     /// * transfer allowance: owner can give permission to another address to transfer tokens up to a certain limit (cumulatively)
-    /// Owners can set an [expiry](crate::state::expiration) for each of these permissions. 
-    /// 
+    /// Owners can set an [expiry](crate::state::expiration) for each of these permissions.
+    ///
     /// SNIP1155 gives flexibility for permissions to have any combination of
     /// * type of permission granted
     /// * on which token_ids
@@ -191,10 +191,10 @@ pub enum ExecuteMsg {
         padding: Option<String>,
     },
     /// Permanently breaks admin keys for this contract. No admin function can be called after this
-    /// action. Any existing curators or minters will remain as curators or minters; no new curators can be 
-    /// added and no current curator can be removed. 
-    /// 
-    /// Requires caller to input current admin address and contract address. These inputs are not strictly 
+    /// action. Any existing curators or minters will remain as curators or minters; no new curators can be
+    /// added and no current curator can be removed.
+    ///
+    /// Requires caller to input current admin address and contract address. These inputs are not strictly
     /// necessary, but as a safety precaution to reduce the chances of accidentally calling this function.
     RemoveAdmin {
         current_admin: Addr,
@@ -241,7 +241,7 @@ pub enum ExecuteAnswer {
 /////////////////////////////////////////////////////////////////////////////////
 
 
-/// Query messages to SNIP1155 contract. See [QueryAnswer](crate::msg::QueryAnswer) 
+/// Query messages to SNIP1155 contract. See [QueryAnswer](crate::msg::QueryAnswer)
 /// for the response messages for each variant, which has more detail.
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -281,7 +281,7 @@ pub enum QueryMsg {
         page_size: u32,
     },
     TokenIdPublicInfo { token_id: String },
-    TokenIdPrivateInfo { 
+    TokenIdPrivateInfo {
         address: Addr,
         key: String,
         token_id: String,
@@ -320,11 +320,11 @@ impl QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryWithPermit {
-    Balance { 
-        owner: Addr, 
-        token_id: String 
+    Balance {
+        owner: Addr,
+        token_id: String
     },
-    AllBalances { 
+    AllBalances {
         tx_history_page: Option<u32>,
         tx_history_page_size: Option<u32>,
     },
@@ -341,7 +341,7 @@ pub enum QueryWithPermit {
         page: Option<u32>,
         page_size: u32,
     },
-    TokenIdPrivateInfo { 
+    TokenIdPrivateInfo {
         token_id: String,
     },
 }
@@ -366,7 +366,7 @@ pub enum QueryAnswer {
     /// returns all token_id balances owned by an address. Only owners can use this query
     AllBalances(Vec<OwnerBalance>),
     /// all permissions related to a particular address. Note that "curation" is not recorded as a transaction per se, but
-    /// the tokens minted as part of the initial_balances set by the curator is recorded under `TxAction::Mint`  
+    /// the tokens minted as part of the initial_balances set by the curator is recorded under `TxAction::Mint`
     TransactionHistory {
         txs: Vec<Tx>,
         total: u64,
@@ -374,12 +374,12 @@ pub enum QueryAnswer {
     Permission(Option<Permission>),
     /// all permissions granted, viewable by the permission granter.
     /// Users or applications can match the permission_keys that corresponds to each permission as
-    /// they have a similar order, ie: the index of `permission_keys` vector corresponds to the index 
+    /// they have a similar order, ie: the index of `permission_keys` vector corresponds to the index
     /// of the `permissions` vector.
     AllPermissions{
         permission_keys: Vec<PermissionKey>,
         permissions: Vec<Permission>,
-        /// the total number of permission entries stored for a given granter, which may include "blank" 
+        /// the total number of permission entries stored for a given granter, which may include "blank"
         /// permissions, ie: where all permissions are set to `false` or `Uint128(0)`
         total: u64,
     },
@@ -402,8 +402,8 @@ pub enum QueryAnswer {
     RegisteredCodeHash {
         code_hash: Option<String>,
     },
-    /// returned when an viewing_key-specific errors occur during a user's attempt to 
-    /// perform an authenticated query 
+    /// returned when an viewing_key-specific errors occur during a user's attempt to
+    /// perform an authenticated query
     ViewingKeyError {
         msg: String,
     },
@@ -424,7 +424,7 @@ pub enum ResponseStatus {
 #[serde(rename_all = "snake_case")]
 pub struct TransferAction {
     pub token_id: String,
-    // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+    // equivalent to `owner` in SNIP20. Tokens are sent from this address.
     pub from: Addr,
     pub recipient: Addr,
     pub amount: Uint128,
@@ -435,7 +435,7 @@ pub struct TransferAction {
 #[serde(rename_all = "snake_case")]
 pub struct SendAction {
     pub token_id: String,
-    // equivalent to `owner` in SNIP20. Tokens are sent from this address. 
+    // equivalent to `owner` in SNIP20. Tokens are sent from this address.
     pub from: Addr,
     pub recipient: Addr,
     pub recipient_code_hash: Option<String>,

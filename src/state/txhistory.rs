@@ -4,12 +4,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{
-    Storage, Api, Uint128, Addr, CanonicalAddr, BlockInfo, 
+    Storage, Api, Uint128, Addr, CanonicalAddr, BlockInfo,
     StdResult,
 };
 
 use cosmwasm_storage::{
-    PrefixedStorage, ReadonlyPrefixedStorage, 
+    PrefixedStorage, ReadonlyPrefixedStorage,
 };
 
 use secret_toolkit::storage::AppendStore;
@@ -32,7 +32,7 @@ pub static NFT_OWNER_STORE: AppendStore<Addr> = AppendStore::new(PREFIX_NFT_OWNE
 /// * `address` - a reference to the address whose txs to display
 /// * `page` - page to start displaying
 /// * `page_size` - number of txs per page
-pub fn get_txs( 
+pub fn get_txs(
     api: &dyn Api,
     storage: &dyn Storage,
     address: &CanonicalAddr,
@@ -251,24 +251,24 @@ impl StoredTx {
                 }
             },
             StoredTxAction::Burn { burner, owner, amount } => {
-                let bnr = if let Some(b) = burner { 
-                    Some(api.addr_humanize(&b)?) 
+                let bnr = if let Some(b) = burner {
+                    Some(api.addr_humanize(&b)?)
                 } else { None };
-                TxAction::Burn { 
-                    burner: bnr, 
-                    owner: api.addr_humanize(&owner)?, 
-                    amount, 
+                TxAction::Burn {
+                    burner: bnr,
+                    owner: api.addr_humanize(&owner)?,
+                    amount,
                 }
             },
             StoredTxAction::Transfer { from, sender, recipient, amount } => {
-                let sdr = if let Some(s) = sender { 
-                    Some(api.addr_humanize(&s)?) 
+                let sdr = if let Some(s) = sender {
+                    Some(api.addr_humanize(&s)?)
                 } else { None };
-                TxAction::Transfer { 
-                    from: api.addr_humanize(&from)?, 
-                    sender: sdr, 
-                    recipient: api.addr_humanize(&recipient)?,  
-                    amount 
+                TxAction::Transfer {
+                    from: api.addr_humanize(&from)?,
+                    sender: sdr,
+                    recipient: api.addr_humanize(&recipient)?,
+                    amount
                 }
             },
         };
@@ -338,8 +338,8 @@ pub struct Tx {
 /////////////////////////////////////////////////////////////////////////////////
 
 /// stores ownership history for a given token_id. Meant to be used for nfts.
-/// In base specification, only the latest (ie: current) owner is relevant. But  
-/// this design pattern is used to allow viewing a token_id's ownership history, 
+/// In base specification, only the latest (ie: current) owner is relevant. But
+/// this design pattern is used to allow viewing a token_id's ownership history,
 /// which is allowed in the additional specifications
 pub fn append_new_owner(
     storage: &mut dyn Storage,
@@ -355,7 +355,7 @@ pub fn may_get_current_owner(
     token_id: &str,
 ) -> StdResult<Option<Addr>> {
     let token_id_store = NFT_OWNER_STORE.add_suffix(token_id.as_bytes());
-        
+
     let len = token_id_store.get_len(storage)?;
     match len {
         0 => Ok(None),

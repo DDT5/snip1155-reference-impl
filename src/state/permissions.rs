@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{
     Storage, Uint128, Addr, BlockInfo,
-    StdResult, StdError, 
-    to_binary,  
+    StdResult, StdError,
+    to_binary,
 };
 
 use secret_toolkit::{
-    storage::AppendStore, //AppendStoreMut 
+    storage::AppendStore, //AppendStoreMut
 };
 
 pub static PERMISSION_ID_STORE: AppendStore<PermissionKey> = AppendStore::new(PREFIX_PERMISSION_ID);
@@ -40,7 +40,7 @@ pub fn new_permission(
     Ok(())
 }
 
-// /// updates an existing permission entry. Does not check that existing entry exists, so 
+// /// updates an existing permission entry. Does not check that existing entry exists, so
 // /// riskier to use this. But saves gas from potentially loading permission twice
 // pub fn update_permission_unchecked(
 //     storage: &mut dyn Storage,
@@ -65,10 +65,10 @@ pub fn update_permission(
     allowed_addr: &Addr,
     permission: &Permission
     // update_action: A,
-) -> StdResult<()> 
+) -> StdResult<()>
     // where
-    // S: Storage, 
-    // A: FnOnce(Option<Permission>) -> StdResult<Permission> 
+    // S: Storage,
+    // A: FnOnce(Option<Permission>) -> StdResult<Permission>
     {
 
     let update_action = |perm: Option<Permission>| -> StdResult<Permission> {
@@ -88,7 +88,7 @@ pub fn update_permission(
 
 /// returns StdResult<Option<Permission>> for a given [`owner`, `token_id`, `allowed_addr`] combination.
 /// Returns "dormant" permissions we well, ie: where owner doesn't currently own tokens.
-/// If permission does not exist -> returns StdResult<None> 
+/// If permission does not exist -> returns StdResult<None>
 pub fn may_load_any_permission(
     storage: &dyn Storage,
     owner: &Addr,
@@ -117,7 +117,7 @@ pub fn may_load_any_permission(
 // }
 
 /// Return (Vec<`PermissionKey { token_id, allowed_addr }`>, u64)
-/// returns a list and total number of PermissionKeys for a given owner. The PermissionKeys represents (part of) 
+/// returns a list and total number of PermissionKeys for a given owner. The PermissionKeys represents (part of)
 /// the keys to retrieve all permissions an `owner` has currently granted
 pub fn list_owner_permission_keys(
     storage: &dyn Storage,
@@ -154,9 +154,9 @@ pub fn list_owner_permission_keys(
     pkeys.map(|pkeys| (pkeys, owner_store.get_len(storage).unwrap_or_default() as u64))
 }
 
-/// stores a `PermissionKey {token_id: String, allowed_addr: String]` for a given `owner`. Note that 
-/// permission key is [`owner`, `token_id`, `allowed_addr`]. This function does not enforce that the 
-/// list of PermissionKey stored is unique; while this doesn't really matter, the ref implementation's 
+/// stores a `PermissionKey {token_id: String, allowed_addr: String]` for a given `owner`. Note that
+/// permission key is [`owner`, `token_id`, `allowed_addr`]. This function does not enforce that the
+/// list of PermissionKey stored is unique; while this doesn't really matter, the ref implementation's
 /// functions aim to ensure each entry is unique, for storage efficiency.
 fn append_permission_for_addr(
     storage: &mut dyn Storage,
@@ -179,8 +179,8 @@ pub struct Permission {
     pub view_balance_exp: Expiration,
     pub view_pr_metadata_perm: bool,
     pub view_pr_metadata_exp: Expiration,
-    pub trfer_allowance_perm: Uint128, 
-    pub trfer_allowance_exp: Expiration, 
+    pub trfer_allowance_perm: Uint128,
+    pub trfer_allowance_exp: Expiration,
 }
 
 impl Permission {

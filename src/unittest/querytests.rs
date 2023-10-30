@@ -16,10 +16,10 @@ use super::super::{
 };
 
 use cosmwasm_std::{
-    testing::*, 
-    StdResult, 
-    Response, 
-    Addr, 
+    testing::*,
+    StdResult,
+    Response,
+    Addr,
     from_binary, Uint128,
 };
 
@@ -79,7 +79,7 @@ fn test_query_tokenid_public_info_sanity() -> StdResult<()> {
     let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
-        QueryAnswer::TokenIdPublicInfo { token_id_info, total_supply, owner 
+        QueryAnswer::TokenIdPublicInfo { token_id_info, total_supply, owner
         } => {
             assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
             assert_eq!(token_id_info.private_metadata, None);
@@ -112,7 +112,7 @@ fn test_query_registered_code_hash() -> StdResult<()> {
         QueryAnswer::RegisteredCodeHash { code_hash } => assert_eq!(code_hash, Some(addr.a_hash())),
         _ => panic!("query error")
     }
-    
+
     Ok(())
 }
 
@@ -136,7 +136,7 @@ fn test_query_balance() -> StdResult<()> {
 
     // owner can view balance with viewing keys
     // i) generate all viewing keys
-    let vks = generate_viewing_keys(&mut deps, mock_env(), info.clone(), addr.all())?; 
+    let vks = generate_viewing_keys(&mut deps, mock_env(), info.clone(), addr.all())?;
 
     // ii) query
     let msg0_q_bal0 = QueryMsg::Balance { owner: addr.a(), viewer: addr.a(), key: vks.a(), token_id: "0".to_string() };
@@ -152,14 +152,14 @@ fn test_query_balance() -> StdResult<()> {
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
 
     // `b` cannot view `a`'s balance using `b` viewing keys, if `a` gives wrong permission
-    let msg_perm_1_wrong = ExecuteMsg::GivePermission { 
-        allowed_address: addr.b(), 
-        token_id: "0".to_string(), 
+    let msg_perm_1_wrong = ExecuteMsg::GivePermission {
+        allowed_address: addr.b(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: Some(true), view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(1000)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg_perm_1_wrong)?;
     q_result = query(deps.as_ref(), mock_env(), msg1_q_bal0.clone());
     assert!(extract_error_msg(&q_result).contains("you do have have permission to view balance"));
@@ -167,13 +167,13 @@ fn test_query_balance() -> StdResult<()> {
     // `b` can view `a`'s balance using `b` viewing keys, once `a` gives correct permission
     let mut env = mock_env();
     info.sender = addr.a();
-    let msg_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr.b(), 
-        token_id: "0".to_string(), 
+    let msg_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr.b(),
+        token_id: "0".to_string(),
         view_balance: Some(true), view_balance_expiry: Some(Expiration::AtHeight(env.block.height.add(1))),
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: None, transfer_expiry: None,
-        padding: None, 
+        padding: None,
     };
     execute(deps.as_mut(), env.clone(), info.clone(), msg_perm_1)?;
     let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg1_q_bal0.clone())?)?;
@@ -254,12 +254,12 @@ fn test_query_all_balance() -> StdResult<()> {
     }
 
     // mint additional token_id "0", doesn't create another entry in AllBalance
-    let msg_mint = ExecuteMsg::MintTokens { 
-        mint_tokens: vec![TokenAmount { 
-            token_id: "0".to_string(), 
-            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(100) }] 
-        }], 
-        memo: None, padding: None 
+    let msg_mint = ExecuteMsg::MintTokens {
+        mint_tokens: vec![TokenAmount {
+            token_id: "0".to_string(),
+            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(100) }]
+        }],
+        memo: None, padding: None
     };
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_mint)?;
@@ -368,7 +368,7 @@ fn test_query_transaction_history() -> StdResult<()> {
     let msg_tx_hist_b_b = QueryMsg::TransactionHistory { address: addr.b(), key: vks.b(), page: None, page_size: 10u32 };
     let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_tx_hist_b_b.clone())?)?;
     if let QueryAnswer::TransactionHistory { txs, total } = q_answer {
-        if let TxAction::Transfer { from, sender, recipient, amount } = &txs[0].action {  
+        if let TxAction::Transfer { from, sender, recipient, amount } = &txs[0].action {
             assert_eq!(from, &addr.a());
             assert_eq!(sender, &None);
             assert_eq!(recipient, &addr.b());
@@ -377,9 +377,9 @@ fn test_query_transaction_history() -> StdResult<()> {
         // addr.b has only two records in history
         assert_eq!(total, 2_u64);
     }
-    
+
     // burn token twice in a single tx -> get two txs in history record
-    let msg_burn = ExecuteMsg::BurnTokens { 
+    let msg_burn = ExecuteMsg::BurnTokens {
         burn_tokens: vec![TokenAmount {
             token_id: "0a".to_string(),
             balances: vec![
@@ -392,8 +392,8 @@ fn test_query_transaction_history() -> StdResult<()> {
                     amount: Uint128::new(4),
                 },
             ]
-        }], 
-        memo: None, padding: None 
+        }],
+        memo: None, padding: None
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info, msg_burn)?;
@@ -410,7 +410,7 @@ fn test_query_transaction_history() -> StdResult<()> {
             assert_eq!(owner, &addr.b());
             assert_eq!(amount, &Uint128::new(3));
         }
-        // addr.b see two additional history records 
+        // addr.b see two additional history records
         assert_eq!(total, 4_u64);
     }
 
@@ -428,14 +428,14 @@ fn test_query_permission() -> StdResult<()> {
 
     // give permission to transfer: addr0 grants addr1
     let mut info = mock_info("addr0", &[]);
-    let msg0_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "0".to_string(),
         view_balance: Some(true), view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(10)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_1)?;
 
     // query permission fails: no viewing key
@@ -457,11 +457,11 @@ fn test_query_permission() -> StdResult<()> {
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
         QueryAnswer::Permission(perm
-        ) => assert_eq!(perm.unwrap_or_default(), 
-                Permission { 
-                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
-                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
-                    trfer_allowance_perm: Uint128::new(10), trfer_allowance_exp: Expiration::default(), 
+        ) => assert_eq!(perm.unwrap_or_default(),
+                Permission {
+                    view_balance_perm: true, view_balance_exp: Expiration::default(),
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),
+                    trfer_allowance_perm: Uint128::new(10), trfer_allowance_exp: Expiration::default(),
                 }
             ),
         _ => panic!("query error")
@@ -479,11 +479,11 @@ fn test_query_permission() -> StdResult<()> {
     match q_answer {
         QueryAnswer::Permission(perm
         ) => assert_eq!(
-                perm.unwrap_or_default(), 
-                Permission { 
-                    view_balance_perm: true, view_balance_exp: Expiration::default(), 
-                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
-                    trfer_allowance_perm: Uint128::new(10), trfer_allowance_exp: Expiration::default(), 
+                perm.unwrap_or_default(),
+                Permission {
+                    view_balance_perm: true, view_balance_exp: Expiration::default(),
+                    view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),
+                    trfer_allowance_perm: Uint128::new(10), trfer_allowance_exp: Expiration::default(),
                 }
             ),
         _ => panic!("query error")
@@ -496,10 +496,10 @@ fn test_query_permission() -> StdResult<()> {
 fn test_query_all_permissions() -> StdResult<()> {
     // init addresses
     let addr = init_addrs();
-    
+
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
-    
+
     // generate vks
     let info = mock_info(addr.a().as_str(), &[]);
     let vks = generate_viewing_keys(&mut deps, mock_env(), info.clone(), addr.all())?;
@@ -508,55 +508,55 @@ fn test_query_all_permissions() -> StdResult<()> {
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
 
     // give permission to transfer: addr.a grants addr.b
-    let msg0_perm_b = ExecuteMsg::GivePermission { 
-        allowed_address: addr.b(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_b = ExecuteMsg::GivePermission {
+        allowed_address: addr.b(),
+        token_id: "0".to_string(),
         view_balance: Some(true), view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: None, transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_b)?;
 
     // give permission to transfer: addr.a grants addr.c
-    let msg0_perm_c = ExecuteMsg::GivePermission { 
-        allowed_address: addr.c(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_c = ExecuteMsg::GivePermission {
+        allowed_address: addr.c(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: Some(true), view_private_metadata_expiry: None,
         transfer: None, transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_c)?;
 
     // give permission to transfer: addr.a grants addr.d
-    let msg0_perm_d = ExecuteMsg::GivePermission { 
-        allowed_address: addr.d(), 
-        token_id: "0a".to_string(), 
+    let msg0_perm_d = ExecuteMsg::GivePermission {
+        allowed_address: addr.d(),
+        token_id: "0a".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(100)), transfer_expiry: Some(Expiration::AtHeight(100u64)),
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info, msg0_perm_d)?;
-    
+
     // addr.a() query AllPermissions
     let msg_q_allperm_a = QueryMsg::AllPermissions { address: addr.a(), key: vks.a(), page: None, page_size: 10u32 };
     let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), msg_q_allperm_a)?)?;
     if let QueryAnswer::AllPermissions { permission_keys, permissions, total } = q_answer {
-        assert_eq!(permission_keys.into_iter().rev().map(|key| key.allowed_addr).collect::<Vec<Addr>>(), 
+        assert_eq!(permission_keys.into_iter().rev().map(|key| key.allowed_addr).collect::<Vec<Addr>>(),
             vec![addr.b(), addr.c(), addr.d()]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_perm).collect::<Vec<bool>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_perm).collect::<Vec<bool>>(),
             vec![true, false, false]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_exp).collect::<Vec<Expiration>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_balance_exp).collect::<Vec<Expiration>>(),
             vec![Expiration::Never; 3]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_perm).collect::<Vec<bool>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_perm).collect::<Vec<bool>>(),
             vec![false, true, false]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_exp).collect::<Vec<Expiration>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.view_pr_metadata_exp).collect::<Vec<Expiration>>(),
             vec![Expiration::Never; 3]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_perm).collect::<Vec<Uint128>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_perm).collect::<Vec<Uint128>>(),
             vec![Uint128::new(0), Uint128::new(0), Uint128::new(100)]);
-        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_exp).collect::<Vec<Expiration>>(), 
+        assert_eq!(permissions.iter().rev().map(|perm| perm.trfer_allowance_exp).collect::<Vec<Expiration>>(),
             vec![Expiration::Never, Expiration::Never, Expiration::AtHeight(100u64)]);
         assert_eq!(total, 3u64);
     }
@@ -569,7 +569,7 @@ fn test_query_all_permissions() -> StdResult<()> {
         assert_eq!(permissions, vec![]);
         assert_eq!(total, 0u64);
     }
-    
+
     Ok(())
 }
 
@@ -590,7 +590,7 @@ fn test_query_tokenid_private_info_sanity() -> StdResult<()> {
     let q_result = query(deps.as_ref(), mock_env(), msg);
     let q_answer = from_binary::<QueryAnswer>(&q_result?)?;
     match q_answer {
-        QueryAnswer::TokenIdPrivateInfo { token_id_info, total_supply, owner 
+        QueryAnswer::TokenIdPrivateInfo { token_id_info, total_supply, owner
         } => {
             assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"public_metadata\":{\"token_uri\":\"public uri\""));
             assert!(serde_json::to_string(&token_id_info).unwrap().contains("\"private_metadata\":{\"token_uri\":\"private uri\""));

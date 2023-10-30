@@ -11,12 +11,12 @@ use super::super::{
 };
 
 use cosmwasm_std::{
-    testing::*, 
+    testing::*,
     StdResult, StdError, Response,
     CosmosMsg, WasmMsg,
-    Env, OwnedDeps, MessageInfo, Storage, 
-    Addr, 
-    Uint128, 
+    Env, OwnedDeps, MessageInfo, Storage,
+    Addr,
+    Uint128,
     to_binary, from_binary,
 };
 
@@ -99,7 +99,7 @@ pub fn init_helper_default() -> (
 /// * 1 NFT token_id 2 to addr2
 /// * 1 NFT token_id 2a to addr2
 pub fn curate_addtl_default(
-    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>, 
+    deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
     info: MessageInfo,
 ) -> StdResult<()> {
@@ -131,7 +131,7 @@ pub fn curate_addtl_default(
     curate2.token_info.symbol = "TKNB".to_string();
     curate2.token_info.token_config = TknConfig::default_nft();
     curate2.balances = vec![TokenIdBalance { address: addr2.clone(), amount: Uint128::new(1) }];
-    
+
     // NFT "2a"
     let mut curate2a = CurateTokenId::default();
     curate2a.token_info.token_id = "2a".to_string();
@@ -143,7 +143,7 @@ pub fn curate_addtl_default(
     // batch curate token_id "0a", "1", NFT "2" and NFT "3"
     let msg = ExecuteMsg::CurateTokenIds{initial_tokens: vec![curate0a, curate1, curate2, curate2a], memo: None, padding: None };
     execute(deps.as_mut(), env, info, msg)?;
-    
+
     Ok(())
 }
 
@@ -164,7 +164,7 @@ pub fn _extract_log(resp: StdResult<Response>) -> String {
     }
 }
 
-/// checks token balance. Token_id input takes `&str` input, which converts to `String`  
+/// checks token balance. Token_id input takes `&str` input, which converts to `String`
 pub fn chk_bal(
     storage: &dyn Storage,
     token_id_str: &str,
@@ -192,7 +192,7 @@ pub fn extract_cosmos_msg<U: DeserializeOwned>(message: &CosmosMsg) -> StdResult
 pub fn generate_viewing_keys(
     deps: &mut OwnedDeps<MockStorage, MockApi, MockQuerier>,
     env: Env,
-    info: MessageInfo, 
+    info: MessageInfo,
     addresses: Vec<Addr>
 ) -> StdResult<Vks> {
     let mut vks: Vec<String> = vec![];
@@ -204,7 +204,7 @@ pub fn generate_viewing_keys(
         let vk = from_binary::<ExecuteAnswer>(&response.data.unwrap())?;
         if let ExecuteAnswer::CreateViewingKey { key } = vk {
             vks.push(key.to_string())
-        } else { 
+        } else {
             return Err(StdError::generic_err("no viewing key generated"))
         }
     }

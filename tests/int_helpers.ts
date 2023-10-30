@@ -2,7 +2,7 @@ import axios from "axios";
 import { Wallet, SecretNetworkClient, TxResponse } from "secretjs";
 import { Account, ContractInfo } from "./int_utils";
 
-/** creates new accounts by funding from genesis account `a` */ 
+/** creates new accounts by funding from genesis account `a` */
 export const initClient = async () => {
   let endpoint = "http://localhost:1317" //endpoint
   let chainId = "secretdev-1";
@@ -137,7 +137,7 @@ export async function getScrtBalance(userCli: SecretNetworkClient): Promise<stri
     address: userCli.address,
     denom: "uscrt",
   });
-  
+
   if (balanceResponse?.balance?.amount === undefined) {
     throw new Error(`Failed to get balance for address: ${userCli.address}`)
   }

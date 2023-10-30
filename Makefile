@@ -1,5 +1,5 @@
-# runs schema, docs, unit-test, and clippy (incl on unit tests). 
-# Doesn't do integration-test or mainnet-build 
+# runs schema, docs, unit-test, and clippy (incl on unit tests).
+# Doesn't do integration-test or mainnet-build
 .PHONY: prep
 prep: schema doc test _clippy-test
 _clippy-test:
@@ -12,7 +12,7 @@ check:
 .PHONY: clippy
 clippy:
 	cargo clippy
-	
+
 PHONY: test
 test: unit-test
 
@@ -66,7 +66,7 @@ schema:
 # Ctrl-C to exit terminal, but does not stop the server
 .PHONY: start-server
 start-server:
-	docker start -a localsecret || true 
+	docker start -a localsecret || true
 	docker run -it -p 9091:9091 -p 26657:26657 -p 26656:26656 -p 1317:1317 -p 5000:5000 --name localsecret ghcr.io/scrtlabs/localsecret:v1.10.0
 
 .PHONY: stop-server
@@ -116,7 +116,7 @@ tarpaulin:
 secretcli-upload: compile
 	export a=$(secretcli keys show a -a)
 	secretcli tx compute store contract.wasm.gz --from a -y --gas 10000000
-	
+
 .PHONY: secretcli-q-tx
 secretcli-q-tx:
 	secretcli q tx "$(txhash)"| jq ".raw_log"

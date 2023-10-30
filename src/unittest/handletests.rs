@@ -15,11 +15,11 @@ use super::super::{
 };
 
 use cosmwasm_std::{
-    testing::*, 
-    StdResult, 
-    Response, 
-    Addr, Uint128, 
-    to_binary, from_binary, 
+    testing::*,
+    StdResult,
+    Response,
+    Addr, Uint128,
+    to_binary, from_binary,
 };
 use secret_toolkit::{
     permit::RevokedPermits,
@@ -38,7 +38,7 @@ fn init_sanity() -> StdResult<()> {
     // instantiate
     let (init_result, deps) = init_helper_default();
     assert_eq!(init_result.unwrap(), Response::default());
-    
+
     // check contract config
     let contr_conf = contr_conf_r(&deps.storage).load()?;
     assert_eq!(contr_conf.admin.unwrap(), addr0);
@@ -46,11 +46,11 @@ fn init_sanity() -> StdResult<()> {
     // 1 minting could have happened, so tx_cnt should == 1:
     assert_eq!(contr_conf.tx_cnt, 1u64);
     let token_id = "0".to_string();
-    
+
     // check initial balances
     let balance = balances_r(&deps.storage, &token_id).load(to_binary(&addr0)?.as_slice())?;
     assert_eq!(balance, Uint128::new(1000));
-    
+
     Ok(())
 }
 
@@ -68,22 +68,22 @@ fn curate_token_id_sanity() -> StdResult<()> {
     // curate additional token_ids
     let info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info)?;
-    
+
     // check balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(1000));
     assert_eq!(chk_bal(&deps.storage, "0a", &addr0).unwrap(), Uint128::new(800));
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128::new(500));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(1));
     assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128::new(1));
-    // 1 initial balance, 4 curate_token_id 
+    // 1 initial balance, 4 curate_token_id
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 5u64);
 
-    // initial balance comprehensive check 
+    // initial balance comprehensive check
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(1000));
-    assert_eq!(chk_bal(&deps.storage, "0", &addr1), None); 
+    assert_eq!(chk_bal(&deps.storage, "0", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "0", &addr2), None);
     assert_eq!(chk_bal(&deps.storage, "0a", &addr0).unwrap(), Uint128::new(800));
-    assert_eq!(chk_bal(&deps.storage, "0a", &addr1), None); 
+    assert_eq!(chk_bal(&deps.storage, "0a", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "0a", &addr2), None);
     assert_eq!(chk_bal(&deps.storage, "1", &addr0), None);
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128::new(500));
@@ -111,7 +111,7 @@ fn test_curate_token_id() -> StdResult<()> {
     // curate additional token_ids
     let mut info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
-    
+
     // cannot mint more than 1 nft; address != 1
     let mut curate = CurateTokenId::default();
     curate.token_info.token_id = "testa".to_string();
@@ -169,8 +169,8 @@ fn test_mint_tokens() -> StdResult<()> {
 
 
     // error: cannot mint non-existent token_id
-    let mint_non_exist = TokenAmount { 
-        token_id: "test0".to_string(), 
+    let mint_non_exist = TokenAmount {
+        token_id: "test0".to_string(),
         balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(100) },],
     };
     let msg = ExecuteMsg::MintTokens{ mint_tokens: vec![mint_non_exist], memo: None, padding: None };
@@ -179,8 +179,8 @@ fn test_mint_tokens() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), None);
 
     // success: mint more fungible tokens to multiple addresses
-    let mint = TokenAmount { 
-        token_id: "0".to_string(), 
+    let mint = TokenAmount {
+        token_id: "0".to_string(),
         balances: vec![
             TokenIdBalance { address: addr.a(), amount: Uint128::new(10) },
             TokenIdBalance { address: addr.b(), amount: Uint128::new(10) }
@@ -190,7 +190,7 @@ fn test_mint_tokens() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128::new(1010));
     assert_eq!(chk_bal(&deps.storage, "0", &addr.b()).unwrap(), Uint128::new(10));
-    // 1 initial balance, 4 curate_token_id, 2 mint_token 
+    // 1 initial balance, 4 curate_token_id, 2 mint_token
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     // non-minter cannot mint
@@ -200,17 +200,17 @@ fn test_mint_tokens() -> StdResult<()> {
 
     // cannot mint additional nfts
     info.sender = addr.a();
-    let mint = TokenAmount { 
-        token_id: "2".to_string(), 
+    let mint = TokenAmount {
+        token_id: "2".to_string(),
         balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(1) }],
     };
     let msg = ExecuteMsg::MintTokens{ mint_tokens: vec![mint], memo: None, padding: None };
     let result = execute(deps.as_mut(), mock_env(), info, msg);
     assert!(extract_error_msg(&result).contains("minting is not enabled for this token_id"));
     assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128::new(1010));
-    // 1 initial balance, 4 curate_token_id, 2 mint_token 
+    // 1 initial balance, 4 curate_token_id, 2 mint_token
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
-    
+
     Ok(())
 }
 
@@ -228,14 +228,14 @@ fn test_burn() -> StdResult<()> {
     let mut info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
 
-    // initial balance check 
+    // initial balance check
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(1000));
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128::new(500));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(1));
 
     // burn tokens of another address => should fail
-    let burn = TokenAmount { 
-        token_id: "1".to_string(), 
+    let burn = TokenAmount {
+        token_id: "1".to_string(),
         balances: vec![
             TokenIdBalance { address: addr1.clone(), amount: Uint128::new(501) }
         ],
@@ -250,8 +250,8 @@ fn test_burn() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("insufficient funds"));
 
     // burn fungible tokens should work
-    let burn = TokenAmount { 
-        token_id: "1".to_string(), 
+    let burn = TokenAmount {
+        token_id: "1".to_string(),
         balances: vec![
             TokenIdBalance { address: addr1.clone(), amount: Uint128::new(300) }
         ],
@@ -259,11 +259,11 @@ fn test_burn() -> StdResult<()> {
     let msg = ExecuteMsg::BurnTokens{ burn_tokens: vec![burn], memo: None, padding: None };
     execute(deps.as_mut(), mock_env(), info.clone(), msg)?;
     assert_eq!(chk_bal(&deps.storage, "1", &addr1).unwrap(), Uint128::new(200));
-    
+
     // burn nft should work
     info.sender = addr2.clone();
-    let burn = TokenAmount { 
-        token_id: "2".to_string(), 
+    let burn = TokenAmount {
+        token_id: "2".to_string(),
         balances: vec![
             TokenIdBalance { address: addr2.clone(), amount: Uint128::new(1) }
         ],
@@ -272,7 +272,7 @@ fn test_burn() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info, msg)?;
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(0));
 
-    // 1 initial balance, 4 curate_token_id, 2 burns 
+    // 1 initial balance, 4 curate_token_id, 2 burns
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
@@ -299,13 +299,13 @@ fn test_change_metadata_nft() -> StdResult<()> {
         entropy: "seedentropy".to_string(),
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
-    
+
     // curate three nfts: one which owner can change metadata...
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "testnft0".to_string();
     curate0.token_info.token_config = TknConfig::default_nft();
     curate0.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128::new(1) }];
-    
+
     // ... one which owner cannot change metadata...
     let mut curate1 = CurateTokenId::default();
     curate1.token_info.token_id = "testnft1".to_string();
@@ -314,7 +314,7 @@ fn test_change_metadata_nft() -> StdResult<()> {
     flat_config.owner_may_update_metadata = false;
     curate1.token_info.token_config = flat_config.to_enum();
     curate1.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128::new(1) }];
-    
+
     // ... and one where minter can change metadata (and owner cannot)
     let mut curate2 = CurateTokenId::default();
     curate2.token_info.token_id = "testnft2".to_string();
@@ -324,28 +324,28 @@ fn test_change_metadata_nft() -> StdResult<()> {
     flat_config.owner_may_update_metadata = false;
     curate2.token_info.token_config = flat_config.to_enum();
     curate2.balances = vec![TokenIdBalance { address: addr.c(), amount: Uint128::new(1) }];
-    
-    let msg_curate = ExecuteMsg::CurateTokenIds { 
+
+    let msg_curate = ExecuteMsg::CurateTokenIds {
         initial_tokens: vec![curate0, curate1, curate2],
-        memo: None, padding: None 
+        memo: None, padding: None
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_curate)?;
 
     // error: admin cannot change nft metadata if not owner
-    let msg_change_metadata = ExecuteMsg::ChangeMetadata { 
-        token_id: "testnft0".to_string(), 
+    let msg_change_metadata = ExecuteMsg::ChangeMetadata {
+        token_id: "testnft0".to_string(),
         public_metadata: Box::new(Some(Metadata {
             token_uri: Some("new public uri for testnft0".to_string()),
             extension: Some(Extension::default()),
-        })),  
-        private_metadata: Box::new(None), 
+        })),
+        private_metadata: Box::new(None),
     };
     info.sender = addr.a();
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata.clone());
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
 
-    // error: curator cannot change nft metadata if not owner 
+    // error: curator cannot change nft metadata if not owner
     info.sender = addr.b();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata.clone());
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
@@ -356,10 +356,10 @@ fn test_change_metadata_nft() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id testnft0"));
 
     // error: nft owner cannot change metadata if config doesn't allow
-    let msg_change_metadata_nft1 = ExecuteMsg::ChangeMetadata { 
-        token_id: "testnft1".to_string(), 
-        public_metadata: Box::new(None),  
-        private_metadata: Box::new(None), 
+    let msg_change_metadata_nft1 = ExecuteMsg::ChangeMetadata {
+        token_id: "testnft1".to_string(),
+        public_metadata: Box::new(None),
+        private_metadata: Box::new(None),
     };
     info.sender = addr.c();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata_nft1);
@@ -380,16 +380,16 @@ fn test_change_metadata_nft() -> StdResult<()> {
             extension: Some(Extension::default()),
         }));
     // transfer nft to a different owner...
-    let msg_trans = ExecuteMsg::Transfer { 
-        token_id: "testnft0".to_string(), 
-        from: addr.c(), 
-        recipient: addr.d(), 
-        amount: Uint128::new(1), 
-        memo: None, padding: None 
+    let msg_trans = ExecuteMsg::Transfer {
+        token_id: "testnft0".to_string(),
+        from: addr.c(),
+        recipient: addr.d(),
+        amount: Uint128::new(1),
+        memo: None, padding: None
     };
     info.sender = addr.c();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_trans)?;
-    
+
     // ...error: old nft owner cannot change metadata
     info.sender = addr.c();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata.clone());
@@ -402,13 +402,13 @@ fn test_change_metadata_nft() -> StdResult<()> {
 
     // additional nft tests:
     // testnft2 token, where minter can change metadata, but owner cannot
-    let msg_change_metadata_nft2 = ExecuteMsg::ChangeMetadata { 
-        token_id: "testnft2".to_string(), 
-        public_metadata: Box::new(None),  
+    let msg_change_metadata_nft2 = ExecuteMsg::ChangeMetadata {
+        token_id: "testnft2".to_string(),
+        public_metadata: Box::new(None),
         private_metadata: Box::new(Some(Metadata {
             token_uri: Some("new private uri for testnft2".to_string()),
             extension: Some(Extension::default()),
-        })),  
+        })),
     };
     // admin cannot change metadata
     info.sender = addr.a();
@@ -464,7 +464,7 @@ fn test_change_metadata_fungible() -> StdResult<()> {
         entropy: "seedentropy".to_string(),
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
-    
+
     // curate two fungible tokens: one which owner can change metadata, and one which owner cannot
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "test0".to_string();
@@ -473,7 +473,7 @@ fn test_change_metadata_fungible() -> StdResult<()> {
     flat_config.minters = vec![addr.c()];
     curate0.token_info.token_config = flat_config.to_enum();
     curate0.balances = vec![TokenIdBalance { address: addr.d(), amount: Uint128::new(1000) }];
-    
+
     let mut curate1 = CurateTokenId::default();
     curate1.token_info.token_id = "test1".to_string();
     curate1.token_info.token_config = TknConfig::default_fungible();
@@ -482,28 +482,28 @@ fn test_change_metadata_fungible() -> StdResult<()> {
     flat_config.minter_may_update_metadata = false;
     curate1.token_info.token_config = flat_config.to_enum();
     curate1.balances = vec![TokenIdBalance { address: addr.d(), amount: Uint128::new(1000) }];
-    
-    let msg_curate = ExecuteMsg::CurateTokenIds { 
+
+    let msg_curate = ExecuteMsg::CurateTokenIds {
         initial_tokens: vec![curate0, curate1],
-        memo: None, padding: None 
+        memo: None, padding: None
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_curate)?;
 
     // error: admin cannot change metadata if not minter
-    let msg_change_metadata = ExecuteMsg::ChangeMetadata { 
-        token_id: "test0".to_string(), 
+    let msg_change_metadata = ExecuteMsg::ChangeMetadata {
+        token_id: "test0".to_string(),
         public_metadata: Box::new(Some(Metadata {
             token_uri: Some("new public uri".to_string()),
             extension: Some(Extension::default()),
-        })),  
-        private_metadata: Box::new(None), 
+        })),
+        private_metadata: Box::new(None),
     };
     info.sender = addr.a();
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata.clone());
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
 
-    // error: curator cannot change nft metadata if not minter 
+    // error: curator cannot change nft metadata if not minter
     info.sender = addr.b();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata.clone());
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
@@ -514,10 +514,10 @@ fn test_change_metadata_fungible() -> StdResult<()> {
     assert!(extract_error_msg(&result).contains("unable to change the metadata for token_id test0"));
 
     // error: minter cannot change metadata if config doesn't allow
-    let msg_change_metadata_test1 = ExecuteMsg::ChangeMetadata { 
-        token_id: "test1".to_string(), 
-        public_metadata: Box::new(None),  
-        private_metadata: Box::new(None), 
+    let msg_change_metadata_test1 = ExecuteMsg::ChangeMetadata {
+        token_id: "test1".to_string(),
+        public_metadata: Box::new(None),
+        private_metadata: Box::new(None),
     };
     info.sender = addr.c();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata_test1);
@@ -546,7 +546,7 @@ fn test_change_metadata_fungible() -> StdResult<()> {
     };
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_add_minter)?;
-    
+
     // ...admin can remove minter
     let msg_remove_minter = ExecuteMsg::RemoveMinters {
         token_id: "test0".to_string(),
@@ -582,19 +582,19 @@ fn test_transfer() -> StdResult<()> {
     let mut info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
 
-    // initial balance check 
+    // initial balance check
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(1));
     assert_eq!(chk_bal(&deps.storage, "2", &addr1), None);
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(1000));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1), None);
 
     // transfer fungible token "tkn0"
-    let msg = ExecuteMsg::Transfer { 
-        token_id: "0".to_string(), 
-        from: addr0.clone(), 
-        recipient: addr1.clone(), 
+    let msg = ExecuteMsg::Transfer {
+        token_id: "0".to_string(),
+        from: addr0.clone(),
+        recipient: addr1.clone(),
         amount: Uint128::new(800),
-        memo: None, padding: None, 
+        memo: None, padding: None,
     };
     execute(deps.as_mut(), mock_env(), info.clone(), msg.clone())?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(200));
@@ -607,32 +607,32 @@ fn test_transfer() -> StdResult<()> {
 
     // transfer NFT "tkn2"; amount != 1
     info.sender = addr2.clone();
-    let msg = ExecuteMsg::Transfer { 
-        token_id: "2".to_string(), 
-        from: addr2.clone(), 
-        recipient: addr1.clone(), 
+    let msg = ExecuteMsg::Transfer {
+        token_id: "2".to_string(),
+        from: addr2.clone(),
+        recipient: addr1.clone(),
         amount: Uint128::new(0),
-        memo: None, padding: None, 
+        memo: None, padding: None,
     };
     let result = execute(deps.as_mut(), mock_env(), info.clone(), msg);
     assert!(extract_error_msg(&result).contains("NFT amount must == 1"));
 
     // transfer NFT "tkn2"; should succeed
-    let msg = ExecuteMsg::Transfer { 
-        token_id: "2".to_string(), 
-        from: addr2.clone(), 
-        recipient: addr1.clone(), 
+    let msg = ExecuteMsg::Transfer {
+        token_id: "2".to_string(),
+        from: addr2.clone(),
+        recipient: addr1.clone(),
         amount: Uint128::new(1),
-        memo: None, padding: None, 
+        memo: None, padding: None,
     };
     execute(deps.as_mut(), mock_env(), info, msg)?;
 
-    // final balance check 
+    // final balance check
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(0));
     assert_eq!(chk_bal(&deps.storage, "2", &addr1).unwrap(), Uint128::new(1));
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(200));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128::new(800));
-    // 1 initial balance, 4 curate_token_id, 2 transfers 
+    // 1 initial balance, 4 curate_token_id, 2 transfers
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
@@ -646,24 +646,24 @@ fn test_send() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // initial balance check 
+    // initial balance check
     assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128::new(1000));
 
     // `send` token_id "0" with msg
     let info = mock_info(addr.a().as_str(), &[]);
-    let msg = ExecuteMsg::Send { 
-        token_id: "0".to_string(), 
-        from: addr.a(), 
-        recipient: addr.b(), 
+    let msg = ExecuteMsg::Send {
+        token_id: "0".to_string(),
+        from: addr.a(),
+        recipient: addr.b(),
         recipient_code_hash: Some(addr.b_hash()),
         amount: Uint128::new(800),
-        msg: Some(to_binary(&"msg_str")?), 
+        msg: Some(to_binary(&"msg_str")?),
         memo: None, padding: None,
     };
     let response = execute(deps.as_mut(), mock_env(), info, msg)?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr.a()).unwrap(), Uint128::new(200));
     assert_eq!(chk_bal(&deps.storage, "0", &addr.b()).unwrap(), Uint128::new(800));
-    let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?; 
+    let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?;
     assert_eq!(receiver_addr, Some(addr.b())); assert_eq!(receiver_hash, &addr.b_hash());
     let exp_receive_msg = Snip1155ReceiveMsg {
         sender: addr.a(),
@@ -671,7 +671,7 @@ fn test_send() -> StdResult<()> {
         from: addr.a(),
         amount: Uint128::new(800),
         memo: None,
-        msg: Some(to_binary(&"msg_str")?), 
+        msg: Some(to_binary(&"msg_str")?),
     };
     match receiver_msg {
         ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg),
@@ -689,7 +689,7 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
 
     //instantiate
     let (_init_result, mut deps) = init_helper_default();
-    
+
     // curate new tokens
     let info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
@@ -697,9 +697,9 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
     // initial balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr.c()), None);
     assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), None);
-    
+
     // can batch transfer
-    let msg_batch_trans = ExecuteMsg::BatchTransfer { 
+    let msg_batch_trans = ExecuteMsg::BatchTransfer {
         actions: vec![
             TransferAction {
                 token_id: "0".to_string(),
@@ -715,14 +715,14 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
                 amount: Uint128::new(20),
                 memo: None,
             },
-        ], 
+        ],
         padding: None
     };
     execute(deps.as_mut(), mock_env(), info.clone(), msg_batch_trans)?;
-    
+
     assert_eq!(chk_bal(&deps.storage, "0", &addr.b()), Some(Uint128::new(10)));
     assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), Some(Uint128::new(20)));
-    
+
      // can batch send
     let msg_batch_send = ExecuteMsg::BatchSend {
         actions: vec![
@@ -748,13 +748,13 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
         padding: None,
     };
     let response = execute(deps.as_mut(), mock_env(), info, msg_batch_send)?;
-    
+
     // check balances
     assert_eq!(chk_bal(&deps.storage, "0", &addr.b()), Some(Uint128::new(30)));
     assert_eq!(chk_bal(&deps.storage, "0a", &addr.c()), Some(Uint128::new(50)));
 
     // check inter-contract messages
-    let (receiver_msg_b, receiver_addr_b, receiver_hash_b) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?; 
+    let (receiver_msg_b, receiver_addr_b, receiver_hash_b) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?;
     assert_eq!(receiver_addr_b, Some(addr.b())); assert_eq!(receiver_hash_b, &addr.b_hash());
     let exp_receive_msg_b = Snip1155ReceiveMsg {
         sender: addr.a(),
@@ -762,13 +762,13 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
         from: addr.a(),
         amount: Uint128::new(20),
         memo: None,
-        msg: Some(to_binary(&"test message to b")?), 
+        msg: Some(to_binary(&"test message to b")?),
     };
     match receiver_msg_b {
         ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg_b),
     }
 
-    let (receiver_msg_c, receiver_addr_c, receiver_hash_c) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[1].msg)?; 
+    let (receiver_msg_c, receiver_addr_c, receiver_hash_c) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[1].msg)?;
     assert_eq!(receiver_addr_c, Some(addr.c())); assert_eq!(receiver_hash_c, &addr.c_hash());
     let exp_receive_msg_c = Snip1155ReceiveMsg {
         sender: addr.a(),
@@ -776,7 +776,7 @@ fn test_batch_transfer_and_send_sanity() -> StdResult<()> {
         from: addr.a(),
         amount: Uint128::new(30),
         memo: None,
-        msg: Some(to_binary(&"test message to c")?), 
+        msg: Some(to_binary(&"test message to c")?),
     };
     match receiver_msg_c {
         ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg_c),
@@ -793,9 +793,9 @@ fn test_batch_transfer_and_send_errors() -> StdResult<()> {
 
     //instantiate
     let (_init_result, mut deps) = init_helper_default();
-     
+
     // cannot batch transfer 0a because it does not exist
-    let msg_batch_trans = ExecuteMsg::BatchTransfer { 
+    let msg_batch_trans = ExecuteMsg::BatchTransfer {
         actions: vec![
             TransferAction {
                 token_id: "0".to_string(),
@@ -811,7 +811,7 @@ fn test_batch_transfer_and_send_errors() -> StdResult<()> {
                 amount: Uint128::new(20),
                 memo: None,
             },
-        ], 
+        ],
         padding: None
     };
     let info = mock_info("addr0", &[]);
@@ -831,7 +831,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // initial balance check 
+    // initial balance check
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(1000));
 
     // cannot transfer without allowance
@@ -842,30 +842,30 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
         recipient: addr1.clone(),
         amount: Uint128::new(10),
         memo: None, padding: None,
-    }; 
+    };
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg_trnsf_0.clone());
     assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
 
     // cannot transfer with insufficient allowance
     info.sender = addr0.clone();
-    let msg0_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(11)), transfer_expiry: None,
         padding: None,
-    };  
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_1)?;
     // check that old permission gets replaced if a new one is granted
-    let msg0_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(9)), transfer_expiry: None,
         padding: None,
-    };  
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_1)?;
 
     info.sender = addr1.clone();
@@ -874,14 +874,14 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
 
     // cannot transfer with wrong allowances: wrong spender address: addr2 has the transfer permission
     info.sender = addr0.clone();
-    let msg0_perm_2 = ExecuteMsg::GivePermission { 
-        allowed_address: addr2.clone(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_2 = ExecuteMsg::GivePermission {
+        allowed_address: addr2.clone(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(15)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_2)?;
 
     info.sender = addr1.clone();
@@ -890,14 +890,14 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
 
     // cannot transfer with wrong allowances: wrong owner address: addr1 giving permission
     info.sender = addr1.clone();
-    let msg1_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "0".to_string(), 
+    let msg1_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(10)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg1_perm_1)?;
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_trnsf_0.clone());
     assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: "));
@@ -908,7 +908,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(990));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128::new(10));
 
-    // allowance gets consumed: cannot exceed allowance with a second tx 
+    // allowance gets consumed: cannot exceed allowance with a second tx
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_trnsf_0.clone());
     assert!(extract_error_msg(&result).contains("Insufficient transfer allowance: 5"));
 
@@ -922,7 +922,7 @@ fn test_transfer_permissions_fungible() -> StdResult<()> {
     execute(deps.as_mut(), mock_env(), info.clone(), msg_trnsf_0.clone())?; execute(deps.as_mut(), mock_env(), info, msg_trnsf_0)?;
     assert_eq!(chk_bal(&deps.storage, "0", &addr0).unwrap(), Uint128::new(970));
     assert_eq!(chk_bal(&deps.storage, "0", &addr1).unwrap(), Uint128::new(30));
-    // 1 initial balance, 3 transfers 
+    // 1 initial balance, 3 transfers
     assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 4u64);
 
     Ok(())
@@ -942,31 +942,31 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
     let mut info = mock_info("addr0", &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
 
-    // cannot transfer: no permission 
+    // cannot transfer: no permission
     info.sender = addr1.clone();
-    let msg1_trnsf_0 = ExecuteMsg::Transfer { 
-        token_id: "2".to_string(), 
-        from: addr2.clone(), 
-        recipient: addr0.clone(), 
+    let msg1_trnsf_0 = ExecuteMsg::Transfer {
+        token_id: "2".to_string(),
+        from: addr2.clone(),
+        recipient: addr0.clone(),
         amount: Uint128::new(1),
-        memo: None, 
-        padding: None, 
+        memo: None,
+        padding: None,
     };
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg1_trnsf_0.clone());
     assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
     assert_eq!(chk_bal(&deps.storage, "2", &addr2).unwrap(), Uint128::new(1));
     assert_eq!(chk_bal(&deps.storage, "2", &addr0), None);
-    
+
     // give permission to transfer
     info.sender = addr2.clone();
-    let msg2_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "2".to_string(), 
+    let msg2_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "2".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(10)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg2_perm_1)?;
 
     // addr1 can now transfer addr2's nft to addr0
@@ -984,25 +984,25 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
 
     // give permission to transfern token 2a
     info.sender = addr2.clone();
-    let msg2_perm_1 = ExecuteMsg::GivePermission { 
-        allowed_address: addr1.clone(), 
-        token_id: "2a".to_string(), 
+    let msg2_perm_1 = ExecuteMsg::GivePermission {
+        allowed_address: addr1.clone(),
+        token_id: "2a".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(1)), transfer_expiry: None,
-        padding: None, 
-    };  
+        padding: None,
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg2_perm_1)?;
     // double check that addr1 has permission to transfer token 2a
     assert_eq!(
-        perm_r(&deps.storage, &addr2, "2a").load(addr1_u8)?, 
-        Permission { 
-            view_balance_perm: false, view_balance_exp: Expiration::default(), 
-            view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),  
-            trfer_allowance_perm: Uint128::new(1), trfer_allowance_exp: Expiration::default(), 
-        } 
+        perm_r(&deps.storage, &addr2, "2a").load(addr1_u8)?,
+        Permission {
+            view_balance_perm: false, view_balance_exp: Expiration::default(),
+            view_pr_metadata_perm: false, view_pr_metadata_exp: Expiration::default(),
+            trfer_allowance_perm: Uint128::new(1), trfer_allowance_exp: Expiration::default(),
+        }
     );
-    
+
     // addr2 transfers away token 2a
     info.sender = addr2.clone();
     let msg = ExecuteMsg::Transfer {
@@ -1011,12 +1011,12 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
         recipient: addr0.clone(),
         amount: Uint128::new(1),
         memo: None, padding: None,
-    };  
+    };
     execute(deps.as_mut(), mock_env(), info.clone(), msg)?;
     assert_eq!(chk_bal(&deps.storage, "2a", &addr2).unwrap(), Uint128::new(0));
     assert_eq!(chk_bal(&deps.storage, "2a", &addr0).unwrap(), Uint128::new(1));
 
-    // user1 cannot transfer nft (now owned by user0), even though it previously had allowance 
+    // user1 cannot transfer nft (now owned by user0), even though it previously had allowance
     // when it was owned by user2
     info.sender = addr1.clone();
     let msg = ExecuteMsg::Transfer {
@@ -1025,7 +1025,7 @@ fn test_transfer_permissions_nft() -> StdResult<()> {
         recipient: addr1.clone(),
         amount: Uint128::new(1),
         memo: None, padding: None,
-    };  
+    };
     result = execute(deps.as_mut(), mock_env(), info, msg);
     assert!(extract_error_msg(&result).contains("These tokens do not exist or you have no permission to transfer"));
     assert_eq!(chk_bal(&deps.storage, "2a", &addr1), None);
@@ -1041,25 +1041,25 @@ fn test_revoke_permission_sanity() -> StdResult<()> {
 
     //instantiate
     let (_init_result, mut deps) = init_helper_default();
-     
+
     // give permission
-    let msg0_perm_b = ExecuteMsg::GivePermission { 
-        allowed_address: addr.b(), 
-        token_id: "0".to_string(), 
+    let msg0_perm_b = ExecuteMsg::GivePermission {
+        allowed_address: addr.b(),
+        token_id: "0".to_string(),
         view_balance: None, view_balance_expiry: None,
         view_private_metadata: None, view_private_metadata_expiry: None,
         transfer: Some(Uint128::new(10)), transfer_expiry: None,
         padding: None,
-    };  
+    };
     let mut info = mock_info("addr0", &[]);
     execute(deps.as_mut(), mock_env(), info.clone(), msg0_perm_b)?;
 
     let vks = generate_viewing_keys(&mut deps, mock_env(), info.clone(), vec![addr.a(), addr.b()])?;
 
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission { 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        key: vks.a(), 
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission {
+        owner: addr.a(),
+        allowed_address: addr.b(),
+        key: vks.a(),
         token_id: "0".to_string()
     })?)?;
     match q_answer {
@@ -1070,18 +1070,18 @@ fn test_revoke_permission_sanity() -> StdResult<()> {
     }
 
     // addr.b can revoke (renounce) permission it has been given
-    let msg_revoke = ExecuteMsg::RevokePermission { 
-        token_id: "0".to_string(), 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        padding: None 
+    let msg_revoke = ExecuteMsg::RevokePermission {
+        token_id: "0".to_string(),
+        owner: addr.a(),
+        allowed_address: addr.b(),
+        padding: None
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info, msg_revoke)?;
-    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission { 
-        owner: addr.a(), 
-        allowed_address: addr.b(), 
-        key: vks.a(), 
+    let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::Permission {
+        owner: addr.a(),
+        allowed_address: addr.b(),
+        key: vks.a(),
         token_id: "0".to_string()
     })?)?;
     match q_answer {
@@ -1090,7 +1090,7 @@ fn test_revoke_permission_sanity() -> StdResult<()> {
         }
         _ => panic!("query error")
     }
-    
+
     Ok(())
 }
 
@@ -1119,7 +1119,7 @@ fn test_create_and_set_viewing_keys_sanity() -> StdResult<()> {
     let vk = read_viewing_key_hash(&deps.storage, addr.b().as_str()).unwrap_or_default();
     let exp_vk = sha_256("foobar".as_bytes());
     assert_eq!(vk.as_slice(), exp_vk);
-    
+
     Ok(())
 }
 
@@ -1133,7 +1133,7 @@ fn test_revoke_permit_sanity() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // revoke permit 
+    // revoke permit
     let msg = ExecuteMsg::RevokePermit { permit_name: "testpermit".to_string(), padding: None };
     let info = mock_info(addr.a().as_str(), &[]);
     execute(deps.as_mut(), mock_env(), info, msg)?;
@@ -1151,15 +1151,15 @@ fn test_add_remove_curators() -> StdResult<()> {
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
-    
+
     // non-curator cannot curate new token_ids
     let mut info = mock_info(addr.b().as_str(), &[]);
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "test0".to_string();
-    let msg_curate = ExecuteMsg::CurateTokenIds { 
+    let msg_curate = ExecuteMsg::CurateTokenIds {
         initial_tokens: vec![curate0],
         memo: None,
-        padding: None 
+        padding: None
     };
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg_curate.clone());
     assert!(extract_error_msg(&result).contains("Only curators are allowed to curate token_ids"));
@@ -1206,14 +1206,14 @@ fn test_add_remove_curators() -> StdResult<()> {
         }
         _ => panic!("query error")
     }
-    
+
     // now curator addr.b cannot curate new tokens anymore
     let mut curate1 = CurateTokenId::default();
     curate1.token_info.token_id = "test1".to_string();
-    let msg_curate_1 = ExecuteMsg::CurateTokenIds { 
+    let msg_curate_1 = ExecuteMsg::CurateTokenIds {
         initial_tokens: vec![curate1],
         memo: None,
-        padding: None 
+        padding: None
     };
     info.sender = addr.b();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_curate_1.clone());
@@ -1230,7 +1230,7 @@ fn test_add_remove_curators() -> StdResult<()> {
     info.sender = addr.c();
     execute(deps.as_mut(), mock_env(), info, msg_curate_1)?;
     assert_eq!(chk_bal(&deps.storage, "test1", &addr.a()), Some(Uint128::new(1000)));
-    
+
     Ok(())
 }
 
@@ -1241,39 +1241,39 @@ fn test_add_remove_minters() -> StdResult<()> {
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
-    
+
     // admin adds 2 curators, addr.b and addr.c ...
     let mut info = mock_info(addr.a().as_str(), &[]);
     let msg_add_curators = ExecuteMsg::AddCurators { add_curators: vec![addr.b(), addr.c()], padding: None };
     execute(deps.as_mut(), mock_env(), info.clone(), msg_add_curators)?;
-    
+
     // ...then new curator (addr.b) curates new token_id
     let mut curate0 = CurateTokenId::default();
     curate0.token_info.token_id = "test0".to_string();
-    let msg_curate = ExecuteMsg::CurateTokenIds { 
+    let msg_curate = ExecuteMsg::CurateTokenIds {
         initial_tokens: vec![curate0],
         memo: None,
-        padding: None 
+        padding: None
     };
     info.sender = addr.b();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_curate)?;
     assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), Some(Uint128::new(1000)));
-    
+
     // addr.b cannot mint new tokens because it is not a minter despite creating the token_id
-    let msg_mint = ExecuteMsg::MintTokens { 
-        mint_tokens: vec![TokenAmount { 
-            token_id: "test0".to_string(), 
-            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(100) }] 
-        }], 
-        memo: None, padding: None 
+    let msg_mint = ExecuteMsg::MintTokens {
+        mint_tokens: vec![TokenAmount {
+            token_id: "test0".to_string(),
+            balances: vec![TokenIdBalance { address: addr.a(), amount: Uint128::new(100) }]
+        }],
+        memo: None, padding: None
     };
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), msg_mint.clone());
     assert!(extract_error_msg(&result).contains("Only minters are allowed to mint additional tokens for token_id test0"));
 
     // addr.c, is curator, but not token_id "test0"'s curator, so cannot add minters (in base spec, addr.c cannot add/remove minter in any event)
-    let msg_add_minter_c = ExecuteMsg::AddMinters { 
-        token_id: "test0".to_string(), 
-        add_minters: vec![addr.c()], 
+    let msg_add_minter_c = ExecuteMsg::AddMinters {
+        token_id: "test0".to_string(),
+        add_minters: vec![addr.c()],
         padding: None
     };
     info.sender = addr.c();
@@ -1285,7 +1285,7 @@ fn test_add_remove_minters() -> StdResult<()> {
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_add_minter_c);
     assert!(extract_error_msg(&result).contains("You need to be the admin to add or remove minters"));
 
-    // check minter list is unchanged 
+    // check minter list is unchanged
     let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::TokenIdPublicInfo { token_id: "test0".to_string() })?)?;
     match q_answer {
         QueryAnswer::TokenIdPublicInfo { token_id_info, .. } => {
@@ -1295,11 +1295,11 @@ fn test_add_remove_minters() -> StdResult<()> {
         _ => panic!("query error")
     }
 
-    // admin addr.a can add minters addr.c and addr.d twice (in a single tx). 
+    // admin addr.a can add minters addr.c and addr.d twice (in a single tx).
     // Addr.d is added twice for test later that it can be removed in a single remove_minter msg
-    let msg_add_minter_cd = ExecuteMsg::AddMinters { 
-        token_id: "test0".to_string(), 
-        add_minters: vec![addr.c(), addr.d(), addr.d()], 
+    let msg_add_minter_cd = ExecuteMsg::AddMinters {
+        token_id: "test0".to_string(),
+        add_minters: vec![addr.c(), addr.d(), addr.d()],
         padding: None
     };
     info.sender = addr.a();
@@ -1314,15 +1314,15 @@ fn test_add_remove_minters() -> StdResult<()> {
     }
 
     // admin addr.a cannot add minters for a non-existent token_id
-    let msg_add_minter_nonexistent = ExecuteMsg::AddMinters { 
-        token_id: "test-na".to_string(), 
-        add_minters: vec![addr.d()], 
+    let msg_add_minter_nonexistent = ExecuteMsg::AddMinters {
+        token_id: "test-na".to_string(),
+        add_minters: vec![addr.d()],
         padding: None
     };
     info.sender = addr.a();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_add_minter_nonexistent);
     assert!(extract_error_msg(&result).contains("token_id test-na does not exist"));
-    
+
     // both minters addr.c and addr.d can mint new tokens
     info.sender = addr.c();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_mint.clone())?;
@@ -1331,15 +1331,15 @@ fn test_add_remove_minters() -> StdResult<()> {
     assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), Some(Uint128::new(1200)));
 
     // minters cannot burn tokens
-    let msg_burn = ExecuteMsg::BurnTokens { 
+    let msg_burn = ExecuteMsg::BurnTokens {
         burn_tokens: vec![TokenAmount {
             token_id: "test0".to_string(),
             balances: vec![TokenIdBalance {
                 address: addr.a(),
                 amount: Uint128::new(500),
             }],
-        }], 
-        memo: None, padding: None 
+        }],
+        memo: None, padding: None
     };
     info.sender = addr.c();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_burn);
@@ -1348,13 +1348,13 @@ fn test_add_remove_minters() -> StdResult<()> {
     ));
 
     // minters can change metadata (because of config allows)
-    let msg_change_metadata = ExecuteMsg::ChangeMetadata { 
-        token_id: "test0".to_string(), 
+    let msg_change_metadata = ExecuteMsg::ChangeMetadata {
+        token_id: "test0".to_string(),
         public_metadata: Box::new(Some(Metadata {
             token_uri: Some("new public uri".to_string()),
             extension: Some(Extension::default()),
-        })),  
-        private_metadata: Box::new(None), 
+        })),
+        private_metadata: Box::new(None),
     };
     info.sender = addr.c();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_change_metadata)?;
@@ -1418,7 +1418,7 @@ fn test_change_admin() -> StdResult<()> {
 
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
-    
+
     // check current admin
     let contract_info = contr_conf_r(&deps.storage).load()?;
     assert_eq!(contract_info.admin, Some(addr.a()));
@@ -1455,7 +1455,7 @@ fn test_remove_admin() -> StdResult<()> {
     // instantiate
     let (_init_result, mut deps) = init_helper_default();
 
-    // check admin from contract_info 
+    // check admin from contract_info
     let q_answer = from_binary::<QueryAnswer>(&query(deps.as_ref(), mock_env(), QueryMsg::ContractInfo {  })?)?;
     match q_answer {
         QueryAnswer::ContractInfo { admin, curators, all_token_ids } => {
@@ -1474,20 +1474,20 @@ fn test_remove_admin() -> StdResult<()> {
     // admin tries to remove admin: fail due to wrong current admin input
     info.sender = addr.a();
     let mut result = execute(deps.as_mut(), mock_env(), info.clone(), ExecuteMsg::RemoveAdmin {
-        current_admin: addr.b(), contract_address: Addr::unchecked("cosmos2contract".to_string()), padding: None 
+        current_admin: addr.b(), contract_address: Addr::unchecked("cosmos2contract".to_string()), padding: None
     });
     assert!(extract_error_msg(&result).contains("your inputs are incorrect to perform this function"));
 
     // error: admin tries to remove admin: fail due to wrong contract address
     info.sender = addr.a();
-    result = execute(deps.as_mut(), mock_env(), info.clone(), ExecuteMsg::RemoveAdmin { 
-        current_admin: addr.a(), contract_address: Addr::unchecked("wronginput".to_string()), padding: None 
+    result = execute(deps.as_mut(), mock_env(), info.clone(), ExecuteMsg::RemoveAdmin {
+        current_admin: addr.a(), contract_address: Addr::unchecked("wronginput".to_string()), padding: None
     });
     assert!(extract_error_msg(&result).contains("your inputs are incorrect to perform this function"));
 
     // error: non-admin cannot remove admin
-    let msg_remove_admin = ExecuteMsg::RemoveAdmin { 
-        current_admin: addr.a(), contract_address: Addr::unchecked("cosmos2contract".to_string()), padding: None 
+    let msg_remove_admin = ExecuteMsg::RemoveAdmin {
+        current_admin: addr.a(), contract_address: Addr::unchecked("cosmos2contract".to_string()), padding: None
     };
     info.sender = addr.b();
     result = execute(deps.as_mut(), mock_env(), info.clone(), msg_remove_admin.clone());
@@ -1496,7 +1496,7 @@ fn test_remove_admin() -> StdResult<()> {
     // success: admin removes admin
     info.sender = addr.a();
     execute(deps.as_mut(), mock_env(), info.clone(), msg_remove_admin)?;
-    
+
     // check that admin can no longer perform admin function
     result = execute(deps.as_mut(), mock_env(), info, msg_add_curators);
     assert!(extract_error_msg(&result).contains("This contract has no admin"));
@@ -1535,7 +1535,7 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
     assert_eq!(contr_conf_r(&deps.storage).load()?.admin, None);
 
-    // case1: instantiate with has_admin = false && admin = Some(_) -> no admin 
+    // case1: instantiate with has_admin = false && admin = Some(_) -> no admin
     let mut deps = mock_dependencies();
 
     let init_msg = InstantiateMsg {
@@ -1545,11 +1545,11 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
     };
-    
+
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
     assert_eq!(contr_conf_r(&deps.storage).load()?.admin, None);
 
-    // case2: instantiate with has_admin = true && admin = None -> defaults to sender as admin 
+    // case2: instantiate with has_admin = true && admin = None -> defaults to sender as admin
     let mut deps = mock_dependencies();
 
     let init_msg = InstantiateMsg {
@@ -1564,7 +1564,7 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
     assert_eq!(contr_conf_r(&deps.storage).load()?.admin, Some(addr.a()));
 
-    // case3: instantiate with has_admin = true && admin = addr.b() -> admin is addr.b(), although addr.a() instantiated 
+    // case3: instantiate with has_admin = true && admin = addr.b() -> admin is addr.b(), although addr.a() instantiated
     let mut deps = mock_dependencies();
 
     let init_msg = InstantiateMsg {
@@ -1581,7 +1581,7 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
 
     Ok(())
 }
- 
+
 #[test]
 fn test_receiver_sanity() -> StdResult<()> {
     // init addresses
@@ -1592,17 +1592,17 @@ fn test_receiver_sanity() -> StdResult<()> {
 
     // `send` with msg
     let info = mock_info(addr.a().as_str(), &[]);
-    let msg = ExecuteMsg::Send { 
-        token_id: "0".to_string(), 
-        from: addr.a(), 
-        recipient: addr.b(), 
+    let msg = ExecuteMsg::Send {
+        token_id: "0".to_string(),
+        from: addr.a(),
+        recipient: addr.b(),
         recipient_code_hash: Some(addr.b_hash()),
         amount: Uint128::new(800),
-        msg: Some(to_binary(&"msg_str")?), 
+        msg: Some(to_binary(&"msg_str")?),
         memo: Some("some memo".to_string()), padding: None,
     };
     let response = execute(deps.as_mut(), mock_env(), info, msg)?;
-    let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?; 
+    let (receiver_msg, receiver_addr, receiver_hash) = extract_cosmos_msg::<ReceiverHandleMsg>(&response.messages[0].msg)?;
     assert_eq!(receiver_addr, Some(addr.b())); assert_eq!(receiver_hash, &addr.b_hash());
     let exp_receive_msg = Snip1155ReceiveMsg {
         sender: addr.a(),
@@ -1610,7 +1610,7 @@ fn test_receiver_sanity() -> StdResult<()> {
         from: addr.a(),
         amount: Uint128::new(800),
         memo: Some("some memo".to_string()),
-        msg: Some(to_binary(&"msg_str")?), 
+        msg: Some(to_binary(&"msg_str")?),
     };
     match receiver_msg {
         ReceiverHandleMsg::Snip1155Receive(i) => assert_eq!(i, exp_receive_msg),

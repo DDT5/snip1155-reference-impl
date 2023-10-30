@@ -3,10 +3,10 @@ use cosmwasm_std::{
     Response, Binary, to_binary,
     StdResult, StdError,
     Addr, Uint128,
-    CosmosMsg, entry_point, 
+    CosmosMsg, entry_point,
 };
 use secret_toolkit::{
-    utils::space_pad, 
+    utils::space_pad,
     permit::RevokedPermits,
     viewing_key::{ViewingKey, ViewingKeyStore},
     crypto::sha_256,
@@ -16,21 +16,21 @@ use crate::{
     msg::{
         InstantiateMsg, ExecuteMsg, ExecuteAnswer,
         TransferAction, SendAction,
-        ResponseStatus::Success,  
+        ResponseStatus::Success,
     },
     state::{
-        RESPONSE_BLOCK_SIZE, PREFIX_REVOKED_PERMITS, 
-        contr_conf_r, contr_conf_w, tkn_info_r, 
-        tkn_info_w, balances_w, balances_r, 
+        RESPONSE_BLOCK_SIZE, PREFIX_REVOKED_PERMITS,
+        contr_conf_r, contr_conf_w, tkn_info_r,
+        tkn_info_w, balances_w, balances_r,
         tkn_tot_supply_w, tkn_tot_supply_r,
-        set_receiver_hash, get_receiver_hash, 
+        set_receiver_hash, get_receiver_hash,
         state_structs::{ContractConfig, StoredTokenInfo, CurateTokenId, TokenAmount, },
         permissions::{Permission, new_permission, update_permission, may_load_any_permission,},
-        txhistory::{store_transfer, store_mint, store_burn, append_new_owner, may_get_current_owner,}, 
-        metadata::Metadata, 
-        expiration::Expiration, blockinfo_w,  
+        txhistory::{store_transfer, store_mint, store_burn, append_new_owner, may_get_current_owner,},
+        metadata::Metadata,
+        expiration::Expiration, blockinfo_w,
     },
-    receiver::Snip1155ReceiveMsg, 
+    receiver::Snip1155ReceiveMsg,
 };
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -45,10 +45,10 @@ pub fn instantiate(
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    // save latest block info. not necessary once we migrate to CosmWasm v1.0 
+    // save latest block info. not necessary once we migrate to CosmWasm v1.0
     blockinfo_w(deps.storage).save(&env.block)?;
 
-    // set admin. If `has_admin` == None => no admin. 
+    // set admin. If `has_admin` == None => no admin.
     // If `has_admin` == true && msg.admin == None => admin is the instantiator
     let admin = match msg.has_admin {
         false => None,
@@ -57,15 +57,15 @@ pub fn instantiate(
             None => Some(info.sender.clone()),
         },
     };
-    
+
     // create contract config -- save later
     let prng_seed_hashed = sha_256(msg.entropy.as_bytes());
     let prng_seed = prng_seed_hashed.to_vec();
-    
+
     ViewingKey::set_seed(deps.storage, &prng_seed);
 
-    let mut config = ContractConfig { 
-        admin, 
+    let mut config = ContractConfig {
+        admin,
         curators: msg.curators,
         token_id_list: vec![],
         tx_cnt: 0u64,
@@ -76,7 +76,7 @@ pub fn instantiate(
     // set initial balances
     for initial_token in msg.initial_tokens {
         exec_curate_token_id(
-           &mut deps, 
+           &mut deps,
             &env,
             &info,
             &mut config,
@@ -87,7 +87,7 @@ pub fn instantiate(
 
     // save contract config -- where tx_cnt would have increased post initial balances
     contr_conf_w(deps.storage).save(&config)?;
-    
+
     Ok(Response::default())
 }
 
@@ -95,7 +95,7 @@ pub fn instantiate(
 // Handles
 /////////////////////////////////////////////////////////////////////////////////
 
-/// contract handle function. See [ExecuteMsg](crate::msg::ExecuteMsg) and 
+/// contract handle function. See [ExecuteMsg](crate::msg::ExecuteMsg) and
 /// [ExecuteAnswer](crate::msg::ExecuteAnswer) for the api
 #[entry_point]
 pub fn execute(
@@ -125,27 +125,27 @@ pub fn execute(
             memo,
             padding: _
          } => try_mint_tokens(
-            deps, 
+            deps,
             env,
             info,
             mint_tokens,
             memo
         ),
-        ExecuteMsg::BurnTokens { 
-            burn_tokens, 
-            memo, 
-            padding: _ 
+        ExecuteMsg::BurnTokens {
+            burn_tokens,
+            memo,
+            padding: _
         } => try_burn_tokens(
-            deps, 
-            env, 
+            deps,
+            env,
             info,
-            burn_tokens, 
+            burn_tokens,
             memo
         ),
-        ExecuteMsg::ChangeMetadata { 
+        ExecuteMsg::ChangeMetadata {
             token_id,
-            public_metadata, 
-            private_metadata 
+            public_metadata,
+            private_metadata
         } => try_change_metadata(
             deps,
             env,
@@ -154,10 +154,10 @@ pub fn execute(
             *public_metadata,
             *private_metadata,
         ),
-        ExecuteMsg::Transfer { 
+        ExecuteMsg::Transfer {
             token_id,
             from,
-            recipient, 
+            recipient,
             amount,
             memo,
             padding: _,
@@ -171,22 +171,22 @@ pub fn execute(
             amount,
             memo,
         ),
-        ExecuteMsg::BatchTransfer { actions, padding: _ 
+        ExecuteMsg::BatchTransfer { actions, padding: _
         } => try_batch_transfer(
             deps,
             env,
             info,
             actions,
         ),
-        ExecuteMsg::Send { 
-            token_id, 
-            from, 
-            recipient, 
-            recipient_code_hash, 
-            amount, 
-            msg, 
-            memo, 
-            padding: _, 
+        ExecuteMsg::Send {
+            token_id,
+            from,
+            recipient,
+            recipient_code_hash,
+            amount,
+            msg,
+            memo,
+            padding: _,
         } => try_send(
             deps,
             env,
@@ -201,13 +201,13 @@ pub fn execute(
                 memo,
             }
         ),
-        ExecuteMsg::BatchSend { actions, padding: _ 
+        ExecuteMsg::BatchSend { actions, padding: _
         } => try_batch_send(
             deps,
             env,
             info,
             actions,
-        ),     
+        ),
         ExecuteMsg::GivePermission {
             allowed_address,
             token_id,
@@ -231,11 +231,11 @@ pub fn execute(
             transfer,
             transfer_expiry,
             ),
-        ExecuteMsg::RevokePermission { 
-            token_id, 
-            owner, 
-            allowed_address, 
-            padding: _ 
+        ExecuteMsg::RevokePermission {
+            token_id,
+            owner,
+            allowed_address,
+            padding: _
         } => try_revoke_permission(
             deps,
             env,
@@ -244,84 +244,84 @@ pub fn execute(
             owner,
             allowed_address,
         ),
-        ExecuteMsg::CreateViewingKey { 
-            entropy, 
-            padding: _ 
+        ExecuteMsg::CreateViewingKey {
+            entropy,
+            padding: _
         } => try_create_viewing_key(
-            deps, 
-            env, 
+            deps,
+            env,
             info,
             entropy
         ),
-        ExecuteMsg::SetViewingKey { 
-            key, 
-            padding: _ 
+        ExecuteMsg::SetViewingKey {
+            key,
+            padding: _
         } => try_set_viewing_key(
-            deps, 
-            env, 
+            deps,
+            env,
             info,
             key
         ),
         ExecuteMsg::RevokePermit { permit_name, padding: _ } => try_revoke_permit(
-            deps, 
+            deps,
             env,
             info,
             permit_name,
         ),
-        ExecuteMsg::AddCurators { add_curators, padding: _ 
+        ExecuteMsg::AddCurators { add_curators, padding: _
         } => try_add_curators(
             deps,
             env,
             info,
             add_curators,
         ),
-        ExecuteMsg::RemoveCurators { remove_curators, padding: _ 
+        ExecuteMsg::RemoveCurators { remove_curators, padding: _
         } => try_remove_curators(
             deps,
             env,
             info,
             remove_curators,
         ),
-        ExecuteMsg::AddMinters { token_id, add_minters, padding: _ 
+        ExecuteMsg::AddMinters { token_id, add_minters, padding: _
         } => try_add_minters(
             deps,
             env,
             info,
-            token_id, 
+            token_id,
             add_minters,
         ),
-        ExecuteMsg::RemoveMinters { token_id, remove_minters, padding: _ 
+        ExecuteMsg::RemoveMinters { token_id, remove_minters, padding: _
         } => try_remove_minters(
             deps,
             env,
             info,
-            token_id, 
+            token_id,
             remove_minters,
         ),
-        ExecuteMsg::ChangeAdmin { new_admin, padding: _ 
+        ExecuteMsg::ChangeAdmin { new_admin, padding: _
         } => try_change_admin(
             deps,
             env,
             info,
             new_admin,
         ),
-        ExecuteMsg::RemoveAdmin { 
-            current_admin, 
-            contract_address, 
-            padding: _ 
+        ExecuteMsg::RemoveAdmin {
+            current_admin,
+            contract_address,
+            padding: _
         } => try_remove_admin(
             deps,
             env,
             info,
             current_admin,
             contract_address,
-        ),   
-        ExecuteMsg::RegisterReceive { 
-            code_hash, 
-            padding: _, 
+        ),
+        ExecuteMsg::RegisterReceive {
+            code_hash,
+            padding: _,
         } => try_register_receive(
-            deps, 
-            env, 
+            deps,
+            env,
             info,
             code_hash
         ),
@@ -343,14 +343,14 @@ fn try_curate_token_ids(
     // curate new token_ids
     for initial_token in initial_tokens {
         exec_curate_token_id(
-            &mut deps, 
+            &mut deps,
             &env,
             &info,
             &mut config,
-            initial_token, 
+            initial_token,
             memo.clone(),
         )?;
-    } 
+    }
 
     contr_conf_w(deps.storage).save(&config)?;
 
@@ -369,7 +369,7 @@ fn try_mint_tokens(
     // mint tokens
     for mint_token in mint_tokens {
         let token_info_op = tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
-        
+
         // check if token_id exists
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
@@ -390,23 +390,23 @@ fn try_mint_tokens(
         // add balances
         for add_balance in mint_token.balances {
             exec_change_balance(
-                deps.storage, 
-                &mint_token.token_id, 
-                None, 
-                Some(&add_balance.address), 
-                &add_balance.amount, 
+                deps.storage,
+                &mint_token.token_id,
+                None,
+                Some(&add_balance.address),
+                &add_balance.amount,
                 &token_info_op.clone().unwrap()
             )?;
 
             // store mint_token
             store_mint(
-                deps.storage, 
-                &mut config, 
+                deps.storage,
+                &mut config,
                 &env.block,
                 &mint_token.token_id,
-                deps.api.addr_canonicalize(info.sender.as_str())?, 
-                deps.api.addr_canonicalize(add_balance.address.as_str())?, 
-                add_balance.amount, 
+                deps.api.addr_canonicalize(info.sender.as_str())?,
+                deps.api.addr_canonicalize(add_balance.address.as_str())?,
+                add_balance.amount,
                 memo.clone()
             )?;
         }
@@ -426,11 +426,11 @@ fn try_burn_tokens(
     memo: Option<String>,
 ) -> StdResult<Response> {
     let mut config = contr_conf_r(deps.storage).load()?;
-    
+
     // burn tokens
     for burn_token in burn_tokens {
         let token_info_op = tkn_info_r(deps.storage).may_load(burn_token.token_id.as_bytes())?;
-    
+
         if token_info_op.is_none() {
             return Err(StdError::generic_err(
                 "token_id does not exist. Cannot burn non-existent `token_ids`. Use `curate_token_ids` to create tokens on new `token_ids`"
@@ -456,24 +456,24 @@ fn try_burn_tokens(
             }
 
             exec_change_balance(
-                deps.storage, 
-                &burn_token.token_id, 
-                Some(&rem_balance.address), 
+                deps.storage,
+                &burn_token.token_id,
+                Some(&rem_balance.address),
                 None,
-                &rem_balance.amount, 
+                &rem_balance.amount,
                 &token_info
             )?;
 
             // store burn_token
             store_burn(
-                deps.storage, 
-                &mut config, 
+                deps.storage,
+                &mut config,
                 &env.block,
                 &burn_token.token_id,
                 // in base specification, burner MUST be the owner
-                None, 
-                deps.api.addr_canonicalize(rem_balance.address.as_str())?, 
-                rem_balance.amount, 
+                None,
+                deps.api.addr_canonicalize(rem_balance.address.as_str())?,
+                rem_balance.amount,
                 memo.clone()
             )?;
         }
@@ -497,17 +497,17 @@ fn try_change_metadata(
         None => return Err(StdError::generic_err(format!("token_id {} does not exist", token_id))),
         Some(i) => i.token_config.flatten(),
     };
-    
+
     // define variables for control flow
     let owner = may_get_current_owner(deps.storage, &token_id)?;
     let is_owner = match owner {
         Some(owner_addr) => owner_addr == info.sender,
         None => false,
     };
-    
+
     let is_minter = verify_minter(tkn_info_op.as_ref().unwrap(), &info).is_ok();
 
-    // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not 
+    // can sender change metadata? based on i) sender is minter or owner, ii) token_id config allows it or not
     let allow_update = is_owner && tkn_conf.owner_may_update_metadata || is_minter && tkn_conf.minter_may_update_metadata;
 
     // control flow based on `allow_update`
@@ -539,13 +539,13 @@ fn try_transfer(
     memo: Option<String>,
 ) -> StdResult<Response> {
     impl_transfer(
-        &mut deps, 
-        &env, 
+        &mut deps,
+        &env,
         &info,
-        &token_id, 
-        &from, 
-        &recipient, 
-        amount, 
+        &token_id,
+        &from,
+        &recipient,
+        amount,
         memo
     )?;
 
@@ -562,13 +562,13 @@ fn try_batch_transfer(
         let from = deps.api.addr_validate(action.from.as_str())?;
         let recipient = deps.api.addr_validate(action.recipient.as_str())?;
         impl_transfer(
-            &mut deps, 
-            &env, 
+            &mut deps,
+            &env,
             &info,
-            &action.token_id, 
-            &from, 
-            &recipient, 
-            action.amount, 
+            &action.token_id,
+            &from,
+            &recipient,
+            action.amount,
             action.memo
         )?;
     }
@@ -623,7 +623,7 @@ fn try_batch_send(
 }
 
 /// does not check if `token_id` exists so attacker cannot easily figure out if
-/// a `token_id` has been created 
+/// a `token_id` has been created
 #[allow(clippy::too_many_arguments)]
 fn try_give_permission(
     deps: DepsMut,
@@ -645,7 +645,7 @@ fn try_give_permission(
         &token_id,
         &allowed_address,
     )?;
-    
+
     let action = |
         old_perm: Permission,
         view_balance: Option<bool>,
@@ -656,12 +656,12 @@ fn try_give_permission(
         transfer_expiry: Option<Expiration>,
     | -> Permission {
         Permission {
-            view_balance_perm: match view_balance { Some(i) => i, None => old_perm.view_balance_perm}, 
-            view_balance_exp: match view_balance_expiry { Some(i) => i, None => old_perm.view_balance_exp}, 
-            view_pr_metadata_perm: match view_private_metadata { Some(i) => i, None => old_perm.view_pr_metadata_perm}, 
-            view_pr_metadata_exp: match view_private_metadata_expiry { Some(i) => i, None => old_perm.view_pr_metadata_exp}, 
-            trfer_allowance_perm: match transfer { Some(i) => i, None => old_perm.trfer_allowance_perm}, 
-            trfer_allowance_exp: match transfer_expiry { Some(i) => i, None => old_perm.trfer_allowance_exp}, 
+            view_balance_perm: match view_balance { Some(i) => i, None => old_perm.view_balance_perm},
+            view_balance_exp: match view_balance_expiry { Some(i) => i, None => old_perm.view_balance_exp},
+            view_pr_metadata_perm: match view_private_metadata { Some(i) => i, None => old_perm.view_pr_metadata_perm},
+            view_pr_metadata_exp: match view_private_metadata_expiry { Some(i) => i, None => old_perm.view_pr_metadata_exp},
+            trfer_allowance_perm: match transfer { Some(i) => i, None => old_perm.trfer_allowance_perm},
+            trfer_allowance_exp: match transfer_expiry { Some(i) => i, None => old_perm.trfer_allowance_exp},
         }
     };
 
@@ -669,27 +669,27 @@ fn try_give_permission(
     match permission_op {
         Some(old_perm) => {
             let updated_permission = action(
-                old_perm, 
+                old_perm,
                 view_balance,
                 view_balance_expiry,
                 view_private_metadata,
                 view_private_metadata_expiry,
                 transfer,
                 transfer_expiry,
-            );     
+            );
             update_permission(deps.storage, &info.sender, &token_id, &allowed_address, &updated_permission)?;
         },
         None => {
             let default_permission = Permission::default();
             let updated_permission = action(
-                default_permission, 
+                default_permission,
                 view_balance,
                 view_balance_expiry,
                 view_private_metadata,
                 view_private_metadata_expiry,
                 transfer,
                 transfer_expiry,
-            ); 
+            );
             new_permission(deps.storage, &info.sender, &token_id, &allowed_address, &updated_permission)?;
         }
     };
@@ -697,10 +697,10 @@ fn try_give_permission(
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::GivePermission { status: Success })?))
 }
 
-/// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove 
-/// entry in storage, because it is unecessarily in most use cases, but will require also removing 
-/// owner-specific PermissionKeys, which introduces complexity and increases gas cost. 
-/// If permission does not exist, message will return an error. 
+/// changes an existing permission entry to default (ie: revoke all permissions granted). Does not remove
+/// entry in storage, because it is unecessarily in most use cases, but will require also removing
+/// owner-specific PermissionKeys, which introduces complexity and increases gas cost.
+/// If permission does not exist, message will return an error.
 fn try_revoke_permission(
     deps: DepsMut,
     _env: Env,
@@ -715,7 +715,7 @@ fn try_revoke_permission(
             "only the owner or address with permission can remove permission"
         ))
     }
-    
+
     update_permission(deps.storage, &owner, &token_id, &allowed_addr, &Permission::default())?;
 
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RevokePermission { status: Success })?))
@@ -818,7 +818,7 @@ fn try_add_minters(
 
     // check if either admin
     let admin_result = verify_admin(&contract_config, &info);
-    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
+    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
 
     let verified = admin_result.is_ok(); // || curator_result.is_ok();
     if !verified {
@@ -832,7 +832,7 @@ fn try_add_minters(
     }
 
     // save token info with new minters
-    token_info.token_config = flattened_token_config.to_enum();  
+    token_info.token_config = flattened_token_config.to_enum();
     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddMinters { status: Success })?))
@@ -852,7 +852,7 @@ fn try_remove_minters(
 
     // check if either admin or curator
     let admin_result = verify_admin(&contract_config, &info);
-    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications. 
+    // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
 
     let verified = admin_result.is_ok(); // || curator_result.is_ok();
     if !verified {
@@ -864,9 +864,9 @@ fn try_remove_minters(
     for minter in remove_minters {
         flattened_token_config.minters.retain(|x| x != &minter);
     }
-    
+
     // save token info with new minters
-    token_info.token_config = flattened_token_config.to_enum();  
+    token_info.token_config = flattened_token_config.to_enum();
     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
 
     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::RemoveMinters { status: Success })?))
@@ -903,12 +903,12 @@ fn try_remove_admin(
     // verify admin
     verify_admin(&config, &info)?;
 
-    // checks on redundancy inputs, designed to reduce chances of accidentally 
+    // checks on redundancy inputs, designed to reduce chances of accidentally
     // calling this function
-    if current_admin != config.admin.unwrap() || contract_address != config.contract_address { 
-        return Err(StdError::generic_err("your inputs are incorrect to perform this function")) 
+    if current_admin != config.admin.unwrap() || contract_address != config.contract_address {
+        return Err(StdError::generic_err("your inputs are incorrect to perform this function"))
     }
-    
+
     // remove admin
     config.admin = None;
     contr_conf_w(deps.storage).save(&config)?;
@@ -976,7 +976,7 @@ fn verify_admin(
             "This contract has no admin",
         )),
     }
-    
+
     Ok(())
 }
 
@@ -995,8 +995,8 @@ fn verify_curator(
 }
 
 // /// verifies if sender is the address that curated the token_id.
-// /// Not part of base specifications, but function left here for potential use. 
-// /// If this additional feature is implemented, it is important to ensure that the instantiator 
+// /// Not part of base specifications, but function left here for potential use.
+// /// If this additional feature is implemented, it is important to ensure that the instantiator
 // /// still has the ability to set initial balances without later being able to change minters.
 // fn verify_curator_of_token_id(
 //     token_info: &StoredTokenInfo,
@@ -1040,7 +1040,7 @@ fn exec_curate_token_id(
         return Err(StdError::generic_err("token_id already exists. Try a different id String"))
     }
 
-    // check: token_id is an NFT => cannot create more than one 
+    // check: token_id is an NFT => cannot create more than one
     if initial_token.token_info.token_config.flatten().is_nft {
         if initial_token.balances.len() > 1 {
             return Err(StdError::generic_err(format!(
@@ -1051,10 +1051,10 @@ fn exec_curate_token_id(
             return Err(StdError::generic_err(format!(
                 "token_id {} is an NFT; there can only be one NFT. Balances.amount must == 1",
                 initial_token.token_info.token_id
-            )))           
+            )))
         }
     }
-    
+
     // Check name, symbol, decimals
     if !is_valid_name(&initial_token.token_info.name) {
         return Err(StdError::generic_err(
@@ -1073,7 +1073,7 @@ fn exec_curate_token_id(
 
     // create and save new token info
     tkn_info_w(deps.storage).save(
-        initial_token.token_info.token_id.as_bytes(), 
+        initial_token.token_info.token_id.as_bytes(),
         &initial_token.token_info.to_store(&info.sender)
     )?;
 
@@ -1091,13 +1091,13 @@ fn exec_curate_token_id(
 
         // store mint_token_id
         store_mint(
-            deps.storage, 
-            config, 
+            deps.storage,
+            config,
             &env.block,
-            &initial_token.token_info.token_id, 
-            deps.api.addr_canonicalize(info.sender.as_str())?, 
-            deps.api.addr_canonicalize(balance.address.as_str())?, 
-            balance.amount, 
+            &initial_token.token_info.token_id,
+            deps.api.addr_canonicalize(info.sender.as_str())?,
+            deps.api.addr_canonicalize(balance.address.as_str())?,
+            balance.amount,
             memo.clone()
         )?;
     }
@@ -1108,7 +1108,7 @@ fn exec_curate_token_id(
     Ok(())
 }
 
-/// Implements a single `Send` function. Transfers Uint128 amount of a single `token_id`, 
+/// Implements a single `Send` function. Transfers Uint128 amount of a single `token_id`,
 /// saves transfer history, may register-receive, and creates callback message.
 fn impl_send(
     deps: &mut DepsMut,
@@ -1128,13 +1128,13 @@ fn impl_send(
 
     // implements transfer of tokens
     impl_transfer(
-        deps, 
-        env, 
+        deps,
+        env,
         info,
-        &token_id, 
-        &from, 
-        &recipient, 
-        amount, 
+        &token_id,
+        &from,
+        &recipient,
+        amount,
         memo.clone()
     )?;
 
@@ -1155,8 +1155,8 @@ fn impl_send(
     Ok(())
 }
 
-/// Implements a single `Transfer` function. Transfers a Uint128 amount of a 
-/// single `token_id` and saves the transfer history. Used by `Transfer` and 
+/// Implements a single `Transfer` function. Transfers a Uint128 amount of a
+/// single `token_id` and saves the transfer history. Used by `Transfer` and
 /// `Send` (via `impl_send`) messages
 #[allow(clippy::too_many_arguments)]
 fn impl_transfer(
@@ -1170,7 +1170,7 @@ fn impl_transfer(
     memo: Option<String>,
 ) -> StdResult<()> {
     // check if `from` == message sender || has enough allowance to send tokens
-    // perform allowance check, and may reduce allowance 
+    // perform allowance check, and may reduce allowance
     let mut throw_err = false;
     if from != &info.sender {
         // may_load_active_permission() or may_load_any_permission() both work. The former performs redundancy checks, which are
@@ -1181,7 +1181,7 @@ fn impl_transfer(
             // no permission given
             None => throw_err = true,
             // allowance has expired
-            Some(perm) if perm.trfer_allowance_exp.is_expired(&env.block) 
+            Some(perm) if perm.trfer_allowance_exp.is_expired(&env.block)
                 => return Err(StdError::generic_err(format!(
                 "Allowance has expired: {}", perm.trfer_allowance_exp
             ))),
@@ -1213,25 +1213,25 @@ fn impl_transfer(
 
     // transfer tokens
     exec_change_balance(
-        deps.storage, 
-        token_id, 
-        Some(from), 
-        Some(recipient), 
-        &amount, 
+        deps.storage,
+        token_id,
+        Some(from),
+        Some(recipient),
+        &amount,
         &token_info_op.unwrap()
     )?;
 
     // store transaction
     let mut config = contr_conf_r(deps.storage).load()?;
     store_transfer(
-        deps.storage, 
-        &mut config, 
-        &env.block, 
-        token_id, 
-        deps.api.addr_canonicalize(from.as_str())?, 
-        None, 
-        deps.api.addr_canonicalize(recipient.as_str())?, 
-        amount, 
+        deps.storage,
+        &mut config,
+        &env.block,
+        token_id,
+        deps.api.addr_canonicalize(from.as_str())?,
+        None,
+        deps.api.addr_canonicalize(recipient.as_str())?,
+        amount,
         memo
     )?;
     contr_conf_w(deps.storage).save(&config)?;
@@ -1239,11 +1239,11 @@ fn impl_transfer(
     Ok(())
 }
 
-/// change token balance of an existing `token_id`. 
-/// 
+/// change token balance of an existing `token_id`.
+///
 /// Should check that `token_id` already exists before calling this function, which is not done
-/// explicitly in this function. Although token_info is an argument in this function, so it is 
-/// likely that the calling function would have had to check. 
+/// explicitly in this function. Although token_info is an argument in this function, so it is
+/// likely that the calling function would have had to check.
 /// * If `remove_from` == None: minted new tokens.
 /// * If `add_to` == None: burn tokens.
 /// * If is_nft == true, then `remove_from` MUST be Some(_).
@@ -1256,14 +1256,14 @@ fn exec_change_balance(
     amount: &Uint128,
     token_info: &StoredTokenInfo,
 ) -> StdResult<()> {
-    // check whether token_id is an NFT => cannot mint. This should not be reachable in standard implementation, 
+    // check whether token_id is an NFT => cannot mint. This should not be reachable in standard implementation,
     // as the calling function would have checked that enable_mint == false, which needs to be true for NFTs.
     // This is a redundancy check to make sure
     if token_info.token_config.flatten().is_nft && remove_from.is_none() {
         return Err(StdError::generic_err("NFTs can only be minted once using `mint_token_ids`"))
     }
 
-    // check whether token_id is an NFT => assert!(amount == 1). 
+    // check whether token_id is an NFT => assert!(amount == 1).
     if token_info.token_config.flatten().is_nft && amount != Uint128::from(1_u64) {
         return Err(StdError::generic_err("NFT amount must == 1"))
     }
@@ -1274,17 +1274,17 @@ fn exec_change_balance(
         let from_new_amount_op = from_existing_bal.u128().checked_sub(amount.u128());
         if from_new_amount_op.is_none() {
             return Err(StdError::generic_err("insufficient funds"))
-        }    
+        }
         balances_w(storage, token_id)
         .save(to_binary(&from)?.as_slice(), &Uint128::from(from_new_amount_op.unwrap()))?;
 
-        // NOTE: if nft, the ownership history remains in storage. Any existing viewing permissions of last owner 
+        // NOTE: if nft, the ownership history remains in storage. Any existing viewing permissions of last owner
         // will remain too
     }
 
     // add balance
     if let Some(to) = add_to {
-        let to_existing_bal_op = balances_r(storage, token_id).may_load(to_binary(&to)?.as_slice())?; 
+        let to_existing_bal_op = balances_r(storage, token_id).may_load(to_binary(&to)?.as_slice())?;
         let to_existing_bal = match to_existing_bal_op {
             Some(i) => i,
             // if `to` address has no balance yet, initiate zero balance
@@ -1361,7 +1361,7 @@ fn try_add_receiver_api_callback(
 
         messages.push(callback_msg);
     }
-    
+
     Ok(())
 }
 

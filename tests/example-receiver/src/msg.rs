@@ -56,7 +56,7 @@ impl Snip1155Msg {
     pub fn register_receive(code_hash: String) -> Self {
         Snip1155Msg::RegisterReceive {
             code_hash,
-            padding: None, 
+            padding: None,
         }
     }
 }
