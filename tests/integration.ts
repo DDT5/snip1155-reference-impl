@@ -211,7 +211,7 @@ async function initDefault(): Promise<jsEnv> {
   
   const [contractHash, contractAddress] = await initializeContract(
     secretjs,
-    "contract.wasm",
+    "contract.wasm.gz",
     initMsgDefault,
   );
 
@@ -239,7 +239,7 @@ async function initDefaultWithReceiver() {
   };
   const [contractHash, contractAddress] = await initializeContract(
     secretjs,
-    "tests/example-receiver/contract.wasm",
+    "tests/example-receiver/contract.wasm.gz",
     receiverInitMsg,
   );
   const receiverContract: ContractInfo = {

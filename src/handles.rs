@@ -1,11 +1,9 @@
-// use base64::{engine::general_purpose, Engine as _};
 use cosmwasm_std::{
     DepsMut, Env, MessageInfo, Storage,
     Response, Binary, to_binary,
     StdResult, StdError,
     Addr, Uint128,
     CosmosMsg, entry_point, 
-    // debug_print, 
 };
 use secret_toolkit::{
     utils::space_pad, 
@@ -63,11 +61,6 @@ pub fn instantiate(
     // create contract config -- save later
     let prng_seed_hashed = sha_256(msg.entropy.as_bytes());
     let prng_seed = prng_seed_hashed.to_vec();
-    // let prng_seed = sha_256(
-    //     general_purpose::STANDARD
-    //         .encode(msg.entropy.as_str())
-    //         .as_bytes(),
-    // );
     
     ViewingKey::set_seed(deps.storage, &prng_seed);
 

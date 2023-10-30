@@ -119,7 +119,7 @@ impl TknConfig {
                     enable_mint: *enable_mint,
                     enable_burn: *enable_burn,
                     minter_may_update_metadata: *minter_may_update_metadata,
-                    /// there can be multiple owners, so owners cannot update metadata
+                    // there can be multiple owners, so owners cannot update metadata
                     owner_may_update_metadata: false,
                 }
             },
@@ -133,12 +133,12 @@ impl TknConfig {
             } => {
                 TknConfigFlat {
                     is_nft: true,
-                    /// NFTs' minters cannot mint additional tokens, but may be able to change metadata
+                    // NFTs' minters cannot mint additional tokens, but may be able to change metadata
                     minters: minters.clone(),
                     decimals: 0_u8,
                     public_total_supply: *public_total_supply,
                     owner_is_public: *owner_is_public,
-                    /// NFT can be minted only once using `CurateTokenIds`
+                    // NFT can be minted only once using `CurateTokenIds`
                     enable_mint: false,
                     enable_burn: *enable_burn,
                     minter_may_update_metadata: *minter_may_update_metadata,
