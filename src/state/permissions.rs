@@ -3,15 +3,9 @@ use super::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{
-    Storage, Uint128, Addr, BlockInfo,
-    StdResult, StdError,
-    to_binary,
-};
+use cosmwasm_std::{to_binary, Addr, BlockInfo, StdError, StdResult, Storage, Uint256};
 
-use secret_toolkit::{
-    storage::AppendStore, //AppendStoreMut
-};
+use secret_toolkit::storage::AppendStore;
 
 pub static PERMISSION_ID_STORE: AppendStore<PermissionKey> = AppendStore::new(PREFIX_PERMISSION_ID);
 
@@ -29,10 +23,7 @@ pub fn new_permission(
     permission: &Permission,
 ) -> StdResult<()> {
     // store permission
-    permission_w(storage, owner, token_id).save(
-        to_binary(allowed_addr)?.as_slice(),
-        permission
-    )?;
+    permission_w(storage, owner, token_id).save(to_binary(allowed_addr)?.as_slice(), permission)?;
 
     // add permission to list of permissions for a given owner
     append_permission_for_addr(storage, owner, token_id, allowed_addr)?;
@@ -63,25 +54,23 @@ pub fn update_permission(
     owner: &Addr,
     token_id: &str,
     allowed_addr: &Addr,
-    permission: &Permission
-    // update_action: A,
+    permission: &Permission, // update_action: A,
 ) -> StdResult<()>
-    // where
+// where
     // S: Storage,
     // A: FnOnce(Option<Permission>) -> StdResult<Permission>
-    {
-
+{
     let update_action = |perm: Option<Permission>| -> StdResult<Permission> {
         match perm {
             Some(_) => Ok(permission.clone()),
-            None => Err(StdError::generic_err("cannot update or revoke a non-existent permission entry"))
+            None => Err(StdError::generic_err(
+                "cannot update or revoke a non-existent permission entry",
+            )),
         }
     };
 
-    permission_w(storage, owner, token_id).update(
-        to_binary(allowed_addr)?.as_slice(),
-        update_action
-    )?;
+    permission_w(storage, owner, token_id)
+        .update(to_binary(allowed_addr)?.as_slice(), update_action)?;
 
     Ok(())
 }
@@ -110,8 +99,8 @@ pub fn may_load_any_permission(
 //     let owner_amount = balances_r(storage, token_id).may_load(to_binary(owner)?.as_slice())?;
 //     match owner_amount {
 //         None =>  return Ok(None),
-//         Some(i) if i == Uint128(0) => return Ok(None),
-//         Some(i) if i > Uint128(0) => return Ok(permission),
+//         Some(i) if i == Uint256(0) => return Ok(None),
+//         Some(i) if i > Uint256(0) => return Ok(permission),
 //         Some(_) => unreachable!("may_load_permission: this should be unreachable")
 //     }
 // }
@@ -127,16 +116,16 @@ pub fn list_owner_permission_keys(
 ) -> StdResult<(Vec<PermissionKey>, u64)> {
     let owner_store = PERMISSION_ID_STORE.add_suffix(to_binary(owner)?.as_slice());
 
-// let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
+    // let store = ReadonlyPrefixedStorage::multilevel(&[PREFIX_PERMISSION_ID, to_binary(owner)?.as_slice()], storage);
 
-// Try to access the storage of PermissionKeys for the account.
-// If it doesn't exist yet, return an empty list of transfers.
-// let store = AppendStore::<PermissionKey, _, _>::attach(&store);
-// let store = if let Some(result) = store {
-//     result?
-// } else {
-//     return Ok((vec![], 0));
-// };
+    // Try to access the storage of PermissionKeys for the account.
+    // If it doesn't exist yet, return an empty list of transfers.
+    // let store = AppendStore::<PermissionKey, _, _>::attach(&store);
+    // let store = if let Some(result) = store {
+    //     result?
+    // } else {
+    //     return Ok((vec![], 0));
+    // };
 
     // Take `page_size` starting from the latest entry, potentially skipping `page * page_size`
     // entries from the start.
@@ -151,7 +140,12 @@ pub fn list_owner_permission_keys(
         // .map(|pkey| pkey)
         .collect();
     // return `(Vec<PermissionKey> , total_permission)`
-    pkeys.map(|pkeys| (pkeys, owner_store.get_len(storage).unwrap_or_default() as u64))
+    pkeys.map(|pkeys| {
+        (
+            pkeys,
+            owner_store.get_len(storage).unwrap_or_default() as u64,
+        )
+    })
 }
 
 /// stores a `PermissionKey {token_id: String, allowed_addr: String]` for a given `owner`. Note that
@@ -179,7 +173,7 @@ pub struct Permission {
     pub view_balance_exp: Expiration,
     pub view_pr_metadata_perm: bool,
     pub view_pr_metadata_exp: Expiration,
-    pub trfer_allowance_perm: Uint128,
+    pub trfer_allowance_perm: Uint256,
     pub trfer_allowance_exp: Expiration,
 }
 

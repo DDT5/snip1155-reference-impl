@@ -59,7 +59,7 @@
           ],
           "properties": {
             "amount": {
-              "$ref": "#/definitions/Uint128"
+              "$ref": "#/definitions/Uint256"
             }
           }
         }
@@ -155,7 +155,7 @@
               }
             },
             "total": {
-              "description": "the total number of permission entries stored for a given granter, which may include \"blank\" permissions, ie: where all permissions are set to `false` or `Uint128(0)`",
+              "description": "the total number of permission entries stored for a given granter, which may include \"blank\" permissions, ie: where all permissions are set to `false` or `Uint256(0)`",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -199,7 +199,7 @@
               "description": "if public_total_supply == false, total_supply = None",
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Uint128"
+                  "$ref": "#/definitions/Uint256"
                 },
                 {
                   "type": "null"
@@ -240,7 +240,7 @@
               "description": "if public_total_supply == false, total_supply = None",
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Uint128"
+                  "$ref": "#/definitions/Uint256"
                 },
                 {
                   "type": "null"
@@ -524,7 +524,7 @@
       ],
       "properties": {
         "amount": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         },
         "token_id": {
           "type": "string"
@@ -547,7 +547,7 @@
           "$ref": "#/definitions/Expiration"
         },
         "trfer_allowance_perm": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         },
         "view_balance_exp": {
           "$ref": "#/definitions/Expiration"
@@ -824,7 +824,7 @@
               ],
               "properties": {
                 "amount": {
-                  "$ref": "#/definitions/Uint128"
+                  "$ref": "#/definitions/Uint256"
                 },
                 "minter": {
                   "$ref": "#/definitions/HumanAddr"
@@ -850,7 +850,7 @@
               ],
               "properties": {
                 "amount": {
-                  "$ref": "#/definitions/Uint128"
+                  "$ref": "#/definitions/Uint256"
                 },
                 "burner": {
                   "description": "in the base specification, the burner MUST be the owner. In the additional specifications, it is OPTIONAL to allow other addresses to burn tokens.",
@@ -889,7 +889,7 @@
                   "description": "amount of tokens transferred",
                   "allOf": [
                     {
-                      "$ref": "#/definitions/Uint128"
+                      "$ref": "#/definitions/Uint256"
                     }
                   ]
                 },
@@ -926,7 +926,7 @@
         }
       ]
     },
-    "Uint128": {
+    "Uint256": {
       "type": "string"
     }
   }

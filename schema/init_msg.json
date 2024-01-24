@@ -357,7 +357,7 @@
           ]
         },
         "amount": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         }
       }
     },
@@ -439,7 +439,7 @@
         }
       }
     },
-    "Uint128": {
+    "Uint256": {
       "type": "string"
     }
   }

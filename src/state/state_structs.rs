@@ -3,15 +3,12 @@ use super::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{
-    Uint128, Addr,
-};
+use cosmwasm_std::{Addr, Uint256};
 
 use self::metadata::Metadata;
 
 #[cfg(test)]
 use crate::state::metadata::Extension;
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Contract and Token Id configs
@@ -29,6 +26,16 @@ pub struct ContractConfig {
     pub tx_cnt: u64,
     pub prng_seed: Vec<u8>,
     pub contract_address: Addr,
+    pub lb_pair_info: LbPair,
+}
+
+/// message sent my instantiator and curators for a specific `token_id`'s token info
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct LbPair {
+    pub name: String,
+    pub symbol: String,
+    pub lb_pair_address: Addr,
+    pub decimals: u8,
 }
 
 /// message sent my instantiator and curators for a specific `token_id`'s token info
@@ -68,8 +75,6 @@ pub struct StoredTokenInfo {
     pub curator: Addr,
 }
 
-
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TknConfig {
@@ -95,7 +100,7 @@ pub enum TknConfig {
         enable_burn: bool,
         owner_may_update_metadata: bool,
         minter_may_update_metadata: bool,
-    }
+    },
 }
 
 impl TknConfig {
@@ -108,7 +113,7 @@ impl TknConfig {
                 public_total_supply,
                 enable_mint,
                 enable_burn,
-                minter_may_update_metadata
+                minter_may_update_metadata,
             } => {
                 TknConfigFlat {
                     is_nft: false,
@@ -122,14 +127,14 @@ impl TknConfig {
                     // there can be multiple owners, so owners cannot update metadata
                     owner_may_update_metadata: false,
                 }
-            },
+            }
             TknConfig::Nft {
                 minters,
                 public_total_supply,
                 owner_is_public,
                 enable_burn,
                 owner_may_update_metadata,
-                minter_may_update_metadata
+                minter_may_update_metadata,
             } => {
                 TknConfigFlat {
                     is_nft: true,
@@ -144,7 +149,7 @@ impl TknConfig {
                     minter_may_update_metadata: *minter_may_update_metadata,
                     owner_may_update_metadata: *owner_may_update_metadata,
                 }
-            },
+            }
         }
     }
 
@@ -191,30 +196,25 @@ pub struct TknConfigFlat {
 impl TknConfigFlat {
     pub fn to_enum(&self) -> TknConfig {
         match self.is_nft {
-            true => {
-                TknConfig::Nft {
-                    minters: self.minters.clone(),
-                    public_total_supply: self.public_total_supply,
-                    owner_is_public: self.owner_is_public,
-                    enable_burn: self.enable_burn,
-                    owner_may_update_metadata: self.owner_may_update_metadata,
-                    minter_may_update_metadata: self.minter_may_update_metadata,
-                }
+            true => TknConfig::Nft {
+                minters: self.minters.clone(),
+                public_total_supply: self.public_total_supply,
+                owner_is_public: self.owner_is_public,
+                enable_burn: self.enable_burn,
+                owner_may_update_metadata: self.owner_may_update_metadata,
+                minter_may_update_metadata: self.minter_may_update_metadata,
             },
-            false => {
-                TknConfig::Fungible {
-                    minters: self.minters.clone(),
-                    decimals: self.decimals,
-                    public_total_supply: self.public_total_supply,
-                    enable_mint: self.enable_mint,
-                    enable_burn: self.enable_burn,
-                    minter_may_update_metadata: self.minter_may_update_metadata
-                }
+            false => TknConfig::Fungible {
+                minters: self.minters.clone(),
+                decimals: self.decimals,
+                public_total_supply: self.public_total_supply,
+                enable_mint: self.enable_mint,
+                enable_burn: self.enable_burn,
+                minter_may_update_metadata: self.minter_may_update_metadata,
             },
         }
     }
 }
-
 
 /////////////////////////////////////////////////////////////////////////////////
 // Other structs, enums and functions
@@ -246,7 +246,7 @@ impl Default for CurateTokenId {
             },
             balances: vec![TokenIdBalance {
                 address: Addr::unchecked("addr0".to_string()),
-                amount: Uint128::from(1000_u64)
+                amount: Uint256::from(1000_u64),
             }],
         }
     }
@@ -268,11 +268,11 @@ pub struct TokenIdBalance {
     /// to allow `BurnToken` to apply to other addresses, possible in the additional
     /// specifications
     pub address: Addr,
-    pub amount: Uint128,
+    pub amount: Uint256,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct OwnerBalance {
     pub token_id: String,
-    pub amount: Uint128,
+    pub amount: Uint256,
 }

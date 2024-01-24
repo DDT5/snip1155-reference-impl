@@ -167,7 +167,7 @@
           ],
           "properties": {
             "amount": {
-              "$ref": "#/definitions/Uint128"
+              "$ref": "#/definitions/Uint256"
             },
             "from": {
               "$ref": "#/definitions/HumanAddr"
@@ -240,7 +240,7 @@
           ],
           "properties": {
             "amount": {
-              "$ref": "#/definitions/Uint128"
+              "$ref": "#/definitions/Uint256"
             },
             "from": {
               "$ref": "#/definitions/HumanAddr"
@@ -349,7 +349,7 @@
               "description": "set allowance by for transfer approvals. If ignored, leaves current permission settings",
               "anyOf": [
                 {
-                  "$ref": "#/definitions/Uint128"
+                  "$ref": "#/definitions/Uint256"
                 },
                 {
                   "type": "null"
@@ -981,7 +981,7 @@
       ],
       "properties": {
         "amount": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         },
         "from": {
           "$ref": "#/definitions/HumanAddr"
@@ -1147,7 +1147,7 @@
           ]
         },
         "amount": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         }
       }
     },
@@ -1239,7 +1239,7 @@
       ],
       "properties": {
         "amount": {
-          "$ref": "#/definitions/Uint128"
+          "$ref": "#/definitions/Uint256"
         },
         "from": {
           "$ref": "#/definitions/HumanAddr"
@@ -1258,7 +1258,7 @@
         }
       }
     },
-    "Uint128": {
+    "Uint256": {
       "type": "string"
     }
   }
