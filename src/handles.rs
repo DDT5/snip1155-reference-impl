@@ -1083,9 +1083,10 @@ fn exec_curate_token_id(
         ));
     }
     if !is_valid_symbol(&initial_token.token_info.symbol) {
-        return Err(StdError::generic_err(
-            "Ticker symbol is not in expected format [A-Z]{3,6}",
-        ));
+        return Err(StdError::generic_err(format!(
+            "Ticker symbol is not in expected format [A-Z]{{3,6}}: {}",
+            &initial_token.token_info.symbol
+        )));
     }
     if initial_token.token_info.token_config.flatten().decimals > 18 {
         return Err(StdError::generic_err("Decimals must not exceed 18"));
