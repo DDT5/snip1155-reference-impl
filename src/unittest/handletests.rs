@@ -215,7 +215,8 @@ fn test_mint_tokens() -> StdResult<()> {
     let mut info = mock_info(addr.a().as_str(), &[]);
     curate_addtl_default(&mut deps, mock_env(), info.clone())?;
 
-    // can mint non-existent token_id if you're the curator
+    // cannot mint non-existent token_id even if you're the curator
+    // NOTE: previously this was allowed
     let mint_non_exist = TokenAmount {
         token_id: "test0".to_string(),
         balances: vec![TokenIdBalance {
@@ -228,18 +229,10 @@ fn test_mint_tokens() -> StdResult<()> {
         memo: None,
         padding: None,
     };
-    // FIX: curator not able to mint token
+    // curator not able to mint token if token_id is non-existent
     let result = execute(deps.as_mut(), mock_env(), info.clone(), msg);
-    let _response = match result {
-        Ok(_) => (),
-        Err(_) => {
-            println!("mint non-existent token_id error: {:?}", result);
-        }
-    };
-    assert_eq!(
-        chk_bal(&deps.storage, "test0", &addr.a()),
-        Some(Uint256::from(100u128))
-    );
+    assert!(extract_error_msg(&result).contains("token_id does not exist"));
+    assert_eq!(chk_bal(&deps.storage, "test0", &addr.a()), None);
 
     // success: mint more fungible tokens to multiple addresses
     let mint = TokenAmount {
@@ -269,8 +262,8 @@ fn test_mint_tokens() -> StdResult<()> {
         chk_bal(&deps.storage, "0", &addr.b()).unwrap(),
         Uint256::from(10u128)
     );
-    // 1 initial balance, 4 curate_token_id, 3 mint_token
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 8u64);
+    // 1 initial balance, 4 curate_token_id, 2 mint_token
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     // non-minter cannot mint
     info.sender = addr.b();
@@ -297,8 +290,8 @@ fn test_mint_tokens() -> StdResult<()> {
         chk_bal(&deps.storage, "0", &addr.a()).unwrap(),
         Uint256::from(1010u128)
     );
-    // 1 initial balance, 4 curate_token_id, 3 mint_token
-    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 8u64);
+    // 1 initial balance, 4 curate_token_id, 2 mint_token
+    assert_eq!(contr_conf_r(&deps.storage).load()?.tx_cnt, 7u64);
 
     Ok(())
 }

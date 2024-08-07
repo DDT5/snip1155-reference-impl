@@ -303,36 +303,10 @@ fn try_mint_tokens(
         let token_info_op = tkn_info_r(deps.storage).may_load(mint_token.token_id.as_bytes())?;
 
         // check if token_id exists
+        // NOTE: previously, if token_id missing, would curate the new token ID. Now, need to
+        // explicitly curate first
         if token_info_op.is_none() {
-            let curate_token = CurateTokenId {
-                token_info: TokenInfoMsg {
-                    token_id: mint_token.token_id.clone(),
-                    name: format!("{}-{}", &config.lb_pair_info.name, mint_token.token_id),
-                    symbol: format!("{}", &config.lb_pair_info.symbol),
-                    token_config: TknConfig::Fungible {
-                        minters: Vec::new(), // No need for minter curator will be the minter
-                        decimals: config.lb_pair_info.decimals,
-                        public_total_supply: true,
-                        enable_mint: true,
-                        enable_burn: true,
-                        minter_may_update_metadata: false,
-                    },
-                    public_metadata: None,
-                    private_metadata: None,
-                },
-                balances: mint_token.balances,
-            };
-
-            exec_curate_token_id(
-                &mut deps,
-                &env,
-                &info,
-                &mut config,
-                curate_token,
-                memo.clone(),
-            )?;
-
-            continue;
+            return Err(StdError::generic_err("token_id does not exist"));
         }
 
         // check if enable_mint == true
