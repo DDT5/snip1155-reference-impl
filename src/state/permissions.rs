@@ -31,23 +31,6 @@ pub fn new_permission(
     Ok(())
 }
 
-// /// updates an existing permission entry. Does not check that existing entry exists, so
-// /// riskier to use this. But saves gas from potentially loading permission twice
-// pub fn update_permission_unchecked(
-//     storage: &mut dyn Storage,
-//     owner: &Addr,
-//     token_id: &str,
-//     allowed_addr: &Addr,
-//     permission: &Permission,
-// ) -> StdResult<()> {
-//     permission_w(storage, owner, token_id).save(
-//         to_binary(allowed_addr)?.as_slice(),
-//         permission
-//     )?;
-
-//     Ok(())
-// }
-
 /// updates an existing permission entry. Returns error if permission entry does not aleady exist
 pub fn update_permission(
     storage: &mut dyn Storage,

@@ -816,92 +816,6 @@ fn try_remove_curators(
     )
 }
 
-// fn try_add_minters(
-//     deps: DepsMut,
-//     _env: Env,
-//     info: MessageInfo,
-//     token_id: String,
-//     add_minters: Vec<Addr>,
-// ) -> StdResult<Response> {
-//     let contract_config = contr_conf_r(deps.storage).load()?;
-//     let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
-//     if token_info_op.is_none() {
-//         return Err(StdError::generic_err(format!(
-//             "token_id {} does not exist",
-//             token_id
-//         )));
-//     };
-//     let mut token_info = token_info_op.unwrap();
-
-//     // check if either admin
-//     let admin_result = verify_admin(&contract_config, &info);
-//     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
-
-//     let verified = admin_result.is_ok(); // || curator_result.is_ok();
-//     if !verified {
-//         return Err(StdError::generic_err(
-//             "You need to be the admin to add or remove minters",
-//         ));
-//     }
-
-//     // add minters
-//     let mut flattened_token_config = token_info.token_config.flatten();
-//     for minter in add_minters {
-//         flattened_token_config.minters.push(minter)
-//     }
-
-//     // save token info with new minters
-//     token_info.token_config = flattened_token_config.to_enum();
-//     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
-
-//     Ok(Response::new().set_data(to_binary(&ExecuteAnswer::AddMinters { status: Success })?))
-// }
-
-// fn try_remove_minters(
-//     deps: DepsMut,
-//     _env: Env,
-//     info: MessageInfo,
-//     token_id: String,
-//     remove_minters: Vec<Addr>,
-// ) -> StdResult<Response> {
-//     let contract_config = contr_conf_r(deps.storage).load()?;
-//     let token_info_op = tkn_info_r(deps.storage).may_load(token_id.as_bytes())?;
-//     if token_info_op.is_none() {
-//         return Err(StdError::generic_err(format!(
-//             "token_id {} does not exist",
-//             token_id
-//         )));
-//     };
-//     let mut token_info = token_info_op.unwrap();
-
-//     // check if either admin or curator
-//     let admin_result = verify_admin(&contract_config, &info);
-//     // let curator_result = verify_curator_of_token_id(&token_info, &env); Not part of base specifications.
-
-//     let verified = admin_result.is_ok(); // || curator_result.is_ok();
-//     if !verified {
-//         return Err(StdError::generic_err(
-//             "You need to be the admin to add or remove minters",
-//         ));
-//     }
-
-//     // remove minters
-//     let mut flattened_token_config = token_info.token_config.flatten();
-//     for minter in remove_minters {
-//         flattened_token_config.minters.retain(|x| x != &minter);
-//     }
-
-//     // save token info with new minters
-//     token_info.token_config = flattened_token_config.to_enum();
-//     tkn_info_w(deps.storage).save(token_id.as_bytes(), &token_info)?;
-
-//     Ok(
-//         Response::new().set_data(to_binary(&ExecuteAnswer::RemoveMinters {
-//             status: Success,
-//         })?),
-//     )
-// }
-
 fn try_change_admin(
     deps: DepsMut,
     _env: Env,
@@ -1012,23 +926,6 @@ fn verify_curator(contract_config: &ContractConfig, info: &MessageInfo) -> StdRe
     }
     Ok(())
 }
-
-// /// verifies if sender is the address that curated the token_id.
-// /// Not part of base specifications, but function left here for potential use.
-// /// If this additional feature is implemented, it is important to ensure that the instantiator
-// /// still has the ability to set initial balances without later being able to change minters.
-// fn verify_curator_of_token_id(
-//     token_info: &StoredTokenInfo,
-//     env: &Env
-// ) -> StdResult<()> {
-//     let curator = &token_info.curator;
-//     if curator != &env.message.sender {
-//         return Err(StdError::generic_err(
-//             "You are not the curator of this token_id",
-//         ));
-//     }
-//     Ok(())
-// }
 
 /// verifies if sender is a minter of the specific token_id
 fn verify_minter(token_info: &StoredTokenInfo, info: &MessageInfo) -> StdResult<()> {
