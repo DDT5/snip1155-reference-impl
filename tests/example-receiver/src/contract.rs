@@ -108,7 +108,7 @@ pub fn try_receive(
 ) -> StdResult<Response> {
     let msg: ExecuteMsg = from_binary(&msg)?;
 
-    if matches!(msg, ExecuteMsg::Receive { .. }) {
+    if matches!(msg, ExecuteMsg::Snip1155Receive { .. }) {
         return Err(StdError::generic_err(
             "Recursive call to receive() is not allowed",
         ));
