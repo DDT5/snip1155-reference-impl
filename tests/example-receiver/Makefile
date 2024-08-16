@@ -6,7 +6,7 @@ check:
 clippy:
 	cargo clippy
 
-PHONY: test
+.PHONY: test
 test: unit-test
 
 .PHONY: unit-test
