@@ -33,12 +33,8 @@ default = []
 backtraces = ["cosmwasm-std/backtraces"]
 
 [dependencies]
-snafu = { version = "0.6.3" }
-serde = { version = "1.0.103", default-features = false, features = ["derive"] }
-schemars = "0.7"
-cosmwasm-std = { package = "secret-cosmwasm-std", version = "1.1.10" }
-cosmwasm-storage = { package = "secret-cosmwasm-storage", version = "1.1.10" }
-# secret-toolkit = "0.3.0" # Uncomment this for extra tools
-
-[dev-dependencies]
-cosmwasm-schema = "1.1.8"
+cosmwasm-std = { package = "secret-cosmwasm-std", version = "1.0.0" }
+cosmwasm-storage = { package = "secret-cosmwasm-storage", version = "1.0.0" }
+schemars = "0.8.11"
+serde = { version = "1.0.114", default-features = false, features = ["derive"] }
+snafu = { version = "0.7.3" }
