@@ -409,12 +409,6 @@ fn test_change_metadata_nft() -> StdResult<()> {
         curators: vec![addr.b()],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
 
@@ -663,12 +657,6 @@ fn test_change_metadata_fungible() -> StdResult<()> {
         curators: vec![addr.b()],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
 
@@ -2184,12 +2172,6 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         curators: vec![],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
 
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
@@ -2204,12 +2186,6 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         curators: vec![],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
 
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg)?;
@@ -2224,12 +2200,6 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         curators: vec![],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
 
     info.sender = addr.a();
@@ -2245,12 +2215,6 @@ fn test_instantiate_admin_inputs() -> StdResult<()> {
         curators: vec![],
         initial_tokens: vec![],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
 
     info.sender = addr.a();

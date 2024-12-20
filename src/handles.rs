@@ -89,7 +89,6 @@ pub fn instantiate(
         tx_cnt: 0u64,
         prng_seed: prng_seed.to_vec(),
         contract_address: env.contract.address.clone(),
-        lb_pair_info: msg.lb_pair_info,
     };
 
     // set initial balances

@@ -26,16 +26,6 @@ pub struct ContractConfig {
     pub tx_cnt: u64,
     pub prng_seed: Vec<u8>,
     pub contract_address: Addr,
-    pub lb_pair_info: LbPair,
-}
-
-/// message sent my instantiator and curators for a specific `token_id`'s token info
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct LbPair {
-    pub name: String,
-    pub symbol: String,
-    pub lb_pair_address: Addr,
-    pub decimals: u8,
 }
 
 /// message sent my instantiator and curators for a specific `token_id`'s token info

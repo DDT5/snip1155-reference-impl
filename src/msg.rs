@@ -6,7 +6,7 @@ use crate::state::{
     expiration::Expiration,
     metadata::Metadata,
     permissions::{Permission, PermissionKey},
-    state_structs::{CurateTokenId, LbPair, OwnerBalance, StoredTokenInfo, TokenAmount},
+    state_structs::{CurateTokenId, OwnerBalance, StoredTokenInfo, TokenAmount},
     txhistory::Tx,
 };
 
@@ -29,7 +29,6 @@ pub struct InstantiateMsg {
     pub initial_tokens: Vec<CurateTokenId>,
     /// for `create_viewing_key` function
     pub entropy: String,
-    pub lb_pair_info: LbPair,
 }
 
 /////////////////////////////////////////////////////////////////////////////////

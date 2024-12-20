@@ -81,12 +81,6 @@ pub fn init_helper_default() -> (
         curators: vec![info.sender.clone()],
         initial_tokens: vec![CurateTokenId::default()],
         entropy: "seedentropy".to_string(),
-        lb_pair_info: LbPair {
-            name: String::new(),
-            symbol: String::new(),
-            lb_pair_address: Addr::unchecked("address"),
-            decimals: 18,
-        },
     };
 
     (instantiate(deps.as_mut(), env, info, init_msg), deps)
